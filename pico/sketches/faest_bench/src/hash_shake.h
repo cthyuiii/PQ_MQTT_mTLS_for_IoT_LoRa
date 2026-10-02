@@ -15,7 +15,7 @@
 /* use the KIMD/KLMD instructions from CPACF for SHAKE support on S390 */
 #include "s390_cpacf.h"
 #elif defined(WITH_SHAKE_OPENSSL)
-#include "openssl/evp.h"
+#include <openssl/evp.h>
 
 typedef struct hash_context_openssl_s {
   EVP_MD_CTX* ctx;
@@ -63,7 +63,7 @@ static inline void hash_clear(hash_context* ctx) {
 }
 
 #elif defined(OQS)
-#include "oqs/sha3.h"
+#include <oqs/sha3.h>
 
 typedef struct hash_context_oqs_s {
   union {
@@ -143,7 +143,7 @@ extern "C" {
 #endif
 #else
 /* use SUPERCOP implementation */
-#include "libkeccak.a.headers/KeccakHash.h"
+#include <libkeccak.a.headers/KeccakHash.h>
 #endif
 
 typedef Keccak_HashInstance hash_context;

@@ -1,11 +1,10 @@
-#if defined(PICO_VARIANT_192f)  /* src/faest_192f.c of faest_192f_bench */
 #include "faest_config_pico.h"
 /*
  *  SPDX-License-Identifier: MIT
  */
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#include <config.h>
 #endif
 
 #include "faest_192f.h"
@@ -39,7 +38,7 @@ int FAEST_CALLING_CONVENTION faest_192f_keygen(uint8_t* pk, uint8_t* sk) {
 
   bool done = false;
   while (!done) {
-    rand_bytes(SK_KEY(sk), 192  / 8);
+    rand_bytes(SK_KEY(sk), 192  / 8);;
     done = (ptr_get_bit(SK_KEY(sk), 0) & ptr_get_bit(SK_KEY(sk), 1)) == 0;
     faest_declassify(&done, sizeof(done));
   }
@@ -67,7 +66,7 @@ int FAEST_CALLING_CONVENTION faest_192f_unpack_private_key(faest_192f_unpacked_p
   faest_declassify(unpacked_sk->owf_output, sizeof(unpacked_sk->owf_output));
 
   const faest_paramset_t* params = faest_get_paramset(FAEST_192F);
-  aes_extend_witness(unpacked_sk->witness, unpacked_sk->owf_key, unpacked_sk->owf_input, params);
+  aes_extend_witness_7(unpacked_sk->witness, unpacked_sk->owf_key, unpacked_sk->owf_input, params);
 
   return 0;
 }
@@ -157,5 +156,3 @@ void FAEST_CALLING_CONVENTION faest_192f_clear_unpacked_private_key(faest_192f_u
 }
 
 // vim: ft=c
-
-#endif

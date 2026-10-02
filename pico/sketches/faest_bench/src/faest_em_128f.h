@@ -27,7 +27,7 @@ FAEST_BEGIN_C_DECL
 /**
  * Size of the signature in bytes.
  */
-#define FAEST_EM_128F_SIGNATURE_SIZE 5060
+#define FAEST_EM_128F_SIGNATURE_SIZE 4170
 
 /**
  * Unpacked private key with pre-computed OWF output and witness.
@@ -36,7 +36,7 @@ typedef struct {
   uint8_t owf_input[16];
   uint8_t owf_key[128 / 8];
   uint8_t owf_output[16];
-  uint8_t witness[960 / 8];
+  uint8_t witness[640 / 8];
 } faest_em_128f_unpacked_private_key_t;
 
 /* Signature API */

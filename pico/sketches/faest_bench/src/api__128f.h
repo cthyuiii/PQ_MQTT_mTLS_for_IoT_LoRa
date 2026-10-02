@@ -1,4 +1,3 @@
-#include "faest_config_pico.h"
 /*
  *  SPDX-License-Identifier: MIT
  */
@@ -8,7 +7,7 @@
 
 #define CRYPTO_SECRETKEYBYTES 32
 #define CRYPTO_PUBLICKEYBYTES 32
-#define CRYPTO_BYTES 5924
+#define CRYPTO_BYTES 5170
 #define CRYPTO_ALGNAME "faest_128f"
 
 int crypto_sign_keypair(unsigned char* pk, unsigned char* sk);

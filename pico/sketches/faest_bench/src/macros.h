@@ -37,7 +37,7 @@
 
 /* glibc version check macro */
 #if __has_include(<features.h>)
-#include "features.h"
+#include <features.h>
 #endif
 
 #if defined(__GLIBC__)
@@ -55,7 +55,7 @@
 
 /* NetBSD version check macro */
 #if defined(__NetBSD__)
-#include "sys/param.h"
+#include <sys/param.h>
 #define NETBSD_CHECK(maj, min) (__NetBSD_Version__ >= ((maj) * 1000000000 + (min) * 10000000))
 #else
 #define NETBSD_CHECK(maj, min) 0
@@ -63,7 +63,7 @@
 
 /* Apple version check macro */
 #if defined(__APPLE__)
-#include "Availability.h"
+#include <Availability.h>
 #define MACOSX_CHECK(maj, min, rev)                                                                \
   (__MAC_OS_X_VERSION_MIN_REQUIRED >= ((maj) * 10000 + (min) * 100 + (rev)))
 #else
@@ -132,8 +132,7 @@
 #endif
 
 /* round size to meet alignment requirements */
-#define ALIGNT(s, t) (((s) + sizeof(t) - 1) & ~(sizeof(t) - 1))
-#define ALIGNU64T(s) ALIGNT(s, uint64_t)
+#define ALIGN_TO(s, a) (((s) + a - 1) & ~(a - 1))
 
 /* unreachable builtin */
 #if GNUC_CHECK(4, 5) || __has_builtin(__builtin_unreachable)
@@ -261,7 +260,7 @@
 #include "crypto_declassify.h"
 #define faest_declassify(x, len) crypto_declassify((void*)x, len)
 #elif defined(WITH_VALGRIND)
-#include "valgrind/memcheck.h"
+#include <valgrind/memcheck.h>
 #define faest_declassify(x, len) VALGRIND_MAKE_MEM_DEFINED(x, len)
 #else
 #define faest_declassify(x, len)

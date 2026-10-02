@@ -1,0 +1,7 @@
+Board,Algorithm,pk,sk,sigMax,sig,keygen_mean_us,keygen_median_us,keygen_std_us,keygen_mean_cyc,keygen_median_cyc,keygen_ops_s,sign_mean_us,sign_median_us,sign_std_us,sign_mean_cyc,sign_median_cyc,sign_ops_s,verify_mean_us,verify_median_us,verify_std_us,verify_mean_cyc,verify_median_cyc,verify_ops_s,status,Library
+rp2040,MQTT/TLS RSA-2048 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS RSA-3072 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ECDSA-P256 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS Ed25519 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ML-DSA-44 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ML-DSA-65 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/83 blocks failed: hung during TCP connect after 9 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c

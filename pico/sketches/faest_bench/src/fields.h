@@ -197,7 +197,9 @@ ATTR_CONST ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline bf64_t bf64_add(bf64
   return lhs ^ rhs;
 }
 
+#if defined(FAEST_TESTS)
 ATTR_CONST bf64_t bf64_mul(bf64_t lhs, bf64_t rhs);
+#endif
 
 ATTR_CONST ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline bf64_t bf64_from_bit(uint8_t bit) {
   return bit & 1;
@@ -252,7 +254,6 @@ void bf128_byte_combine_bits(bf128_t* dst, uint8_t x);
 void bf128_sq_bit(bf128_t* out_tag, const bf128_t* in_tag);
 void bf128_sq_bit_inplace(bf128_t* tag);
 void bf128_byte_combine_sq(bf128_t* dst, const bf128_t* x);
-void bf128_byte_combine_bits_sq(bf128_t* dst, uint8_t x);
 
 #if defined(HAVE_ATTR_VECTOR_SIZE)
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf128_add(bf128_t* dst, const bf128_t* lhs,
@@ -281,6 +282,7 @@ ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf128_add_inplace(bf128_t*
 #endif
 
 void bf128_mul(bf128_t* dst, const bf128_t* lhs, const bf128_t* rhs);
+void bf128_square(bf128_t* dst, const bf128_t* lhs);
 void bf128_mul_inplace(bf128_t* lhs, const bf128_t* rhs);
 void bf128_mul_64_inplace(bf128_t* lhs, bf64_t rhs);
 #if defined(HAVE_ATTR_VECTOR_SIZE)
@@ -291,7 +293,9 @@ bf128_mul_bit(bf128_t* dst, const bf128_t* lhs, uint8_t rhs) {
 #else
 void bf128_mul_bit(bf128_t* dst, const bf128_t* lhs, uint8_t rhs);
 #endif
+#if defined(FAEST_TESTS)
 void bf128_sum_poly(bf128_t* dst, const bf128_t* xs);
+#endif
 void bf128_sum_poly_bits(bf128_t* dst, const uint8_t* xs);
 
 // GF(2^192) implemenation
@@ -346,7 +350,6 @@ void bf192_byte_combine_bits(bf192_t* dst, uint8_t x);
 void bf192_sq_bit(bf192_t* out_tag, const bf192_t* in_tag);
 void bf192_sq_bit_inplace(bf192_t* tag);
 void bf192_byte_combine_sq(bf192_t* dst, const bf192_t* x);
-void bf192_byte_combine_bits_sq(bf192_t* dst, uint8_t x);
 
 #if defined(HAVE_ATTR_VECTOR_SIZE)
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf192_add(bf192_t* dst, const bf192_t* lhs,
@@ -375,6 +378,7 @@ ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf192_add_inplace(bf192_t*
 #endif
 
 void bf192_mul(bf192_t* dst, const bf192_t* lhs, const bf192_t* rhs);
+void bf192_square(bf192_t* dst, const bf192_t* lhs);
 void bf192_mul_inplace(bf192_t* lhs, const bf192_t* rhs);
 void bf192_mul_64_inplace(bf192_t* lhs, bf64_t rhs);
 #if defined(HAVE_ATTR_VECTOR_SIZE)
@@ -385,7 +389,9 @@ bf192_mul_bit(bf192_t* dst, const bf192_t* lhs, uint8_t rhs) {
 #else
 void bf192_mul_bit(bf192_t* dst, const bf192_t* lhs, uint8_t rhs);
 #endif
+#if defined(FAEST_TESTS)
 void bf192_sum_poly(bf192_t* dst, const bf192_t* xs);
+#endif
 void bf192_sum_poly_bits(bf192_t* dst, const uint8_t* xs);
 
 // GF(2^256) implementation
@@ -437,7 +443,6 @@ void bf256_byte_combine_bits(bf256_t* dst, uint8_t x);
 void bf256_sq_bit(bf256_t* out_tag, const bf256_t* in_tag);
 void bf256_sq_bit_inplace(bf256_t* tag);
 void bf256_byte_combine_sq(bf256_t* dst, const bf256_t* x);
-void bf256_byte_combine_bits_sq(bf256_t* dst, uint8_t x);
 
 #if defined(HAVE_ATTR_VECTOR_SIZE)
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf256_add(bf256_t* dst, const bf256_t* lhs,
@@ -466,6 +471,7 @@ ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf256_add_inplace(bf256_t*
 #endif
 
 void bf256_mul(bf256_t* dst, const bf256_t* lhs, const bf256_t* rhs);
+void bf256_square(bf256_t* dst, const bf256_t* lhs);
 void bf256_mul_inplace(bf256_t* lhs, const bf256_t* rhs);
 void bf256_mul_64_inplace(bf256_t* lhs, bf64_t rhs);
 #if defined(HAVE_ATTR_VECTOR_SIZE)
@@ -476,16 +482,18 @@ bf256_mul_bit(bf256_t* dst, const bf256_t* lhs, uint8_t rhs) {
 #else
 void bf256_mul_bit(bf256_t* dst, const bf256_t* lhs, uint8_t rhs);
 #endif
+#if defined(FAEST_TESTS)
 void bf256_sum_poly(bf256_t* dst, const bf256_t* xs);
+#endif
 void bf256_sum_poly_bits(bf256_t* dst, const uint8_t* xs);
 
 // GF(2^384) implementation
 
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf384_load(bf384_t* dst, const uint8_t* src) {
 #if defined(HAVE_ATTR_VECTOR_SIZE)
-  for (unsigned int i = 0; i != BF384_NUM_BYTES / BF128_NUM_BYTES; ++i, src += BF128_NUM_BYTES) {
-    bf128_load(&dst->inner[i], src);
-  }
+  bf128_load(&dst->inner[0], src);
+  bf128_load(&dst->inner[1], src + BF128_NUM_BYTES);
+  bf128_load(&dst->inner[2], src + 2 * BF128_NUM_BYTES);
 #else
 #if defined(FAEST_IS_BIG_ENDIAN)
   for (unsigned int i = 0; i != BF384_NUM_BYTES / sizeof(uint64_t); ++i, src += sizeof(uint64_t)) {
@@ -501,9 +509,9 @@ ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf384_load(bf384_t* dst, c
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf384_store(uint8_t* dst,
                                                                   const bf384_t* src) {
 #if defined(HAVE_ATTR_VECTOR_SIZE)
-  for (unsigned int i = 0; i != BF384_NUM_BYTES / BF128_NUM_BYTES; ++i, dst += BF128_NUM_BYTES) {
-    bf128_store(dst, &src->inner[i]);
-  }
+  bf128_store(dst, &src->inner[0]);
+  bf128_store(dst + BF128_NUM_BYTES, &src->inner[1]);
+  bf128_store(dst + 2 * BF128_NUM_BYTES, &src->inner[2]);
 #else
 #if defined(FAEST_IS_BIG_ENDIAN)
   for (unsigned int i = 0; i != BF384_NUM_BYTES / sizeof(uint64_t); ++i, dst += sizeof(uint64_t)) {
@@ -557,9 +565,9 @@ void bf384_mul_128_inplace(bf384_t* lhs, const bf128_t* rhs);
 
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf576_load(bf576_t* dst, const uint8_t* src) {
 #if defined(HAVE_ATTR_VECTOR_SIZE)
-  for (unsigned int i = 0; i != BF576_NUM_BYTES / BF192_NUM_BYTES; ++i, src += BF192_NUM_BYTES) {
-    bf192_load(&dst->inner[i], src);
-  }
+  bf192_load(&dst->inner[0], src);
+  bf192_load(&dst->inner[1], src + BF192_NUM_BYTES);
+  bf192_load(&dst->inner[2], src + 2 * BF192_NUM_BYTES);
 #else
 #if defined(FAEST_IS_BIG_ENDIAN)
   for (unsigned int i = 0; i != BF576_NUM_BYTES / sizeof(uint64_t); ++i, src += sizeof(uint64_t)) {
@@ -575,9 +583,9 @@ ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf576_load(bf576_t* dst, c
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf576_store(uint8_t* dst,
                                                                   const bf576_t* src) {
 #if defined(HAVE_ATTR_VECTOR_SIZE)
-  for (unsigned int i = 0; i != BF576_NUM_BYTES / BF192_NUM_BYTES; ++i, dst += BF192_NUM_BYTES) {
-    bf192_store(dst, &src->inner[i]);
-  }
+  bf192_store(dst, &src->inner[0]);
+  bf192_store(dst + BF192_NUM_BYTES, &src->inner[1]);
+  bf192_store(dst + 2 * BF192_NUM_BYTES, &src->inner[2]);
 #else
 #if defined(FAEST_IS_BIG_ENDIAN)
   for (unsigned int i = 0; i != BF576_NUM_BYTES / sizeof(uint64_t); ++i, dst += sizeof(uint64_t)) {
@@ -631,9 +639,9 @@ void bf576_mul_192_inplace(bf576_t* lhs, const bf192_t* rhs);
 
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf768_load(bf768_t* dst, const uint8_t* src) {
 #if defined(HAVE_ATTR_VECTOR_SIZE)
-  for (unsigned int i = 0; i != BF768_NUM_BYTES / BF256_NUM_BYTES; ++i, src += BF256_NUM_BYTES) {
-    bf256_load(&dst->inner[i], src);
-  }
+  bf256_load(&dst->inner[0], src);
+  bf256_load(&dst->inner[1], src + BF256_NUM_BYTES);
+  bf256_load(&dst->inner[2], src + 2 * BF256_NUM_BYTES);
 #else
 #if defined(FAEST_IS_BIG_ENDIAN)
   for (unsigned int i = 0; i != BF768_NUM_BYTES / sizeof(uint64_t); ++i, src += sizeof(uint64_t)) {
@@ -649,9 +657,9 @@ ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf768_load(bf768_t* dst, c
 ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf768_store(uint8_t* dst,
                                                                   const bf768_t* src) {
 #if defined(HAVE_ATTR_VECTOR_SIZE)
-  for (unsigned int i = 0; i != BF768_NUM_BYTES / BF256_NUM_BYTES; ++i, dst += BF256_NUM_BYTES) {
-    bf256_store(dst, &src->inner[i]);
-  }
+  bf256_store(dst, &src->inner[0]);
+  bf256_store(dst + BF256_NUM_BYTES, &src->inner[1]);
+  bf256_store(dst + 2 * BF256_NUM_BYTES, &src->inner[2]);
 #else
 #if defined(FAEST_IS_BIG_ENDIAN)
   for (unsigned int i = 0; i != BF768_NUM_BYTES / sizeof(uint64_t); ++i, dst += sizeof(uint64_t)) {
@@ -700,6 +708,14 @@ ATTR_ALWAYS_INLINE ATTR_ARTIFICIAL static inline void bf768_add_inplace(bf768_t*
 #endif
 
 void bf768_mul_256_inplace(bf768_t* lhs, const bf256_t* rhs);
+
+void bf2_matrix_mul_tbl(uint8_t* dst, const uint8_t* src, const uint64_t* table, size_t rows,
+                        size_t columns, size_t table_words);
+
+void bf2_poly_mul(uint8_t* dst, const uint8_t* src, size_t src_bits, const uint64_t* table,
+                  size_t table_bits);
+void bf2_poly_reduce(uint8_t* dst, const uint8_t* src, size_t src_bits, const uint64_t* table,
+                     size_t table_bits);
 
 FAEST_END_C_DECL
 

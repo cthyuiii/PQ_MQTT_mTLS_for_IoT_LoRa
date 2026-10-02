@@ -7,7 +7,7 @@
 
 #define CRYPTO_SECRETKEYBYTES 32
 #define CRYPTO_PUBLICKEYBYTES 32
-#define CRYPTO_BYTES 5060
+#define CRYPTO_BYTES 4170
 #define CRYPTO_ALGNAME "faest_em_128f"
 
 int crypto_sign_keypair(unsigned char* pk, unsigned char* sk);

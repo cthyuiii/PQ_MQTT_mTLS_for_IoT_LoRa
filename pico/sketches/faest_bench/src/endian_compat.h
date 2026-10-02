@@ -38,7 +38,7 @@ static inline uint64_t ATTR_CONST bswap64(uint64_t x) {
 
 /* Linux / GLIBC */
 #if defined(__linux__) || defined(__GLIBC__)
-#include "endian.h"
+#include <endian.h>
 /* endian.h only provides conversion functions if built with one these defines. Android is also
  * known to provide these functions. */
 #if defined(_DEFAULT_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE) || defined(__ANDROID__)
@@ -49,7 +49,7 @@ static inline uint64_t ATTR_CONST bswap64(uint64_t x) {
 /* Windows */
 #if defined(_WIN16) || defined(_WIN32) || defined(_WIN64)
 #if defined(__MINGW32__) || defined(__MINGW64__)
-#include "sys/param.h"
+#include <sys/param.h>
 #else
 #define FAEST_IS_LITTLE_ENDIAN
 #endif
@@ -57,24 +57,24 @@ static inline uint64_t ATTR_CONST bswap64(uint64_t x) {
 
 /* Cygwin */
 #if defined(__CYGWIN__)
-#include "endian.h"
+#include <endian.h>
 #define HAVE_HOSTSWAP
 #endif
 
 /* OS X */
 #if defined(__APPLE__)
-#include "machine/endian.h"
+#include <machine/endian.h>
 #endif
 
 /* OpenBSD */
 #if defined(__OpenBSD__)
-#include "machine/endian.h"
+#include <machine/endian.h>
 #define HAVE_HOSTSWAP
 #endif
 
 /* other BSDs */
 #if defined(__FreeBSD__) || defined(__NETBSD__) || defined(__NetBSD__)
-#include "sys/endian.h"
+#include <sys/endian.h>
 #define HAVE_HOSTSWAP
 #endif
 

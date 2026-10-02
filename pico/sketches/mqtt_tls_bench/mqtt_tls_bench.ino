@@ -98,7 +98,7 @@ static const Group GROUPS[] = {
   {"X25519", WOLFSSL_ECC_X25519}, {"secp256r1", WOLFSSL_ECC_SECP256R1}};
 enum { N_GROUPS = sizeof GROUPS / sizeof *GROUPS, G_STAGE2 = 3 };  // Stage 2 / pipeline: X25519MLKEM768
 static const char *const MODES[] = {"plain", "TLS", "mTLS"};
-// connect x 3 modes, pipeline x 3 modes x 9 schemes x up / down, then sweep x TLS / mTLS x every group
+// connect x 3 modes, pipeline x 3 modes x 10 schemes x up / down, then sweep x TLS / mTLS x every group
 #ifdef MT_KEX_ONLY
 enum { N_BLOCKS = KW_N };  // one kex block per KEM
 #else

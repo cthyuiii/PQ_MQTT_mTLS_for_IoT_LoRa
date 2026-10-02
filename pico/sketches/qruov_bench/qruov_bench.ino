@@ -1,37 +1,27 @@
-// qruov_zoo_bench.ino - the QR-UOV NIST-L1 parameter sets via one shared, -D-parameterized src.
-//   Source: qruov/round2 reference (src/ref), flattened + the OpenSSL AES/SHAKE PRG replaced by an
-//   EVP->PQClean SHAKE shim (evp_pqclean_shim.h), exactly like the cat1 port. The parameter set is
-//   chosen at COMPILE TIME by the runner (config + sizes #ifndef-guarded):
-//     -DQRUOV_q=.. -DQRUOV_L=.. -DQRUOV_v=.. -DQRUOV_m=.. -DQRUOV_fc=.. -DQRUOV_fe=.. -DQRUOV_fc0=..
-//     -DCRYPTO_SECRETKEYBYTES=.. -DCRYPTO_PUBLICKEYBYTES=.. -DCRYPTO_BYTES=..   (fc/fe/fc0 from
-//     qruov_config.src; sizes from api_h_gen). Host-verified roundtrips for q31-L3/L10 and q7-L10.
-//   Stack-heavy (host-measured 33-143 KB; M0+ inflates it), so each op runs on a board-conditional
-//   big-stack. Fits both boards. Serial @115200.
+// qruov_bench.ino - QR-UOV round 3 (NIST additional signatures, spec v3.0, Aug 2026) on RP2040 / RP2350.
+//   Source: the round 3 package's Reference_Implementation/ref, unchanged, except prim.h / prim.c: its OpenSSL
+//   SHAKE layer is replaced by one on PQClean's FIPS202 (src/prim.*), and PRG = shake (-DPRG_IS_AES=0; the
+//   package's default PRG is AES-128-CTR). Host-checked: the KAT files (100 entries) of all five level 1 sets are
+//   byte-identical to the official reference's.
+//   The runner picks the set: -DQRUOV_PARAM_1q127L3 (1q127L10, 1q31L3, 1q31L10, 1q7L10) and the big stack
+//   (-DBIG_STACK_BYTES). Host stack peaks (keygen / sign / verify, KB): 1q127L3 27/25/21, 1q31L3 31/29/24,
+//   1q127L10 56/59/51, 1q31L10 70/74/63, 1q7L10 114/122/102; heap ~0. Serial @115200.
 
 #include <Arduino.h>
 #include <string.h>
 
 extern "C" {
-  #include "src/api.h"           // CRYPTO_* (from -D) + QRUOV_* params
-  #include "src/qruov_config.h"  // QRUOV_q / L / v / m for the label
-  int randombytes(unsigned char *x, unsigned long long xlen);
+  #include "src/api.h"  // CRYPTO_* and the set's QRUOV_* parameters
+  void randombytes(unsigned char *x, unsigned long long xlen);
 }
 
-extern "C" int randombytes(unsigned char *x, unsigned long long xlen) {
+extern "C" void randombytes(unsigned char *x, unsigned long long xlen) {
   while (xlen >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(x, &r, 4); x += 4; xlen -= 4; }
   if (xlen) { uint32_t r = rp2040.hwrand32(); for (unsigned long long i = 0; i < xlen; i++) x[i] = (uint8_t)(r >> (8 * i)); }
-  return 0;
 }
 
-// Stack peaks are matrix-dominated, so host == device (verified: q31-v600-m70 host sign 88 KB vs device
-// 87 KB). Biggest L1 set q7-L10-v740-m100 peaks: keygen 131 / sign 143 / verify 105 KB; heap is ~2 KB
-// (qruov is effectively pure-stack). The old 256 KB RP2350 stack left only 3 KB free with v740-m100's
-// 230 KB statics -> "Low memory". 176 KB covers the 143 KB sign peak (+33 KB margin) and frees 80 KB.
-#ifdef BIG_STACK_BYTES   // the runner's -D for a set whose statics leave less room (cat1 on the RP2040)
-#elif defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)
-  #define BIG_STACK_BYTES (176u * 1024u)
-#else
-  #define BIG_STACK_BYTES (180u * 1024u)   // RP2040: only the smaller sets fit here; v740-m100 is RP2350-only
+#ifndef BIG_STACK_BYTES   // the runner sets it per parameter set (host peak + margin)
+  #define BIG_STACK_BYTES (128u * 1024u)
 #endif
 #include "bigstack.h"
 
@@ -93,7 +83,7 @@ static void run_report() {
     Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
   }
   Serial.println();
-  Serial.print(F("=== ")); print_label(); Serial.println(F(" (qruov round2 ref + SHAKE shim) on RP [big-stack] ==="));
+  Serial.print(F("=== ")); print_label(); Serial.println(F(" (QR-UOV round 3 ref, SHAKE PRG) on RP [big-stack] ==="));
   Serial.print(F("CPU clock: ")); Serial.print(F_CPU / 1000000u); Serial.println(F(" MHz")); Serial.flush();
   Serial.print(F("sizes: pk=")); Serial.print((long)CRYPTO_PUBLICKEYBYTES);
   Serial.print(F(" sk=")); Serial.print((long)CRYPTO_SECRETKEYBYTES);

@@ -73,8 +73,10 @@ SWEEP_GROUPS = ["MLKEM512", "MLKEM768", "MLKEM1024",                            
                 "SecP256r1MLKEM512", "x25519_mlkem512", "p384_mlkem768", "p521_mlkem1024", "x448_mlkem768",
                 "X25519", "secp256r1",                                             # classical baselines
                 "hqc1", "hqc3", "hqc5", "frodo640aes"]                             # other KEM families (HQC: NIST 2025)
-# per AES mode, 128- vs 256-bit keys: CTR (LoRaWAN's own; aes256ctr = its frame with 256-bit keys), GCM, CCM; + Ascon
-AEADS = ["none", "lorawan10", "lorawan11", "aes256ctr", "aes128gcm", "aes256gcm", "aes128ccm", "aes256ccm", "ascon"]
+# per AES mode, 128- vs 256-bit keys: CTR (LoRaWAN's own; aes256ctr / lorawan11_256 = its 1.0.x / 1.1 frames with 256-bit
+# keys), GCM, CCM; + Ascon
+AEADS = ["none", "lorawan10", "lorawan11", "aes256ctr", "lorawan11_256", "aes128gcm", "aes256gcm", "aes128ccm", "aes256ccm",
+         "ascon"]
 TIMERS = [("OpenSSL", HERE / "mqtt_tls_timer"), ("wolfSSL", HERE / "mqtt_tls_timer_wolfssl")]
 KEX_TIMER = HERE / "mqtt_kem_timer"   # the timer with liboqs (build_timer.sh): the KEM exchange's client + responder
 # --kex: KEM exchange as MQTT messages through the broker (liboqs names): Classic McEliece (public keys too big for a

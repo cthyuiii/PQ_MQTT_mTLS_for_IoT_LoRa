@@ -4,7 +4,7 @@
  */
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#include <config.h>
 #endif
 
 #include "randomness.h"
@@ -24,7 +24,7 @@ int rand_bytes(uint8_t* dst, size_t len) {
   return 0;
 }
 #elif defined(OQS)
-#include "oqs/rand.h"
+#include <oqs/rand.h>
 
 int rand_bytes(uint8_t* dst, size_t len) {
   OQS_randombytes(dst, len);
@@ -51,7 +51,7 @@ int rand_bytes(uint8_t* dst, size_t len) {
   return 0;
 }
 #elif defined(__APPLE__) && defined(HAVE_APPLE_FRAMEWORK)
-#include "Security/Security.h"
+#include <Security/Security.h>
 
 int rand_bytes(uint8_t* dst, size_t len) {
   if (SecRandomCopyBytes(kSecRandomDefault, len, dst) == errSecSuccess) {
@@ -61,15 +61,15 @@ int rand_bytes(uint8_t* dst, size_t len) {
 }
 #elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__NETBSD__) ||   \
     defined(__NetBSD__)
-#include "sys/types.h"
-#include "sys/stat.h"
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 
 #if defined(__linux__)
-#include "linux/random.h"
-#include "sys/ioctl.h"
+#include <linux/random.h>
+#include <sys/ioctl.h>
 #endif
 
 #if !defined(O_NOFOLLOW)
@@ -119,7 +119,7 @@ int rand_bytes(uint8_t* dst, size_t len) {
   return 0;
 }
 #elif defined(_WIN16) || defined(_WIN32) || defined(_WIN64)
-#include "windows.h"
+#include <windows.h>
 
 int rand_bytes(uint8_t* dst, size_t len) {
   if (len > ULONG_MAX) {

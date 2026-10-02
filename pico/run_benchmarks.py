@@ -177,21 +177,11 @@ SKETCHES = [
     # --- HAWK (lattice/NTRU): withdrawn by its team from the NIST process (round 3, 2026) ---
     S("hawk_bench",    "HAWK-512",             120,  BOTH,  40, flags="-DPICO_VARIANT_512"),
     S("hawk_bench",   "HAWK-1024",            150,  BOTH,  60, flags="-DPICO_VARIANT_1024"),
-    # --- QR-UOV (round 2 package; round 3 has its own) ---
-    S("qruov_zoo_bench", "QR-UOV-cat1",          120,  BOTH,  45,  # 64 KB big stack: 180 KB + its statics overflow the RP2040
-      flags="-DBIG_STACK_BYTES=65536u -DQRUOV_q=127 -DQRUOV_L=3 -DQRUOV_v=156 -DQRUOV_m=54 -DQRUOV_fc=1 -DQRUOV_fe=1 -DQRUOV_fc0=1 -DQRUOV_security_strength_category=1 -DCRYPTO_SECRETKEYBYTES=32 -DCRYPTO_PUBLICKEYBYTES=24256 -DCRYPTO_BYTES=200"),
-    # QR-UOV L1 sets via one shared -D-parameterized src (qruov_zoo_bench). fc/fe/fc0 from the
-    # clone's qruov_config.src; sizes from api_h_gen. Host-verified roundtrips. RP2350 only: sign.c keeps
-    # two static P3 tables, which with the big stack exceed the RP2040's 264 KB (found by a full compile check).
-    S("qruov_zoo_bench", "QR-UOV-q31-L3-v165-m60",  180, ("rp2350",),  70,
-      note="RP2040: 180 KB big stack + 2 x 72 KB static P3 (sign.c) + 23 KB pk = ~350 KB > 264 KB SRAM (link fails)",
-      flags="-DQRUOV_q=31 -DQRUOV_L=3 -DQRUOV_v=165 -DQRUOV_m=60 -DQRUOV_fc=1 -DQRUOV_fe=1 -DQRUOV_fc0=1 -DQRUOV_security_strength_category=1 -DCRYPTO_SECRETKEYBYTES=32 -DCRYPTO_PUBLICKEYBYTES=23641 -DCRYPTO_BYTES=157"),
-    S("qruov_zoo_bench", "QR-UOV-q31-L10-v600-m70", 240, ("rp2350",),  90,
-      note="RP2040: the static data needs ~276 KB > 264 KB SRAM (link fails)",
-      flags="-DQRUOV_q=31 -DQRUOV_L=10 -DQRUOV_v=600 -DQRUOV_m=70 -DQRUOV_fc=5 -DQRUOV_fe=3 -DQRUOV_fc0=1 -DQRUOV_security_strength_category=1 -DCRYPTO_SECRETKEYBYTES=32 -DCRYPTO_PUBLICKEYBYTES=12266 -DCRYPTO_BYTES=435"),
-    S("qruov_zoo_bench", "QR-UOV-q7-L10-v740-m100", 300, ("rp2350",), 145,
-      note="biggest L1: sign 143 KB stack + 230 KB statics; RP2350-only. big-stack right-sized 256->176 KB to free heap.",
-      flags="-DQRUOV_q=7 -DQRUOV_L=10 -DQRUOV_v=740 -DQRUOV_m=100 -DQRUOV_fc=2 -DQRUOV_fe=1 -DQRUOV_fc0=1 -DQRUOV_security_strength_category=1 -DCRYPTO_SECRETKEYBYTES=32 -DCRYPTO_PUBLICKEYBYTES=20641 -DCRYPTO_BYTES=331"),
+    # --- QR-UOV round 3 (spec v3.0): the package's reference code, SHAKE PRG; -DQRUOV_PARAM_<set> picks the set and the
+    #     big stack is the host-measured peak + margin. All five level 1 sets fit the RP2040 now (round 2: cat1 only).
+    *[S("qruov_bench", f"QR-UOV-{p} round 3", t, BOTH, kb, flags=f"-DQRUOV_PARAM_{p} -DPRG_IS_AES=0 -DBIG_STACK_BYTES={kb * 1024}u")
+      for p, t, kb in (("1q127L3", 120, 48), ("1q31L3", 120, 48), ("1q127L10", 180, 88), ("1q31L10", 240, 104),
+                       ("1q7L10", 300, 160))],
     # UOV ov-Ip classic: keygen needs ~504 KB scratch (infeasible) -> keypair baked in flash;
     # sign/verify read the key by const pointer (XIP) with a few KB stack, so both boards run.
     # Round 2 parameters: round 3 changed UOV-Ip (pk 321,300 B, sig 135 B); needs the round 3 source + new baked keys.
@@ -211,34 +201,32 @@ SKETCHES = [
     S("slhdsa_bench", "SLH-DSA-SHAKE-192s", 900,  BOTH, 25, flags="-DPICO_VARIANT_shake_192s"),
     S("slhdsa_bench",  "SLH-DSA-SHA2-256s", 1500,  BOTH, 30, flags="-DPICO_VARIANT_sha2_256s"),
     S("slhdsa_bench", "SLH-DSA-SHAKE-256s",1500,  BOTH, 30, flags="-DPICO_VARIANT_shake_256s"),
-    # SDitH threshold variant (2023, round 1 code; round 3 is SDitH v3, Aug 2026)
-    S("sdith_bench",     "SDitH-thr-cat1",  1200, BOTH, 230, flags="-DPICO_VARIANT_cat1"),  # 48 KB stack + 166 KB heap
+    # --- SQIsign round 3 (the-sqisign "third-round version"): ref build, 32-bit field arithmetic, mini-GMP, as a
+    #     precompiled library (sqisign_bench/make_sqisign_lib.sh; its KATs match the official ones). No heap; the big
+    #     stack is the host-measured peak + margin. Signing takes minutes on the M0+: few iterations, long timeouts.
+    S("sqisign_bench", "SQIsign-I round 3",   1800, BOTH, 128, flags="-DSQISIGN_LVL1 -DBIG_STACK_BYTES=131072u -DITERS=5"),
+    S("sqisign_bench", "SQIsign-III round 3", 3600, BOTH, 168, flags="-DSQISIGN_LVL3 -DBIG_STACK_BYTES=172032u -DITERS=3"),
+    S("sqisign_bench", "SQIsign-V round 3",   7200, BOTH, 216, flags="-DSQISIGN_LVL5 -DBIG_STACK_BYTES=221184u -DITERS=3"),
 
     # === RP2350-ONLY "candidates" =========================================
     # Size-feasible on the 520 KB RP2350 but TOO BIG for the 264 KB RP2040, so they are
     # gated off on RP2040 and only attempted on RP2350 with --candidates. They are NOT
     # yet hardware-validated. cat5 of SDitH exceeds even 520 KB and is omitted.
-    # SDitH-thr-cat3: keys baked in flash; host-measured footprint is TINY (sign 20 KB stack + 25 KB heap,
-    # verify 2 KB + 25 KB) - NOT a RAM problem. If it "STUCK"s on device it is slow MPCitH compute (minutes/
-    # sign), not memory; the runner's serial-drop heuristic false-positives on long silent computes.
-    S("sdith_bench", "SDitH-thr-cat3",      1800, ("rp2350",), 45, tier="candidate",
-      note="keys baked; measured 20 KB stack + 25 KB heap. Fault is compute-time, not RAM - needs real serial dump.", flags="-DPICO_VARIANT_cat3"),
-    # SDitH v2 (VOLE-in-the-head, gf2): BLOCKED on 32-bit. Its GF(2^128) arithmetic and AES-CTR use __uint128_t, which
-    # arm-none-eabi-gcc lacks on the M0+ / M33. Needs a portable {u64 lo, hi} port, cross-checked bit-exact. No source here.
-    S("sdith2_bench", "SDitH2-L1-gf2-fast",    1800, (), 278, tier="infeasible",
-      note="won't compile on 32-bit: __uint128_t GF128/AES - needs a 32-bit port."),
-    S("sdith2_bench", "SDitH2-L1-gf2-short",   2400, (), 355, tier="infeasible",
-      note="won't compile on 32-bit: __uint128_t - needs a 32-bit port."),
-    # FAEST 2.0 (round 2; round 3 is FAEST 3.0, Aug 2026). One src, -DPICO_VARIANT_<v> picks the set.
-    S("faest_bench",    "FAEST-128f",       3600, ("rp2350",), 9, tier="candidate",
-      note="host-measured TINY: sign 6.7 KB stack + 2.4 KB heap. Not a RAM problem; fault is compute-time (minutes/sign) - needs real serial dump.", flags="-DPICO_VARIANT_128f"),
-    S("faest_bench", "FAEST-EM-128f",    3600, ("rp2350",), 280, tier="candidate",
-      note="Even-Mansour OWF variant; heap ~ FAEST-128f; sig 5060 (< AES 5924). Very slow.", flags="-DPICO_VARIANT_em_128f"),
-    S("faest_bench", "FAEST-192f",          5400, ("rp2350",), 400, tier="candidate",
-      note="heap > 128f; may approach 520 KB - test. Very slow.", flags="-DPICO_VARIANT_192f"),
-    S("faest_bench", "FAEST-256f",          7200, ("rp2350",), 500, tier="candidate",
-      note="heap ~500 KB; right at the 520 KB edge - test. Very slow.", flags="-DPICO_VARIANT_256f"),
-    # SQIsign: __uint128_t -> won't compile on 32-bit (M0+ OR M33); needs a 32-bit-radix field port.
+    # SDitH v3 (round 3, Aug 2026; VOLE-in-the-head): sign needs a 335 KB scratch buffer at cat 1 fast (959 KB short),
+    # verify 329 KB: not on the RP2040. Its GF(2^128) code also uses __uint128_t, which arm-none-eabi-gcc lacks on 32-bit
+    # targets, so even the RP2350 needs a {u64 lo, hi} port first. Recorded, not built.
+    S("sdith_bench", "SDitH-cat1-fast round 3",  1800, (), 335, tier="infeasible",
+      note="sign scratch 335 KB > RP2040 SRAM; RP2350 also needs a 32-bit port of its __uint128_t GF(2^128) code"),
+    # FAEST 3.0 (round 3): one src (faest_bench/update_src.sh), -DPICO_VARIANT_<v> picks the set. Host peaks: sign heap
+    # 341 KB (128f), 267 KB (EM-128f), 981 KB (192f), 1,587 KB (256f); stack under 7 KB. RP2350 only, and only the 128 sets.
+    S("faest_bench", "FAEST-128f round 3",     3600, ("rp2350",), 345, tier="candidate",
+      note="sign heap 341 KB > RP2040 SRAM", flags="-DPICO_VARIANT_128f"),
+    S("faest_bench", "FAEST-EM-128f round 3",  3600, ("rp2350",), 270, tier="candidate",
+      note="sign heap 267 KB > RP2040 SRAM", flags="-DPICO_VARIANT_em_128f"),
+    S("faest_bench", "FAEST-192f round 3",     5400, (), 981, tier="infeasible", note="sign heap 981 KB > 520 KB",
+      flags="-DPICO_VARIANT_192f"),
+    S("faest_bench", "FAEST-256f round 3",     7200, (), 1587, tier="infeasible", note="sign heap 1,587 KB > 520 KB",
+      flags="-DPICO_VARIANT_256f"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -361,7 +349,8 @@ def save_mqtt(blocks, txt, family, sig, fqbn):
     save_sweep([b for b in blocks if b["stage"] == "sweep"], res, tag, sig, family, fqbn, cfg)
     save_kex([b for b in blocks if b["stage"] == "kex"], res, tag, family, fqbn, cfg)
     lib = next((b["lib"] for b in blocks if b["lib"].startswith("wolfSSL")), "")
-    (res / f"versions_{tag}.json").write_text(json.dumps(dict(board=family, fqbn=fqbn, wolfssl=lib[8:]), indent=2))
+    if lib:  # the KEM-exchange firmware prints no #lib line: keep the version the other sketches recorded
+        (res / f"versions_{tag}.json").write_text(json.dumps(dict(board=family, fqbn=fqbn, wolfssl=lib[8:]), indent=2))
     print(f"    MQTT rows: {res}/{{mqtt_mtls,pipeline}}_summary_{tag}.csv")
 
 SWEEP_COLS = ("mode,sig,group,n,mean_ms,median_ms,std_ms,min_ms,max_ms,p90_ms,p99_ms,ops_s,hs_tx_B,hs_rx_B,hs_B,"
@@ -743,6 +732,9 @@ def main():
         print(f"Preparing the liboqs{' round 3' if r3 else ''} Arduino library (liboqs_bench/make_liboqs_lib.sh) ...")
         sh([BASH, os.path.join(SKETCH_DIR, "liboqs_bench", "make_liboqs_lib.sh")],
            env=dict(os.environ, LIBOQS_KECCAK=args.keccak or "", LIBOQS_ROUND="3" if r3 else ""))
+    if any(s["folder"] == "sqisign_bench" for s in work):
+        print("Preparing the SQIsign Arduino library (sqisign_bench/make_sqisign_lib.sh) ...")
+        sh([BASH, os.path.join(SKETCH_DIR, "sqisign_bench", "make_sqisign_lib.sh")])
     if any(s["folder"] in ("wolfssl_bench", "mqtt_tls_bench") for s in work):
         print("Preparing the wolfSSL Arduino library (wolfssl_bench/make_wolfssl_lib.sh) ...")
         sh([BASH, os.path.join(SKETCH_DIR, "wolfssl_bench", "make_wolfssl_lib.sh")])
@@ -796,7 +788,7 @@ def main():
             cmd += ["--build-path", os.path.join(outdir, "build"),
                     "--build-property", f"compiler.c.extra_flags={flags}",
                     "--build-property", f"compiler.cpp.extra_flags={flags}"]
-        if s["folder"] in ("wolfssl_bench", "liboqs_bench", "mqtt_tls_bench"):
+        if s["folder"] in ("wolfssl_bench", "liboqs_bench", "mqtt_tls_bench", "sqisign_bench"):
             cmd += ["--libraries", WOLF_LIBS + {"liboqs+xkcp": "-xkcp", R3: "-r3"}.get(s["lib"], "")]
         if wifi:  # time the handshake's own crypto per connection: wolfSSL's calls go through hs_timing.c
             cmd += ["--build-property", "compiler.c.elf.extra_flags=" + hs_wrap_flags(path)]

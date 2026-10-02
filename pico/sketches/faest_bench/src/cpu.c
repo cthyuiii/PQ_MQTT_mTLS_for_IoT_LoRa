@@ -4,7 +4,7 @@
  */
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#include <config.h>
 #else
 #if !defined(HAVE_SYS_AUXV_H) && defined(__linux__)
 #define HAVE_SYS_AUXV_H
@@ -19,8 +19,8 @@
 
 #if !defined(BUILTIN_CPU_SUPPORTED) || defined(BUILTIN_CPU_SUPPORTED_BROKEN_BMI2)
 #if defined(__arm__) && defined(HAVE_SYS_AUXV_H) && defined(HAVE_ASM_HWCAP_H)
-#include "asm/hwcap.h"
-#include "sys/auxv.h"
+#include <asm/hwcap.h>
+#include <sys/auxv.h>
 
 static unsigned int init_caps(void) {
   unsigned int caps = 0;
@@ -34,7 +34,7 @@ static unsigned int init_caps(void) {
     (defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER))
 
 #ifdef _MSC_VER
-#include "intrin.h"
+#include <intrin.h>
 
 static unsigned init_caps(void) {
   unsigned int caps = 0;
@@ -72,7 +72,7 @@ static unsigned init_caps(void) {
   return caps;
 }
 #else
-#include "cpuid.h"
+#include <cpuid.h>
 
 static unsigned init_caps(void) {
   unsigned int caps = 0;

@@ -4,7 +4,7 @@
  */
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#include <config.h>
 #else
 #include "macros.h"
 
@@ -33,7 +33,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #if !defined(HAVE_POSIX_MEMALIGN) || defined(__MING32__) || defined(__MING64__) || defined(_MSC_VER)
-#include "malloc.h"
+#include <malloc.h>
 #endif
 
 #if defined(HAVE_POSIX_MEMALIGN)
@@ -129,7 +129,7 @@ int faest_timingsafe_bcmp(const void* a, const void* b, size_t len) {
 
 #if !defined(HAVE_EXPLICIT_BZERO)
 #if defined(_WIN32)
-#include "windows.h"
+#include <windows.h>
 #endif
 
 void faest_explicit_bzero(void* a, size_t len) {

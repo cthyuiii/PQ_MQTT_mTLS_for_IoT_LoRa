@@ -199,7 +199,7 @@ Check:
 3. `pico/logs/results.csv`: `RUNTIME_MEMORY_FAIL` / `STACK_OVERFLOW` rows are results the plan
    wants reported, not errors to hide.
 4. Watch the first hardware runs of `wolfssl_bench`, `liboqs_bench` and the new `mqtt_tls_bench` pipeline.
-   - `mqtt_tls_bench` should end `OK (83 MQTT blocks)`: 3 connect blocks, 3 modes × 9 schemes × up / down, then
+   - `mqtt_tls_bench` should end `OK (89 MQTT blocks)`: 3 connect blocks, 3 modes × 10 schemes × up / down, then
      TLS / mTLS × 13 key-exchange groups.
      - Each block is `#block <stage> <mode> [<scheme> <up|down>]`. The stage is `connect` (Stage 2: one row
        per connection) or `pipeline` (connections plus one row per message). The mode is the transport:
@@ -622,7 +622,9 @@ GCM and Ascon (our alternatives to LoRaWAN's scheme):
 Key size, 128 vs 256 bits, per AES mode:
 - **CTR:** LoRaWAN defines AES-128 only. `aes256ctr` is its 1.0.x frame with AES-256-CTR and an AES-256-CMAC
   MIC (NIST SP 800-38B allows any AES key); the MIC key is NwkSKey ‖ the second network key. It isn't
-  standard LoRaWAN; it shows what a 256-bit key costs in LoRaWAN's own construction.
+  standard LoRaWAN; it shows what a 256-bit key costs in LoRaWAN's own construction. `lorawan11_256` does the same
+  for the 1.1 frame: AES-256-CTR, and the 1.1 MIC rules (two CMACs per uplink, one per downlink) with AES-256-CMAC
+  keys nwk ‖ nwk2 and nwk2 ‖ nwk.
 - **GCM / CCM:** 128 and 256 each. AES-256 runs 14 rounds instead of 10, so expect about 40 % more time per
   block on chips without AES instructions (the Pico).
 - All run on the same frame, so the byte overhead stays 4 B (CTR + MIC) or 16 B (AEAD tag) either way.

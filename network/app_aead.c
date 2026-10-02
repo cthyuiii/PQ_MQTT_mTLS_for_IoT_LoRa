@@ -17,11 +17,12 @@
 #include "crypto_aead.h"  /* ascon-c: crypto_aead_encrypt / decrypt */
 #endif
 
-enum { NONE, LW10, LW11, CTR256, GCM128, GCM256, CCM128, CCM256, ASCON };
-const char *const APP_AEAD_NAMES[] = {"lorawan10", "lorawan11", "aes256ctr", "aes128gcm", "aes256gcm",
+enum { NONE, LW10, LW11, CTR256, LW11_256, GCM128, GCM256, CCM128, CCM256, ASCON };
+const char *const APP_AEAD_NAMES[] = {"lorawan10", "lorawan11", "aes256ctr", "lorawan11_256", "aes128gcm", "aes256gcm",
                                       "aes128ccm", "aes256ccm", "ascon", NULL};
 static const char *const LABELS[] = {"none", "LoRaWAN-1.0.x AES-128-CTR+CMAC", "LoRaWAN-1.1 AES-128-CTR+2xCMAC",
-                                     "AES-256-CTR+CMAC (LoRaWAN 1.0.x frame, 256-bit keys)", "AES-128-GCM", "AES-256-GCM",
+                                     "AES-256-CTR+CMAC (LoRaWAN 1.0.x frame, 256-bit keys)",
+                                     "AES-256-CTR+2xCMAC (LoRaWAN 1.1 frame, 256-bit keys)", "AES-128-GCM", "AES-256-GCM",
                                      "AES-128-CCM", "AES-256-CCM", "Ascon-AEAD128"};
 enum { CCM_N = 13 };  /* CCM nonce bytes (L = 2: payloads up to 64 KiB), as IEEE 802.15.4's CCM* */
 
@@ -29,7 +30,8 @@ static int kind = -1;
 static unsigned char k_app[32], k_nwk[16], k_nwk2[16], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
 static EVP_CIPHER_CTX *ctr, *gcm, *ccm;
 static EVP_MAC_CTX *cmac_f, *cmac_s;
-static int is_ctr(void) { return kind == LW10 || kind == LW11 || kind == CTR256; }  /* LoRaWAN frame: CTR + 4-byte MIC */
+static int is_ctr(void) { return kind == LW10 || kind == LW11 || kind == CTR256 || kind == LW11_256; }  /* LoRaWAN frame */
+static int is_lw11(void) { return kind == LW11 || kind == LW11_256; }  /* two network keys, 1.1 MIC rules */
 
 static EVP_MAC_CTX *cmac_new(const unsigned char *key, int len) {
     EVP_MAC *m = EVP_MAC_fetch(NULL, "CMAC", NULL);
@@ -74,11 +76,14 @@ static void rebuild(void) {  /* (re)key every context from the current keys */
     ctr = gcm = ccm = NULL; cmac_f = cmac_s = NULL;
     if (is_ctr()) {
         ctr = EVP_CIPHER_CTX_new();
-        EVP_EncryptInit_ex(ctr, kind == CTR256 ? EVP_aes_256_ctr() : EVP_aes_128_ctr(), NULL, k_app, NULL);
-        if (kind == CTR256) {  /* 256-bit CMAC key = NwkSKey | the second network key (the frame has one MIC) */
-            unsigned char k[32];
-            memcpy(k, k_nwk, 16); memcpy(k + 16, k_nwk2, 16);
-            cmac_f = cmac_new(k, 32);
+        int k256 = kind == CTR256 || kind == LW11_256;
+        EVP_EncryptInit_ex(ctr, k256 ? EVP_aes_256_ctr() : EVP_aes_128_ctr(), NULL, k_app, NULL);
+        if (k256) {  /* 256-bit CMAC keys from the two 128-bit network keys: F = nwk | nwk2, S (1.1) = nwk2 | nwk. Benchmark
+                      * keys: a deployment would hold two independent 256-bit keys; the cost per CMAC is the same */
+            unsigned char kf[32], ks[32];
+            memcpy(kf, k_nwk, 16); memcpy(kf + 16, k_nwk2, 16); memcpy(ks, k_nwk2, 16); memcpy(ks + 16, k_nwk, 16);
+            cmac_f = cmac_new(kf, 32);
+            if (kind == LW11_256) cmac_s = cmac_new(ks, 32);
         } else cmac_f = cmac_new(k_nwk, 16);
         if (kind == LW11) cmac_s = cmac_new(k_nwk2, 16);
     } else if (kind == GCM128 || kind == GCM256) {
@@ -123,10 +128,10 @@ int app_aead_max_payload(void) { return is_ctr() ? 255 - APP_HDR : kind == CCM12
 static void mic(const unsigned char *msg, int n, int down, uint32_t fcnt, unsigned char out[4]) {
     unsigned char b0[16], f[16], s[16];
     block(b0, 0x49, down, fcnt, (unsigned char)n);
-    if (kind == LW11 && down) { cmac(cmac_s, b0, msg, n, s); memcpy(out, s, 4); return; }  /* 1.1 downlink: one CMAC,
+    if (is_lw11() && down) { cmac(cmac_s, b0, msg, n, s); memcpy(out, s, 4); return; }  /* 1.1 downlink: one CMAC,
         SNwkSIntKey, B0 with ConfFCnt = 0 (no ACK); 1.0.x downlinks are the same B0 under NwkSKey, below */
     cmac(cmac_f, b0, msg, n, f);
-    if (kind != LW11) { memcpy(out, f, 4); return; }  /* 1.0.x, and the 256-bit-key variant of its frame */
+    if (!is_lw11()) { memcpy(out, f, 4); return; }  /* 1.0.x, and the 256-bit-key variant of its frame */
     /* 1.1 uplink: B1 = 0x49 | ConfFCnt | TxDr | TxCh | Dir | DevAddr | FCnt | 0 | len; with ConfFCnt,
      * TxDr, TxCh = 0 its bytes equal B0, the second key is what differs. MIC = cmacS[0..1] | cmacF[0..1] */
     cmac(cmac_s, b0, msg, n, s);
@@ -141,7 +146,7 @@ int app_seal(int down, uint32_t fcnt, const unsigned char *pt, int len, unsigned
     case NONE:
         memcpy(ct, pt, len);
         return APP_HDR + len;
-    case LW10: case LW11: case CTR256:
+    case LW10: case LW11: case CTR256: case LW11_256:
         if (len > app_aead_max_payload()) return -1;
         block(iv, 0x01, down, fcnt, 1);  /* A_1; CTR increments the last byte -> A_2, A_3, ... */
         EVP_EncryptInit_ex(ctr, NULL, NULL, NULL, iv);
@@ -190,7 +195,7 @@ int app_open(const unsigned char *in, int len, unsigned char *pt) {
     case NONE:
         memcpy(pt, ct, body);
         return body;
-    case LW10: case LW11: case CTR256:
+    case LW10: case LW11: case CTR256: case LW11_256:
         mic(in, len - 4, down, fcnt, m);
         if (CRYPTO_memcmp(m, in + len - 4, 4)) return -1;
         block(iv, 0x01, down, fcnt, 1);

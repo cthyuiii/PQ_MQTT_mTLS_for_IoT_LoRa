@@ -1,6 +1,6 @@
 /* faest_192f_bench.ino, verbatim except include paths: "src/x" -> "x", "x" -> "../x" for files beside the sketch (this file lives in src/) */
-// faest_192f_bench.ino - FAEST-192f (NIST round-2 onramp, AES/VOLE-in-the-head) on RP2040 / Pico W.
-//   Source: FAEST_flat/faest_192f (pure-C AES, no OpenSSL; bundled Keccak), flattened in src/.
+// faest_192f_bench.ino - FAEST-192f (FAEST 3.0, NIST additional signatures round 3; VOLE-in-the-head) on RP2040 / Pico W.
+//   Source: faest-ref v3.0.0 (pure-C AES, no OpenSSL; bundled Keccak), generated + flattened into src/ by update_src.sh.
 //   Build flags baked into src/faest_config_pico.h (HAVE_RANDOMBYTES + PQCLEAN, no autoconf config.h).
 //   Host-verified (open=OK). MPCitH = compute-heavy; n low. Board: "Raspberry Pi Pico W". Serial @115200.
 

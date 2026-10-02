@@ -938,6 +938,71 @@ Pico W's pipeline; no run of the new form yet)
     - **HAWK has been withdrawn** by its team from the NIST process [37]; its rows stay as measured.
     - **Eliminated in round 3:** CROSS, LESS, Mirath, PERK, RYDE. None of them is benchmarked here.
 
+88. [Pico, Pi] **The second Pico W run against the Pi 4's brokers (`pi_broker2`, 2-3 Oct): checked, valid.** RSA-2048 to
+    ML-DSA-65 were flashed from the Mac until it kernel-panicked; ML-DSA-65 to Falcon-1024 and the KEM exchange were
+    then run from the Pi (the runner merges per signature, so ML-DSA-65's partial rows were replaced).
+    - **Complete:** 19 connect rows (9 certificates x TLS / mTLS + plain), each n = 50, all OK; 342 / 342 pipeline blocks
+      OK with 600 messages each; 234 sweep rows; 7 / 7 KEM exchanges, n = 50. No duplicate rows.
+    - **Repeatable:** 16 of the 18 handshake medians (all 9 TLS, 7 of 9 mTLS) are within 2% of the first Pi-broker run
+      (finding 86); the other two are ML-DSA-65 and ML-DSA-87 mTLS (below). The message round trip is 6.5 ms (6.7), seal / open medians agree to 0.2%, and the KEM
+      exchange totals agree (ML-KEM-768 31.5 ms, X25519MLKEM768 151.4 ms). The flashing host (Mac or Pi) makes no
+      difference.
+    - **ML-DSA mTLS moves between runs, in both directions** (ML-DSA-65 772 vs 644 ms, ML-DSA-87 791 vs 897 ms): only
+      the Pico's signing changes. ML-DSA signs by rejection sampling, so one signature takes 52-480 ms (ML-DSA-44,
+      10th-90th percentile); with 50 connections the median signing time moved by 8-60% between the two runs. Verify and
+      key share are identical. Report ML-DSA mTLS from the two runs together, or with more connections.
+    - **Sweep losses are not random:** besides the 36 expected ML-KEM-512 hybrid failures (9 certificates x 2 groups x
+      TLS / mTLS), 3 blocks were lost and all are `p384_mlkem768`, the group right after those two failing hybrids. The
+      first Pi-broker run lost 5 of its 6 blocks the same way. After two refused handshakes, the Pico's next TCP connect
+      stalls (watchdog). Moving the two hybrids to the end of the sweep would stop them taking a measured group down.
+      One more block, Falcon-1024 TLS with SecP384r1MLKEM1024, stopped after 12 of 20 connections with wolfSSL's Buffer
+      error: the largest certificate with the largest key share, near the RP2040's RAM limit.
+    - **Fixed in the runner:** the KEM-exchange firmware prints no wolfSSL version, and as the last sketch it overwrote
+      `versions_pico_rp2040_pi_broker2.json` with an empty one (the sweep rows then read "OpenSSL (version not
+      recorded)" in `all_results.csv`). The runner now keeps the recorded version; this run's file was restored to
+      5.9.4, the version its own KEM rows carry.
+89. [all] **Falcon / FN-DSA and fixed point (checked 3 Oct 2026).** On 28 Sep 2026 NIST's FIPS 206 team published a new
+    plan for FN-DSA, for comment: key generation and signing in fixed-point arithmetic only (32.32 for key generation,
+    64.64 for signing), one fully specified signing procedure that KATs can test, and no floating point in the FIPS
+    itself; verification and key generation stay compatible [39, 40]. FIPS 206 is not final.
+    - **Every Falcon in this repo is still the round 3 floating-point design:** liboqs 0.16 and main (PQClean-derived;
+      `fpr` = IEEE-754 binary64 emulated with 64-bit integers in the clean code, native double in the aarch64 / avx2
+      code), the Pico's PQClean sketch (integer emulation), wolfSSL 5.9.4 (its default integer `fpr` emulation on the
+      Pico, `--enable-falcon=double` on the Mac and Pi), and OpenSSL through oqs-provider (liboqs). Emulating floating
+      point with integers is not fixed point: it reproduces binary64 rounding.
+    - **What changes when fixed-point FN-DSA lands:** verification is integer-only already, so the verify numbers stand.
+      Signing and key generation numbers would need a re-run with a fixed-point implementation; none of liboqs (main,
+      29 Sep), wolfSSL 5.9.4 or PQClean has one yet, and PQClean has since been archived.
+
+90. [Pico, Mac] **SDitH, FAEST, SQIsign and QR-UOV moved to their round 3 code for the Pico (3 Oct 2026).** Each port was
+    checked on the Mac before it reached a board: the Pico build's KAT file (100 key pairs, signatures, verifications)
+    is byte-identical to the official round 3 code's.
+    - **QR-UOV** (spec v3.0, `qruov_bench`): the package's reference code, with its OpenSSL SHAKE layer replaced by
+      PQClean's FIPS202 (PRG = SHAKE). KAT-identical for all five level 1 sets. Round 3 needs far less memory than
+      round 2: host stack peaks (keygen / sign / verify) are 27 / 25 / 21 KB (1q127L3), 31 / 29 / 24 KB (1q31L3),
+      56 / 59 / 51 KB (1q127L10), 70 / 74 / 63 KB (1q31L10) and 114 / 122 / 102 KB (1q7L10), with no large static
+      tables. All five sets now link for the RP2040; in round 2 only cat1 (1q127L3) fitted.
+    - **SQIsign** (the "third-round version"; new primes p324 / p500 / p664 for levels I / III / V): its portable ref
+      build with 32-bit field arithmetic (`GF_RADIX=32`), mini-GMP and `SQISIGN_SINGLE_THREADED` (no thread-local
+      storage on bare metal) is KAT-identical at all three levels. No heap; host stack peaks 73 / 102 / 39 KB (I),
+      97 / 136 / 62 KB (III), 131 / 185 / 82 KB (V). All three link for the RP2040 (`sqisign_bench`). Round 2's
+      SQIsign needed `__uint128_t` and could not be built for the Pico at all.
+    - **FAEST 3.0** (31 Aug 2026, `faest_bench` regenerated by `update_src.sh`, 32-bit Keccak as its meson build picks):
+      KAT-identical for 128f, EM-128f, 192f and 256f. But signing now needs a large heap: 341 KB (128f), 267 KB
+      (EM-128f), 981 KB (192f), 1,587 KB (256f); verify about half. So no FAEST set fits the RP2040, only the two 128
+      sets fit an RP2350, and 192f / 256f fit neither. (The old sketch's note, 2.4 KB of heap for FAEST 2.0, does not
+      hold for 3.0.)
+    - **SDitH v3** (Aug 2026): signing needs a 335 KB scratch buffer at cat 1 fast (959 KB short), verifying 329 KB,
+      so it cannot run on the RP2040; on an RP2350 it would also need its `__uint128_t` GF(2^128) code ported to
+      32-bit first. Recorded in the runner, not built; the round 1 `sdith_bench` is removed.
+    - Not yet run on the board. The host stage (`run_all.sh` reference stages) still uses the older code for these four.
+91. [Mac, Pico] **LoRaWAN 1.1 with 256-bit keys (`lorawan11_256`, 3 Oct 2026).** The 1.1 frame with AES-256-CTR and the
+    1.1 MIC rules on AES-256-CMAC: two CMACs per uplink (keys nwk | nwk2 and nwk2 | nwk), one per downlink. Like
+    `aes256ctr` for 1.0.x, it is not standard LoRaWAN (AES-128 only): it shows what 256-bit keys cost in LoRaWAN's own
+    construction. Host (OpenSSL) and Pico (BearSSL) frames are byte-identical (80 / 80 in `pico/tests/aead_host_test`,
+    10 schemes x up / down x 4 sizes), and the host self-test passes. The pipeline now has 10 schemes (89 Pico
+    blocks). Not yet measured through the broker.
+
 ### Sources
 
 All links checked on 28 Sep 2026.
@@ -991,6 +1056,8 @@ All links checked on 28 Sep 2026.
 36. T. Reddy et al., *Use of SLH-DSA in TLS 1.3*, IETF draft `draft-reddy-tls-slhdsa-02` (SLH-DSA signature codepoints). <https://datatracker.ietf.org/doc/draft-reddy-tls-slhdsa/>
 37. NIST, *Round 3 Additional Signatures* (candidates, submission packages, HAWK's withdrawal). <https://csrc.nist.gov/projects/pqc-dig-sig/round-3-additional-signatures>
 38. PostQuantum.com, *NIST Selects 9 Third-Round PQC Signature Candidates* (the five eliminated, the 14 Aug 2026 tweak deadline, SNOVA and the wedge attack). <https://postquantum.com/security-pqc/nist-third-round-pqc-signatures/>
+39. freenode, *NIST locks FN-DSA to fixed-point math for FIPS 206* (28 Sep 2026: 32.32 key generation, 64.64 signing, one KAT-testable signing procedure). <https://freenode.net/article/nist-locks-fn-dsa-to-fixed-point-math-for-fips-206>
+40. R. Perlner, *FIPS 206 Status Update*, NIST, 6th PQC Standardization Conference (2025). <https://csrc.nist.gov/csrc/media/Presentations/2025/fips-206-fn-dsa-(falcon)/images-media/fips_206-perlner_2.1.pdf>
 
 ## Future implementations (KIV)
 

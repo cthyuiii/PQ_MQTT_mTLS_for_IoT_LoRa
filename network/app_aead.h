@@ -6,6 +6,8 @@
  *                             downlink MIC = 4 bytes of one CMAC (SNwkSIntKey)
  *   aes256ctr  the 1.0.x frame with 256-bit keys (AES-256-CTR + AES-256-CMAC, 4-byte MIC; LoRaWAN itself is AES-128
  *              only): the key-size comparison for LoRaWAN's CTR mode. CMAC key = nwk | nwk2
+ *   lorawan11_256  the 1.1 frame with 256-bit keys: AES-256-CTR, and the 1.1 MIC rules with two AES-256-CMAC keys
+ *              (F = nwk | nwk2, S = nwk2 | nwk: benchmark keys from the same material, same cost as independent ones)
  *   aes128gcm / aes256gcm     AES-GCM, header as AAD, nonce from DevAddr|FCnt|Dir, 16-byte tag
  *   aes128ccm / aes256ccm     AES-CCM (CTR + CBC-MAC, as BLE / 802.15.4), header as AAD, 13-byte nonce, 16-byte tag
  *   ascon      Ascon-AEAD128 (SP 800-232), header as AAD, nonce from DevAddr|FCnt|Dir, 16-byte tag

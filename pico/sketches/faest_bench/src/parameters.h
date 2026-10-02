@@ -7,13 +7,15 @@
 
 #define FAEST_128F_BETA 1
 
-#define FAEST_128F_ELL 1280
+#define FAEST_128F_ELL 960
 
 #define FAEST_128F_LAMBDA 128
 
-#define FAEST_128F_Lenc 832
+#define FAEST_128F_Lenc 512
 
 #define FAEST_128F_Lke 448
+
+#define FAEST_128F_N_MULT 312
 
 #define FAEST_128F_Nst 4
 
@@ -29,29 +31,29 @@
 
 #define FAEST_128F_R 10
 
-#define FAEST_128F_SIG_SIZE 5924
+#define FAEST_128F_SIG_SIZE 5170
 
 #define FAEST_128F_SK_SIZE 32
 
-#define FAEST_128F_Senc 160
-
 #define FAEST_128F_Ske 40
 
-#define FAEST_128F_TAU 16
+#define FAEST_128F_TAU 17
 
-#define FAEST_128F_T_OPEN 110
+#define FAEST_128F_T_OPEN 108
 
 #define FAEST_128F_W_GRIND 8
 
 #define FAEST_128S_BETA 1
 
-#define FAEST_128S_ELL 1280
+#define FAEST_128S_ELL 960
 
 #define FAEST_128S_LAMBDA 128
 
-#define FAEST_128S_Lenc 832
+#define FAEST_128S_Lenc 512
 
 #define FAEST_128S_Lke 448
+
+#define FAEST_128S_N_MULT 312
 
 #define FAEST_128S_Nst 4
 
@@ -67,11 +69,9 @@
 
 #define FAEST_128S_R 10
 
-#define FAEST_128S_SIG_SIZE 4506
+#define FAEST_128S_SIG_SIZE 4066
 
 #define FAEST_128S_SK_SIZE 32
-
-#define FAEST_128S_Senc 160
 
 #define FAEST_128S_Ske 40
 
@@ -85,13 +85,15 @@
 
 #define FAEST_192F_BETA 2
 
-#define FAEST_192F_ELL 2496
+#define FAEST_192F_ELL 1728
 
 #define FAEST_192F_LAMBDA 192
 
-#define FAEST_192F_Lenc 1024
+#define FAEST_192F_Lenc 640
 
 #define FAEST_192F_Lke 448
+
+#define FAEST_192F_N_MULT 504
 
 #define FAEST_192F_Nst 4
 
@@ -107,11 +109,9 @@
 
 #define FAEST_192F_R 12
 
-#define FAEST_192F_SIG_SIZE 14948
+#define FAEST_192F_SIG_SIZE 11738
 
 #define FAEST_192F_SK_SIZE 40
-
-#define FAEST_192F_Senc 192
 
 #define FAEST_192F_Ske 32
 
@@ -123,13 +123,15 @@
 
 #define FAEST_192S_BETA 2
 
-#define FAEST_192S_ELL 2496
+#define FAEST_192S_ELL 1728
 
 #define FAEST_192S_LAMBDA 192
 
-#define FAEST_192S_Lenc 1024
+#define FAEST_192S_Lenc 640
 
 #define FAEST_192S_Lke 448
+
+#define FAEST_192S_N_MULT 504
 
 #define FAEST_192S_Nst 4
 
@@ -145,11 +147,9 @@
 
 #define FAEST_192S_R 12
 
-#define FAEST_192S_SIG_SIZE 11260
+#define FAEST_192S_SIG_SIZE 9410
 
 #define FAEST_192S_SK_SIZE 40
-
-#define FAEST_192S_Senc 192
 
 #define FAEST_192S_Ske 32
 
@@ -163,13 +163,15 @@
 
 #define FAEST_256F_BETA 2
 
-#define FAEST_256F_ELL 3104
+#define FAEST_256F_ELL 2208
 
 #define FAEST_256F_LAMBDA 256
 
-#define FAEST_256F_Lenc 1216
+#define FAEST_256F_Lenc 768
 
 #define FAEST_256F_Lke 672
+
+#define FAEST_256F_N_MULT 704
 
 #define FAEST_256F_Nst 4
 
@@ -185,29 +187,29 @@
 
 #define FAEST_256F_R 14
 
-#define FAEST_256F_SIG_SIZE 26548
+#define FAEST_256F_SIG_SIZE 20856
 
 #define FAEST_256F_SK_SIZE 48
 
-#define FAEST_256F_Senc 224
-
 #define FAEST_256F_Ske 52
 
-#define FAEST_256F_TAU 32
+#define FAEST_256F_TAU 33
 
-#define FAEST_256F_T_OPEN 246
+#define FAEST_256F_T_OPEN 229
 
 #define FAEST_256F_W_GRIND 8
 
 #define FAEST_256S_BETA 2
 
-#define FAEST_256S_ELL 3104
+#define FAEST_256S_ELL 2208
 
 #define FAEST_256S_LAMBDA 256
 
-#define FAEST_256S_Lenc 1216
+#define FAEST_256S_Lenc 768
 
 #define FAEST_256S_Lke 672
+
+#define FAEST_256S_N_MULT 696
 
 #define FAEST_256S_Nst 4
 
@@ -223,17 +225,15 @@
 
 #define FAEST_256S_R 14
 
-#define FAEST_256S_SIG_SIZE 20696
+#define FAEST_256S_SIG_SIZE 16626
 
 #define FAEST_256S_SK_SIZE 48
-
-#define FAEST_256S_Senc 224
 
 #define FAEST_256S_Ske 52
 
 #define FAEST_256S_TAU 22
 
-#define FAEST_256S_T_OPEN 245
+#define FAEST_256S_T_OPEN 225
 
 #define FAEST_256S_W_GRIND 6
 
@@ -241,13 +241,15 @@
 
 #define FAEST_EM_128F_BETA 1
 
-#define FAEST_EM_128F_ELL 960
+#define FAEST_EM_128F_ELL 640
 
 #define FAEST_EM_128F_LAMBDA 128
 
-#define FAEST_EM_128F_Lenc 832
+#define FAEST_EM_128F_Lenc 512
 
 #define FAEST_EM_128F_Lke 128
+
+#define FAEST_EM_128F_N_MULT 312
 
 #define FAEST_EM_128F_Nst 4
 
@@ -263,29 +265,29 @@
 
 #define FAEST_EM_128F_R 10
 
-#define FAEST_EM_128F_SIG_SIZE 5060
+#define FAEST_EM_128F_SIG_SIZE 4170
 
 #define FAEST_EM_128F_SK_SIZE 32
 
-#define FAEST_EM_128F_Senc 160
-
 #define FAEST_EM_128F_Ske 0
 
-#define FAEST_EM_128F_TAU 16
+#define FAEST_EM_128F_TAU 17
 
-#define FAEST_EM_128F_T_OPEN 112
+#define FAEST_EM_128F_T_OPEN 105
 
 #define FAEST_EM_128F_W_GRIND 8
 
 #define FAEST_EM_128S_BETA 1
 
-#define FAEST_EM_128S_ELL 960
+#define FAEST_EM_128S_ELL 640
 
 #define FAEST_EM_128S_LAMBDA 128
 
-#define FAEST_EM_128S_Lenc 832
+#define FAEST_EM_128S_Lenc 512
 
 #define FAEST_EM_128S_Lke 128
+
+#define FAEST_EM_128S_N_MULT 312
 
 #define FAEST_EM_128S_Nst 4
 
@@ -301,11 +303,9 @@
 
 #define FAEST_EM_128S_R 10
 
-#define FAEST_EM_128S_SIG_SIZE 3906
+#define FAEST_EM_128S_SIG_SIZE 3466
 
 #define FAEST_EM_128S_SK_SIZE 32
-
-#define FAEST_EM_128S_Senc 160
 
 #define FAEST_EM_128S_Ske 0
 
@@ -317,13 +317,15 @@
 
 #define FAEST_EM_192F_BETA 1
 
-#define FAEST_EM_192F_ELL 1728
+#define FAEST_EM_192F_ELL 1152
 
 #define FAEST_EM_192F_LAMBDA 192
 
-#define FAEST_EM_192F_Lenc 1536
+#define FAEST_EM_192F_Lenc 960
 
 #define FAEST_EM_192F_Lke 192
+
+#define FAEST_EM_192F_N_MULT 504
 
 #define FAEST_EM_192F_Nst 6
 
@@ -339,29 +341,29 @@
 
 #define FAEST_EM_192F_R 12
 
-#define FAEST_EM_192F_SIG_SIZE 12380
+#define FAEST_EM_192F_SIG_SIZE 9818
 
 #define FAEST_EM_192F_SK_SIZE 48
 
-#define FAEST_EM_192F_Senc 288
-
 #define FAEST_EM_192F_Ske 0
 
-#define FAEST_EM_192F_TAU 24
+#define FAEST_EM_192F_TAU 25
 
-#define FAEST_EM_192F_T_OPEN 176
+#define FAEST_EM_192F_T_OPEN 171
 
 #define FAEST_EM_192F_W_GRIND 8
 
 #define FAEST_EM_192S_BETA 1
 
-#define FAEST_EM_192S_ELL 1728
+#define FAEST_EM_192S_ELL 1152
 
 #define FAEST_EM_192S_LAMBDA 192
 
-#define FAEST_EM_192S_Lenc 1536
+#define FAEST_EM_192S_Lenc 960
 
 #define FAEST_EM_192S_Lke 192
+
+#define FAEST_EM_192S_N_MULT 504
 
 #define FAEST_EM_192S_Nst 6
 
@@ -377,11 +379,9 @@
 
 #define FAEST_EM_192S_R 12
 
-#define FAEST_EM_192S_SIG_SIZE 9340
+#define FAEST_EM_192S_SIG_SIZE 7874
 
 #define FAEST_EM_192S_SK_SIZE 48
-
-#define FAEST_EM_192S_Senc 288
 
 #define FAEST_EM_192S_Ske 0
 
@@ -393,13 +393,15 @@
 
 #define FAEST_EM_256F_BETA 1
 
-#define FAEST_EM_256F_ELL 2688
+#define FAEST_EM_256F_ELL 1792
 
 #define FAEST_EM_256F_LAMBDA 256
 
-#define FAEST_EM_256F_Lenc 2432
+#define FAEST_EM_256F_Lenc 1536
 
 #define FAEST_EM_256F_Lke 256
+
+#define FAEST_EM_256F_N_MULT 704
 
 #define FAEST_EM_256F_Nst 8
 
@@ -415,29 +417,29 @@
 
 #define FAEST_EM_256F_R 14
 
-#define FAEST_EM_256F_SIG_SIZE 23476
+#define FAEST_EM_256F_SIG_SIZE 18084
 
 #define FAEST_EM_256F_SK_SIZE 64
 
-#define FAEST_EM_256F_Senc 448
-
 #define FAEST_EM_256F_Ske 0
 
-#define FAEST_EM_256F_TAU 32
+#define FAEST_EM_256F_TAU 33
 
-#define FAEST_EM_256F_T_OPEN 234
+#define FAEST_EM_256F_T_OPEN 229
 
 #define FAEST_EM_256F_W_GRIND 8
 
 #define FAEST_EM_256S_BETA 1
 
-#define FAEST_EM_256S_ELL 2688
+#define FAEST_EM_256S_ELL 1792
 
 #define FAEST_EM_256S_LAMBDA 256
 
-#define FAEST_EM_256S_Lenc 2432
+#define FAEST_EM_256S_Lenc 1536
 
 #define FAEST_EM_256S_Lke 256
+
+#define FAEST_EM_256S_N_MULT 696
 
 #define FAEST_EM_256S_Nst 8
 
@@ -453,11 +455,9 @@
 
 #define FAEST_EM_256S_R 14
 
-#define FAEST_EM_256S_SIG_SIZE 17984
+#define FAEST_EM_256S_SIG_SIZE 14554
 
 #define FAEST_EM_256S_SK_SIZE 64
-
-#define FAEST_EM_256S_Senc 448
 
 #define FAEST_EM_256S_Ske 0
 

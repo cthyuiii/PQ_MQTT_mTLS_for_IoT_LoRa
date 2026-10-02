@@ -6,7 +6,7 @@
 #define FAEST_COMPAT_H
 
 #if defined(HAVE_CONFIG_H)
-#include "config.h"
+#include <config.h>
 #endif
 
 #include "macros.h"
@@ -17,7 +17,7 @@
 /* In case meson checks were not run, define HAVE_* for known good configurations. We skip those if
  * building for OQS, as the compat functions from there can be used instead. */
 #if defined(__OpenBSD__)
-#include "sys/param.h"
+#include <sys/param.h>
 #endif /* __OpenBSD__ */
 
 #if !defined(HAVE_ALIGNED_ALLOC) && !defined(__APPLE__) && !defined(__MINGW32__) &&                \
@@ -49,6 +49,9 @@
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_IX86) || defined(_M_AMD64)
 #if __has_include(<wmmintrin.h>)
 #define HAVE_AESNI
+#endif
+#if __has_include(<emmintrin.h>)
+#define HAVE_SSE2
 #endif
 #if __has_include(<immintrin.h>)
 #define HAVE_AVX2
@@ -132,7 +135,7 @@ FAEST_END_C_DECL
 #endif /* HAVE_MEMPCPY */
 
 #if defined(OQS)
-#include "oqs/common.h"
+#include <oqs/common.h>
 
 #define faest_aligned_alloc(alignment, size) OQS_MEM_aligned_alloc((alignment), (size))
 #define faest_aligned_free(ptr) OQS_MEM_aligned_free((ptr))
@@ -197,6 +200,20 @@ ATTR_CONST ATTR_ARTIFICIAL static inline uint8_t parity8(uint8_t n) {
 }
 #endif
 
+#if __has_builtin(__builtin_parityll)
+#define parity64 __builtin_parityll
+#elif __has_builtin(__builtin_popcountll)
+#define parity64(x) (__builtin_popcountll(x) & 0x1)
+#else
+/* byte parity from: https://graphics.stanford.edu/~seander/bithacks.html#ParityWith64Bits */
+ATTR_CONST ATTR_ARTIFICIAL static inline uint64_t parity64(uint64_t in) {
+  in ^= in >> 1;
+  in ^= in >> 2;
+  in = (in & 0x1111111111111111) * 0x1111111111111111;
+  return (in >> 60) & 1;
+}
+#endif
+
 #if !defined(__cplusplus)
 #include <assert.h>
 
@@ -206,7 +223,7 @@ ATTR_CONST ATTR_ARTIFICIAL static inline uint8_t parity8(uint8_t n) {
 #endif
 #endif
 
-#if defined(HAVE_AESNI)
+#if defined(HAVE_SSE2)
 #if defined(_MSC_VER)
 // workarounds for MSVC
 #include <immintrin.h>
@@ -215,6 +232,16 @@ ATTR_CONST ATTR_ARTIFICIAL static inline uint8_t parity8(uint8_t n) {
 #elif !GNUC_CHECK(7, 0) && !CLANG_CHECK(9)
 // workaround for gcc and clang
 #define __m128i_u __m128i
+#endif
+
+#if defined(HAVE_AVX2)
+#if defined(_MSC_VER)
+// workarounds for MSVC
+#define __m256i_u __m256i
+#elif !GNUC_CHECK(7, 0) && !CLANG_CHECK(9)
+// workaround for gcc and clang
+#define __m256i_u __m256i
+#endif
 #endif
 
 #if !defined(HAVE_MM_LOADU_SI64)
