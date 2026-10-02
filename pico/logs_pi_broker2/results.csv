@@ -4,4 +4,9 @@ rp2040,MQTT/TLS RSA-3072 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/83 blocks failed: tls
 rp2040,MQTT/TLS ECDSA-P256 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
 rp2040,MQTT/TLS Ed25519 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
 rp2040,MQTT/TLS ML-DSA-44 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS ML-DSA-65 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/83 blocks failed: hung during TCP connect after 9 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ML-DSA-65 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ML-DSA-87 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS Falcon-512 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/83 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS Falcon-1024 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,"5/83 blocks failed: tls handshake failed: Buffer error, output too small or input too big",wolfssl+bearssl+ascon-c
+rp2040,MQTT KEM exchange (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (5 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,"MQTT KEM exchange, small X25519 (wolfSSL)",,,,,,,,,,,,,,,,,,,,,,,OK (5 MQTT blocks),wolfssl+bearssl+ascon-c
