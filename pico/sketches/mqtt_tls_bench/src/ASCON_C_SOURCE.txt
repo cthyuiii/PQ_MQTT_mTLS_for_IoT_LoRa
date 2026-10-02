@@ -1,0 +1,4 @@
+ascon-c (https://github.com/ascon/ascon-c) commit 446347f21b209f3921c65ece70027c366cbe1693,
+crypto_aead/asconaead128/armv6m_lowsize (Cortex-M0 assembly in permutations.S) + tests/crypto_aead.h,
+unmodified. License: CC0 1.0. The inline-asm "armv6m" variant does not build with arduino-pico GCC
+for RP2040 (runs out of low registers), so the standalone-.S variant is used on both boards.

@@ -1,0 +1,440 @@
+{
+    "_comment": "Per-algorithm config for the reference benchmark runner. Each entry describes where the algorithm's source lives after `./clone_algos.sh`, how it builds, and which variants to measure. build_strategy values: 'generic-bench' = compile bench_template.c against the variant's .c files (works for standard NIST submission layouts); 'native-bench' = the algo ships its own benchmark binary, see notes in README.md; 'manual' = no automation, follow README.md by hand.",
+    "HAWK": {
+        "github": "https://github.com/hawk-sign/dev",
+        "root_dir": "HAWK",
+        "build_strategy": "native-bench",
+        "build_notes": "Generator repo. After `cd HAWK && make`, you'll get Reference_Implementation/hawk_{256,512,1024}/ each containing tests/speed.c. Build that and parse its output - it prints sign/verify cycles to stdout. README.md has the manual recipe.",
+        "variants": [
+            {
+                "name": "HAWK-256",
+                "dir": "Reference_Implementation/hawk_256",
+                "native_bench": "tests/speed"
+            },
+            {
+                "name": "HAWK-512",
+                "dir": "Reference_Implementation/hawk_512",
+                "native_bench": "tests/speed"
+            },
+            {
+                "name": "HAWK-1024",
+                "dir": "Reference_Implementation/hawk_1024",
+                "native_bench": "tests/speed"
+            }
+        ]
+    },
+    "SDitH": {
+        "github": "https://github.com/sdith/sdith",
+        "root_dir": "SDitH",
+        "build_strategy": "generic-bench",
+        "build_notes": "Standard NIST submission layout BUT the hypercube variant's sdith.c #includes x86 immintrin.h / x86intrin.h unconditionally - won't build on arm64 (Apple Silicon). Only the 6 threshold variants are listed below. If you're on x86 you can add the hypercube ones back. opt64/ Keccak subdir is portable C and works on both.",
+        "variants": [
+            {
+                "name": "SDitH-threshold-cat1-gf256",
+                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat1_gf256",
+                "include_subdirs": [
+                    "sha3",
+                    "sha3/opt64"
+                ],
+                "extra_cflags": [
+                    "-Wno-error"
+                ],
+                "extra_ldflags": [
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-threshold-cat1-p251",
+                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat1_p251",
+                "include_subdirs": [
+                    "sha3",
+                    "sha3/opt64"
+                ],
+                "extra_cflags": [
+                    "-Wno-error"
+                ],
+                "extra_ldflags": [
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-threshold-cat3-gf256",
+                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat3_gf256",
+                "include_subdirs": [
+                    "sha3",
+                    "sha3/opt64"
+                ],
+                "extra_cflags": [
+                    "-Wno-error"
+                ],
+                "extra_ldflags": [
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-threshold-cat3-p251",
+                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat3_p251",
+                "include_subdirs": [
+                    "sha3",
+                    "sha3/opt64"
+                ],
+                "extra_cflags": [
+                    "-Wno-error"
+                ],
+                "extra_ldflags": [
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-threshold-cat5-gf256",
+                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat5_gf256",
+                "include_subdirs": [
+                    "sha3",
+                    "sha3/opt64"
+                ],
+                "extra_cflags": [
+                    "-Wno-error"
+                ],
+                "extra_ldflags": [
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-threshold-cat5-p251",
+                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat5_p251",
+                "include_subdirs": [
+                    "sha3",
+                    "sha3/opt64"
+                ],
+                "extra_cflags": [
+                    "-Wno-error"
+                ],
+                "extra_ldflags": [
+                    "-lm"
+                ]
+            }
+        ]
+    },
+    "FAEST": {
+        "github": "https://github.com/faest-sign/faest-ref",
+        "root_dir": "FAEST_flat",
+        "build_strategy": "generic-bench",
+        "build_notes": "No meson needed: run ./prepare_faest_flat.sh once to flatten FAEST/build_release pre-generated sources into FAEST_flat/<variant>/ with a Linux config.h. Requires OpenSSL dev headers (libssl-dev on Pi/Debian) - HAVE_OPENSSL selects hardware AES; without it FAEST is ~50x slower. On macOS keep using the meson route (FAEST/bench.sh).",
+        "variants": [
+            {
+                "name": "FAEST-128f",
+                "dir": "faest_128f",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-128s",
+                "dir": "faest_128s",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-192f",
+                "dir": "faest_192f",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-192s",
+                "dir": "faest_192s",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-256f",
+                "dir": "faest_256f",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-256s",
+                "dir": "faest_256s",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-EM-128f",
+                "dir": "faest_em_128f",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-EM-128s",
+                "dir": "faest_em_128s",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-EM-192f",
+                "dir": "faest_em_192f",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-EM-192s",
+                "dir": "faest_em_192s",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-EM-256f",
+                "dir": "faest_em_256f",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "FAEST-EM-256s",
+                "dir": "faest_em_256s",
+                "include_subdirs": [
+                    "sha3"
+                ],
+                "extra_cflags": [
+                    "-D_GNU_SOURCE",
+                    "-DNDEBUG",
+                    "-DFAEST_EXPORT=",
+                    "-DHAVE_RANDOMBYTES",
+                    "-DHAVE_OPENSSL"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            }
+        ]
+    },
+    "SQIsign": {
+        "github": "https://github.com/SQISign/the-sqisign",
+        "root_dir": "SQIsign",
+        "build_strategy": "native-bench",
+        "build_notes": "CMake-based. Build with: `cd SQIsign && mkdir build && cd build && cmake -DSQISIGN_BUILD_TYPE=ref .. && make`. Then `./test/SQIsign_test_bench lvl1` (or lvl3/lvl5). Parse the printed cycle counts.",
+        "variants": [
+            {
+                "name": "SQIsign-NIST-I",
+                "level": "lvl1"
+            },
+            {
+                "name": "SQIsign-NIST-III",
+                "level": "lvl3"
+            },
+            {
+                "name": "SQIsign-NIST-V",
+                "level": "lvl5"
+            }
+        ]
+    },
+    "QR-UOV": {
+        "github": "(no canonical repo; NIST CSRC hosts the round-2 submission package)",
+        "download": "https://csrc.nist.gov/csrc/media/Projects/pqc-dig-sig/documents/round-2/submission-pkg/qr-uov-submission-round2.zip",
+        "root_dir": "QR-UOV",
+        "build_strategy": "generic-bench",
+        "build_notes": "Run ./setup_qruov.sh - it downloads the 109MB NIST round-2 package, extracts it, discovers every Reference_Implementation variant dir containing api.h, and rewrites this entry to generic-bench with the discovered variants. Then: python3 run_reference_benchmarks.py --algos QR-UOV --probe-only.",
+        "variants": [
+            {
+                "name": "QR-UOV-I-q127L3",
+                "dir": "variants/qruov1q127L3v156m54",
+                "exclude_files": [
+                    "PQCgenKAT_sign.c",
+                    "api_h_gen.c",
+                    "qruov_config_h_gen.c",
+                    "rng.c"
+                ],
+                "extra_cflags": [
+                    "-O3",
+                    "-fwrapv",
+                    "-DQRUOV_PLATFORM=ref",
+                    "-Wno-deprecated-declarations",
+                    "-Wno-unused-result",
+                    "-Wno-error",
+                    "-fopenmp"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-III-q127L3",
+                "dir": "variants/qruov3q127L3v228m78",
+                "exclude_files": [
+                    "PQCgenKAT_sign.c",
+                    "api_h_gen.c",
+                    "qruov_config_h_gen.c",
+                    "rng.c"
+                ],
+                "extra_cflags": [
+                    "-O3",
+                    "-fwrapv",
+                    "-DQRUOV_PLATFORM=ref",
+                    "-Wno-deprecated-declarations",
+                    "-Wno-unused-result",
+                    "-Wno-error",
+                    "-fopenmp"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-V-q127L3",
+                "dir": "variants/qruov5q127L3v306m105",
+                "exclude_files": [
+                    "PQCgenKAT_sign.c",
+                    "api_h_gen.c",
+                    "qruov_config_h_gen.c",
+                    "rng.c"
+                ],
+                "extra_cflags": [
+                    "-O3",
+                    "-fwrapv",
+                    "-DQRUOV_PLATFORM=ref",
+                    "-Wno-deprecated-declarations",
+                    "-Wno-unused-result",
+                    "-Wno-error",
+                    "-fopenmp"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            }
+        ]
+    }
+}
