@@ -154,7 +154,7 @@ Check, in addition to the Mac checks:
    ```bash
    # Pi 5 (or the Mac)
    ./run_all.sh --serve-broker            # prints the command for the client, with this machine's IP
-   # the same certs/ on both: from the Mac, which reaches both Pis over SSH (README §0.1)
+   # the same certs/ on both: from the Mac, which reaches both Pis over SSH (README section 0.1)
    rsync -a --delete <pi5-user>@<pi5-ip>:PQ_MQTT_mTLS_for_IoT_LoRa/certs/ /tmp/certs/
    rsync -a --delete /tmp/certs/ <pi4-user>@<pi4-ip>:PQ_MQTT_mTLS_for_IoT_LoRa/certs/
    # Pi 4

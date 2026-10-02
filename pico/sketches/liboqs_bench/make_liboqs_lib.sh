@@ -29,11 +29,14 @@ else
     ALGS="SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87;SIG_falcon_512;SIG_falcon_1024"
     ALGS="$ALGS;SIG_slh_dsa_pure_sha2_128f;SIG_slh_dsa_pure_sha2_128s;SIG_slh_dsa_pure_shake_128f;SIG_slh_dsa_pure_shake_128s"
 fi
-GCC=""   # arduino-pico's bundled toolchain (macOS path, then Linux path)
+GCC=""   # arduino-pico's bundled toolchain (macOS, Linux, Windows paths)
 for d in "$HOME"/Library/Arduino15/packages/rp2040/tools/pqt-gcc/*/bin \
-         "$HOME"/.arduino15/packages/rp2040/tools/pqt-gcc/*/bin; do
+         "$HOME"/.arduino15/packages/rp2040/tools/pqt-gcc/*/bin \
+         "$HOME"/AppData/Local/Arduino15/packages/rp2040/tools/pqt-gcc/*/bin; do
     [ -x "$d/arm-none-eabi-gcc" ] && GCC="$d"
 done
+X="" GEN=()   # Windows (Git Bash): the toolchain's .exe names, and Ninja (CMake's default there is Visual Studio)
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) X=.exe GEN=(-G Ninja) ;; esac
 [ -n "$GCC" ] || { echo "[-] arduino-pico toolchain not found: arduino-cli core install rp2040:rp2040"; exit 1; }
 
 STAMP="$LIB/.iot-pqc-build"   # skip when the liboqs checkout and algorithm list are unchanged
@@ -59,15 +62,15 @@ for MCU in cortex-m0plus cortex-m33; do
     esac
     B="$CACHE/liboqs-build-$MCU${LIBOQS_ROUND:+-r$LIBOQS_ROUND}"
     rm -rf "$B"
-    cmake -Wno-dev -S "$SRC" -B "$B" -DCMAKE_BUILD_TYPE=Release \
+    cmake -Wno-dev ${GEN[@]+"${GEN[@]}"} -S "$SRC" -B "$B" -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_SYSTEM_NAME=Generic -DCMAKE_SYSTEM_PROCESSOR="$MCU" \
-        -DCMAKE_C_COMPILER="$GCC/arm-none-eabi-gcc" -DCMAKE_AR="$GCC/arm-none-eabi-ar" \
-        -DCMAKE_RANLIB="$GCC/arm-none-eabi-ranlib" -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+        -DCMAKE_C_COMPILER="$GCC/arm-none-eabi-gcc$X" -DCMAKE_AR="$GCC/arm-none-eabi-ar$X" \
+        -DCMAKE_RANLIB="$GCC/arm-none-eabi-ranlib$X" -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
         -DCMAKE_C_FLAGS="$CPU -Os -ffunction-sections -fdata-sections" \
         -DOQS_EMBEDDED_BUILD=ON -DOQS_PERMIT_UNSUPPORTED_ARCHITECTURE=ON -DOQS_USE_OPENSSL=OFF \
         -DOQS_DIST_BUILD=OFF -DOQS_OPT_TARGET=generic -DBUILD_SHARED_LIBS=OFF -DOQS_BUILD_ONLY_LIB=ON \
         -DOQS_MINIMAL_BUILD="$ALGS" $EXTRA >/dev/null
-    cmake --build "$B" -j"$(getconf _NPROCESSORS_ONLN)" >/dev/null
+    cmake --build "$B" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc)" >/dev/null
     mkdir -p "$LIB/src/$MCU" && cp "$B/lib/liboqs.a" "$LIB/src/$MCU/"
 done
 cp -R "$B/include/oqs" "$LIB/src/"

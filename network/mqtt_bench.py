@@ -1,6 +1,6 @@
 """Stage 2 (MQTT over TLS / mutual TLS with PQ X.509 certificates) and the full pipeline, against Mosquitto.
 
-Project plan §1.3 / §4.1 / §4.2. Only the certificate's signature algorithm
+Project plan sections 1.3, 4.1 and 4.2. Only the certificate's signature algorithm
 varies. Held constant: the X25519MLKEM768 group (the customer's key exchange, the only group Stage 2 and the
 pipeline offer; the broker also accepts the tls sweep's groups), TLS 1.3, the Mosquitto config, the client's MQTT CONNECT,
 and the network. Plain MQTT without TLS is the reference row. For every

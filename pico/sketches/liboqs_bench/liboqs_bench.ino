@@ -9,8 +9,18 @@
 //   "STACK OVERFLOW" (peak reached the big stack's end - raise -DLB_STACK_KB or the board can't).
 
 #include <Arduino.h>
+#include <hardware/watchdog.h>
 #include <liboqs.h>
+#include <pico/bootrom.h>
 #include <string.h>
+
+// A hang that stops interrupts (a stack overflow into the core's data, a fault) also stops USB, so the runner's
+// 1200-baud reset can't reach the board for the next sketch. A fault, or the watchdog (fed from a timer interrupt, so
+// a long computation keeps it fed), sends the board to BOOTSEL instead: the runner records this sketch as hung and
+// flashes the next one.
+extern "C" void isr_hardfault(void) { reset_usb_boot(0, 0); }
+static repeating_timer_t g_wdt_feed;
+static bool wdt_feed(repeating_timer_t *) { watchdog_update(); return true; }
 
 #ifndef LB_ALG
 #error "build with -DLB_ALG=<liboqs signature id>, e.g. -DLB_ALG=ml_dsa_44 (see run_benchmarks.py)"
@@ -164,6 +174,9 @@ static void run_report() {
 }
 
 void setup() {
+  if (watchdog_enable_caused_reboot()) reset_usb_boot(0, 0);  // the last run hung: wait in BOOTSEL for the next flash
+  watchdog_enable(5000, true);
+  add_repeating_timer_ms(1000, wdt_feed, nullptr, &g_wdt_feed);
   Serial.begin(115200);
   while (!Serial) delay(10);
   delay(200);

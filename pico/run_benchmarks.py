@@ -3,7 +3,7 @@
 run_benchmarks.py - board-aware, one-shot Pico PQC benchmark runner.
 
 It DETECTS the connected board (RP2040 Pico / Pico W  vs  RP2350 Pico 2 / Pico 2 W),
-picks the matching FQBN + BOOTSEL volume automatically, and then flashes ONLY the
+picks the matching FQBN + BOOTSEL drive automatically, and then flashes ONLY the
 algorithms that fit that board's SRAM - the ones too big for the chip are never
 compiled or flashed. For each runnable sketch it: compile -> upload (UF2 copy) ->
 open serial (releases the sketch's `while(!Serial)` wait) -> capture the report until
@@ -14,7 +14,7 @@ overflow the RP2040 (264 KB). Each sketch below is tagged with the board familie
 can run on, so the runner gates them automatically per detected board.
 
 ----------------------------------------------------------------------------
-PREREQUISITES (one-time, on your Mac):
+PREREQUISITES (one-time; macOS, Linux, or Windows with Git for Windows' bash for the library builders):
   1. arduino-cli + the Earle Philhower RP2040/RP2350 core (rp2040:rp2040), pyserial.
   2. Put the board in BOOTSEL once if it's brand new; afterwards the core auto-resets.
 
@@ -29,7 +29,7 @@ USAGE:
       MQTT over plain / TLS / mTLS + pipeline against ./run_all.sh --serve-broker on another machine
 ----------------------------------------------------------------------------
 """
-import argparse, base64, csv, glob, json, os, re, shutil, statistics, subprocess, sys, time
+import argparse, base64, csv, glob, json, os, re, shutil, statistics, subprocess, sys, tempfile, time
 
 HERE   = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = os.path.join(HERE, "logs")
@@ -37,6 +37,9 @@ RUN_TAG = ""  # --tag: results/*_pico_<board>_<tag>.*, logs in logs_<tag>/ (anot
 ROOT   = os.path.dirname(HERE)
 SKETCH_DIR = os.path.join(HERE, "sketches")  # one Arduino sketch per folder (folder name = .ino name)
 # wolfssl_bench compiles against a generated wolfSSL Arduino library kept outside the repo
+# the library builders are bash scripts: on Windows, Git for Windows' bash (System32\\bash.exe would be WSL's)
+_GIT_BASH = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe")
+BASH = _GIT_BASH if os.name == "nt" and os.path.exists(_GIT_BASH) else "bash"
 WOLF_LIBS = os.path.join(os.environ.get("IOT_PQC_CACHE", os.path.expanduser("~/.cache/iot-pqc")), "arduino-libs")
 
 # ---------------------------------------------------------------------------
@@ -49,13 +52,13 @@ BOARDS = {
     "rp2040": dict(
         name   = "RP2040  (Pico / Pico W, Cortex-M0+, 264 KB SRAM)",
         fqbn   = "rp2040:rp2040:rpipico",
-        volume = "/Volumes/RPI-RP2",          # BOOTSEL mass-storage label
+        label  = "RPI-RP2",                   # BOOTSEL drive label (INFO_UF2.TXT Board-ID)
         sram_kb= 264,
     ),
     "rp2350": dict(
         name   = "RP2350  (Pico 2 / Pico 2 W, Cortex-M33, 520 KB SRAM)",
         fqbn   = "rp2040:rp2040:rpipico2",
-        volume = "/Volumes/RP2350",           # Pico 2 mounts as RP2350, NOT RPI-RP2
+        label  = "RP2350",                    # Pico 2 mounts as RP2350, NOT RPI-RP2
         sram_kb= 520,
     ),
 }
@@ -422,7 +425,12 @@ def sh(cmd, **kw):
     print("  $", " ".join(cmd)); return subprocess.run(cmd, **kw)
 
 def list_ports():
-    return sorted(glob.glob("/dev/cu.usbmodem*"))
+    """the Pico's USB serial ports (Raspberry Pi's USB vendor ID): /dev/cu.usbmodem* (macOS), /dev/ttyACM* (Linux), COMn"""
+    try:
+        from serial.tools import list_ports as lp
+        return sorted(p.device for p in lp.comports() if p.vid == 0x2E8A)
+    except ImportError:
+        return sorted(glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/ttyACM*"))
 
 def detect_port(prev=None):
     for _ in range(40):
@@ -446,11 +454,26 @@ def bootsel_touch(port):
     except Exception as e:
         print("    (1200bps touch note:", e, ")")
 
+def bootsel_drive(label):
+    """where the BOOTSEL drive with this label is mounted (macOS /Volumes, Linux /media or /run/media, a Windows drive
+    letter), else None"""
+    if os.name == "nt":
+        for d in "DEFGHIJKLMNOPQRSTUVWXYZ":
+            try:
+                with open(f"{d}:\\INFO_UF2.TXT", errors="replace") as f:
+                    if label in f.read():
+                        return f"{d}:\\"
+            except OSError:
+                pass
+        return None
+    hits = glob.glob(f"/Volumes/{label}") + glob.glob(f"/media/*/{label}") + glob.glob(f"/run/media/*/{label}")
+    return hits[0] if hits else None
+
 def mounted_bootsel():
-    """Return (family, volume) for whichever board's BOOTSEL drive is mounted, else (None, None)."""
+    """Return (family, drive) for whichever board's BOOTSEL drive is mounted, else (None, None)."""
     for fam, b in BOARDS.items():
-        if os.path.isdir(b["volume"]):
-            return fam, b["volume"]
+        if (vol := bootsel_drive(b["label"])):
+            return fam, vol
     return None, None
 
 def wait_for_any_bootsel(timeout=20):
@@ -470,8 +493,8 @@ def detect_board(port):
         bootsel_touch(port or (list_ports() or [None])[0])
         fam, vol = wait_for_any_bootsel(20)
     if not fam:  # the drive can be invisible to this terminal (macOS Removable Volumes permission): ask the chip
-        pt = picotool_path()
-        out = subprocess.run([pt, "info", "-d"], capture_output=True, text=True, timeout=30).stdout if pt else ""
+        r = picotool("info", "-d")
+        out = r.stdout if r else ""
         fam = "rp2350" if "RP2350" in out else "rp2040" if "RP2040" in out else None
         if fam:
             print(f"  BOOTSEL drive not visible here; picotool reports {fam.upper()}")
@@ -482,22 +505,64 @@ def detect_board(port):
 def picotool_path():
     """arduino-pico's picotool (flashes over USB, no file system), else one on PATH"""
     hits = sorted(glob.glob(os.path.expanduser("~/Library/Arduino15/packages/rp2040/tools/pqt-picotool/*/picotool")) +
-                  glob.glob(os.path.expanduser("~/.arduino15/packages/rp2040/tools/pqt-picotool/*/picotool")))
+                  glob.glob(os.path.expanduser("~/.arduino15/packages/rp2040/tools/pqt-picotool/*/picotool")) +
+                  glob.glob(os.path.expanduser("~/AppData/Local/Arduino15/packages/rp2040/tools/pqt-picotool/*/picotool.exe")))
     return hits[-1] if hits else shutil.which("picotool")
 
-def upload_uf2(uf2, volume, port):
-    """Flash by byte-copying the .uf2 onto the mounted BOOTSEL drive (reliable on macOS;
-    a plain write, not shutil.copy, since the FAT volume rejects metadata ops with EPERM)."""
-    if not os.path.isdir(volume):
-        bootsel_touch(port)
-        for _ in range(40):
-            if os.path.isdir(volume): break
-            time.sleep(0.5)
-        if not os.path.isdir(volume):
-            return False, f"{volume} did not mount (board may need a manual BOOTSEL)"
-    dest = os.path.join(volume, os.path.basename(uf2))
+def picotool(*args, timeout=60):
+    """run picotool; None when there is none"""
+    pt = picotool_path()
     try:
-        with open(uf2, "rb") as src, open(dest, "wb") as dst:
+        return subprocess.run([pt, *args], capture_output=True, text=True, timeout=timeout) if pt else None
+    except subprocess.TimeoutExpired:
+        return None
+
+def in_bootsel(label):
+    """the drive is mounted, or picotool reaches a board in BOOTSEL (the drive can be hidden from this terminal)"""
+    if bootsel_drive(label):
+        return True
+    r = picotool("info")
+    return bool(r) and r.returncode == 0
+
+def force_bootsel(port, label, wait_s):
+    """BOOTSEL for the next flash. The 1200-baud touch needs the running sketch's USB (picotool's forced reboot finds no
+    reset interface on these builds). A sketch that hung with its USB dead (a fault, a stack overflow) ignores it, and
+    before this every later sketch failed to flash too. So wait for a person to hold BOOTSEL and replug (wait_s, 0 =
+    don't). liboqs_bench reboots itself into BOOTSEL after such a hang (its watchdog), so that wait is rare."""
+    bootsel_touch(port)
+    for _ in range(20):
+        if in_bootsel(label):
+            return True
+        time.sleep(1)
+    if wait_s:
+        print(f"\a    !! the board doesn't answer on USB (its last sketch hung). Hold BOOTSEL and replug it "
+              f"(or press RESET while holding BOOTSEL); waiting up to {wait_s // 60} min ...", flush=True)
+        end = time.time() + wait_s
+        while time.time() < end:
+            if in_bootsel(label):
+                return True
+            time.sleep(2)
+    return False
+
+def picotool_load(uf2, why):
+    r = picotool("load", "-x", uf2, timeout=120)
+    if r and r.returncode == 0:
+        return True, f"ok (picotool over USB; {why})"
+    return False, f"{why}; picotool: {(r.stderr or r.stdout).strip().splitlines()[-1:] if r else 'not found'}"
+
+def upload_uf2(uf2, label, port, wait_s=0):
+    """Flash by byte-copying the .uf2 onto the BOOTSEL drive (a plain write, not shutil.copy: the FAT volume rejects
+    metadata ops with EPERM on macOS); picotool over USB when the drive is hidden or refuses the write."""
+    if not bootsel_drive(label) and not force_bootsel(port, label, wait_s):
+        return False, "the board never entered BOOTSEL (hold BOOTSEL and replug it)"
+    for _ in range(10):  # the drive mounts a few seconds after BOOTSEL starts
+        if (vol := bootsel_drive(label)):
+            break
+        time.sleep(0.5)
+    if not vol:  # in BOOTSEL (picotool sees it), but the drive is hidden from this terminal
+        return picotool_load(uf2, "the BOOTSEL drive is not visible here")
+    try:
+        with open(uf2, "rb") as src, open(os.path.join(vol, os.path.basename(uf2)), "wb") as dst:
             dst.write(src.read()); dst.flush()
             try: os.fsync(dst.fileno())
             except Exception: pass
@@ -505,18 +570,13 @@ def upload_uf2(uf2, volume, port):
         # the board flashes + reboots the instant the UF2 lands, unmounting the drive,
         # so write/close can raise even though the flash succeeded.
         time.sleep(1)
-        if not os.path.isdir(volume):
+        if not bootsel_drive(label):
             return True, "ok (drive ejected after write = flashed)"
         # EPERM here is macOS privacy blocking this terminal app from removable volumes: picotool loads the
         # same UF2 over USB instead (the board is in BOOTSEL, so it's listening)
-        pt = picotool_path()
-        if pt:
-            r = subprocess.run([pt, "load", "-x", uf2], capture_output=True, text=True, timeout=120)
-            if r.returncode == 0:
-                return True, f"ok (picotool over USB; the drive write failed: {e})"
-            e = f"{e}; picotool: {(r.stderr or r.stdout).strip().splitlines()[-1:]}"
-        return False, (f"write failed: {e}. If it says 'Operation not permitted': System Settings > Privacy & "
-                       "Security > Files and Folders > <your terminal app> > Removable Volumes on, then reopen it")
+        ok, msg = picotool_load(uf2, f"the drive write failed: {e}")
+        return ok, msg if ok else (msg + ". If it says 'Operation not permitted': System Settings > Privacy & "
+                                   "Security > Files and Folders > <your terminal app> > Removable Volumes on, then reopen it")
     return True, "ok"
 
 OP_RE = re.compile(r"\b(keygen|sign|verify)\b", re.I)
@@ -532,7 +592,7 @@ def open_serial(port, tries):
     import serial
     for _ in range(tries):
         try:
-            p = port if (port and os.path.exists(port)) else ((list_ports() or [port])[0])
+            p = port if port in list_ports() else (list_ports() or [port])[0]
             ser = serial.Serial(p, 115200, timeout=2, dsrdtr=True); ser.dtr = True
             return ser
         except Exception:
@@ -604,6 +664,8 @@ def main():
     ap.add_argument("--skip", help="comma list of folders to skip")
     ap.add_argument("--no-upload", action="store_true", help="compile+capture only")
     ap.add_argument("--no-timeout", action="store_true", help="never give up (RSA keygen)")
+    ap.add_argument("--bootsel-wait", type=int, default=900, help="seconds to wait for a manual BOOTSEL when a hung "
+                    "board ignores the USB reset (0: fail that flash and move on)")
     ap.add_argument("--lib", help="comma list of libraries to run (substring): "
                     + ", ".join(sorted({lib for _, lib in LIB_BY_PREFIX})))
     ap.add_argument("--list", action="store_true", help="show what the filters select, then exit (no flashing)")
@@ -640,9 +702,9 @@ def main():
     if menu:
         fqbn += ":" + ",".join(menu)
     tag = (f" -{args.opt}" if args.opt else "") + (f" @{args.freq}MHz" if args.freq else "")
-    volume = board["volume"]
+    drive  = board["label"]  # its BOOTSEL drive's label
     print(f"\nBoard: {board['name']}")
-    print(f"  -> FQBN {fqbn} | BOOTSEL {volume} | SRAM {board['sram_kb']} KB\n")
+    print(f"  -> FQBN {fqbn} | BOOTSEL drive {drive} | SRAM {board['sram_kb']} KB\n")
 
     only = set(args.only.split(",")) if args.only else None
     libs = [x.strip().lower() for x in args.lib.split(",")] if args.lib else None
@@ -679,11 +741,11 @@ def main():
         return
     for r3 in {s["lib"] == R3 for s in work if s["folder"] == "liboqs_bench"}:
         print(f"Preparing the liboqs{' round 3' if r3 else ''} Arduino library (liboqs_bench/make_liboqs_lib.sh) ...")
-        sh(["bash", os.path.join(SKETCH_DIR, "liboqs_bench", "make_liboqs_lib.sh")],
+        sh([BASH, os.path.join(SKETCH_DIR, "liboqs_bench", "make_liboqs_lib.sh")],
            env=dict(os.environ, LIBOQS_KECCAK=args.keccak or "", LIBOQS_ROUND="3" if r3 else ""))
     if any(s["folder"] in ("wolfssl_bench", "mqtt_tls_bench") for s in work):
         print("Preparing the wolfSSL Arduino library (wolfssl_bench/make_wolfssl_lib.sh) ...")
-        sh(["bash", os.path.join(SKETCH_DIR, "wolfssl_bench", "make_wolfssl_lib.sh")])
+        sh([BASH, os.path.join(SKETCH_DIR, "wolfssl_bench", "make_wolfssl_lib.sh")])
 
     csv_path = os.path.join(LOGDIR, "results.csv")
     hdr = ["Board","Algorithm","pk","sk","sigMax","sig"]
@@ -718,7 +780,7 @@ def main():
         # key the output/build dir by LABEL when -D flags are used, so multiple parameter sets that
         # share one src folder (e.g. slhdsa_bench) don't collide or reuse each other's cached objects.
         key = re.sub(r"[^A-Za-z0-9_.-]+", "_", label) if s.get("flags") else folder
-        outdir = os.path.join("/tmp", "pico_uf2", key)
+        outdir = os.path.join(tempfile.gettempdir(), "pico_uf2", key)
         shutil.rmtree(outdir, ignore_errors=True)
         wifi = s["folder"] == "mqtt_tls_bench"
         flags = s.get("flags", "")
@@ -752,12 +814,10 @@ def main():
                 print("    !! no .uf2 produced"); row(label, lib=lib_of(s), status="NO_UF2"); continue
             prev = list_ports()
             ok, msg = False, ""
-            for attempt in range(3):
-                ok, msg = upload_uf2(uf2, volume, args.port or (prev[0] if prev else None))
+            for attempt, wait_s in enumerate((0, args.bootsel_wait)):  # the second attempt may wait for a person
+                ok, msg = upload_uf2(uf2, drive, args.port or (prev[0] if prev else None), wait_s)
                 if ok: break
-                print(f"    !! flash attempt {attempt+1} failed ({msg}); retry in 5s "
-                      f"(or hold BOOTSEL while plugging in)...")
-                time.sleep(5)
+                print(f"    !! flash attempt {attempt+1} failed ({msg})")
             if not ok:  # keep the reason: a board not in BOOTSEL and a blocked volume need different fixes
                 row(label, lib=lib_of(s), status=f"UPLOAD_FAIL: {msg}"); continue
             if wifi:  # the firmware holds the Wi-Fi password and the client key
@@ -784,6 +844,8 @@ def main():
         elif started and not any_iter:status = "STUCK_NO_PROGRESS(likely mem/stack)"
         elif started or any_iter:     status = "PARTIAL"
         else:                         status = "NO_OUTPUT"
+        if not wifi and status != "OK" and in_bootsel(drive):  # liboqs_bench's watchdog / fault handler took it there
+            status += " - hung: the board reset itself into BOOTSEL"
         if wifi:
             blocks = mqtt_blocks(txt)
             fatal = next((ln[7:] for ln in txt.splitlines() if ln.startswith("#fatal ")), None)

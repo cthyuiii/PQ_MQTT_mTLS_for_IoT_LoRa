@@ -7,7 +7,7 @@ work left for later. README.md covers how the code works and how to run it.
 
 Each finding says **where** it ran, **what** was tested, and **which library and version**. Numbers in
 square brackets point to the [sources](#sources) at the end of this section; findings without one are
-our own measurements, and the output file named in README §0.2 is the evidence.
+our own measurements, and the output file named in README section 0.2 is the evidence.
 
 **Platforms**
 
@@ -27,7 +27,7 @@ update:
 - Python 3.9.6, with pqcrypto 0.4.0 and cryptography 48.0.0 (bundling OpenSSL 4.0.0);
 - Mosquitto 2.1.2.
 
-The pinned versions (README §0) replace them in the next run. [Pico-build] sizes are from arduino-pico 6.1.1
+The pinned versions (README section 0) replace them in the next run. [Pico-build] sizes are from arduino-pico 6.1.1
 unless a finding says otherwise. Findings 44–47 used the pinned versions. Their round 3 rows add
 oqs-provider `36cafae` on liboqs `b196b57a`, and their round 2 rows come from the pinned `c174ed7` build,
 measured on the same day.
@@ -920,9 +920,17 @@ Pico W's pipeline; no run of the new form yet)
       attack that broke most round 2 sets [38]), MQOM v3 [34] and UOV-Ip / III / V (Ip: pk 278,432 → 321,300 B, sig
       128 → 135 B). The host runs them from liboqs main `b196b57a` (directly, and through oqs-provider `36cafae`);
       the Pico now runs the same commit, memory-optimised (`LIBOQS_ROUND=3`). The round 2 sets are no longer run.
-    - **SNOVA on the Pico W:** round 3's memory-optimised SNOVA needs under 120 KB even at level V [32], against
-      the round 2 sets that did not fit the RP2040. All 9 sets link for the RP2040 with a 160 KB big stack (66% of
-      SRAM static, 89 KB left); not yet run on the board.
+    - **SNOVA on the Pico W (RP2040, 200 MHz, liboqs main, memory-optimised, 10 runs each; 2 Oct):** all 9 round 3
+      sets run, where no round 2 set fit. Signing takes 1.1-1.5 s at level I, 3.1-3.2 s at III and 4.9-5.3 s at V;
+      verifying 0.8-1.0 s, 2.2-2.3 s and 3.3-3.5 s. Peak stack is 26-40 KB (level I), 49-60 KB (III) and 77-93 KB
+      (V) when signing, at most 18 KB elsewhere: under the 120 KB the SNOVA team gives for level V [32].
+    - **MQOM v3 on the Pico W (cat 1, constant time):** GF(16) fast signs in 5.2 s and verifies in 5.0 s, GF(16)
+      short 23.7 / 23.6 s, GF(2) shorter 61.1 / 40.1 s, with at most 28 KB of stack.
+    - **MAYO round 3 on the Pico W:** MAYO-1 hung at its first keygen with a 224 KB stack (round 2 MAYO-1 fit), and
+      took the next flash (MAYO-2) with it: the runner's USB reset can't reach a board whose USB died. The runner
+      now waits for a manual BOOTSEL there, and `liboqs_bench` reboots itself into BOOTSEL after such a hang.
+    - **QR-UOV cat1** now runs from `qruov_zoo_bench` with a 64 KB stack: the same times as its old sketch (sign
+      1.20 s, verify 1.08 s).
     - **Still older code here:** SDitH (2023 threshold variant; round 3 is SDitH v3, Aug 2026), FAEST (2.0; round
       3 is FAEST 3.0, 31 Aug 2026), SQIsign (round 2 commit; its round 3 version is 1 Sep 2026), QR-UOV (round 2
       package; NIST hosts the round 3 one) and the Pico's UOV-Ip classic sketch (round 2 keys and code). Each needs
@@ -987,7 +995,7 @@ All links checked on 28 Sep 2026.
 ## Future implementations (KIV)
 
 - **ChirpStack as the network server.** It sits between gateway and application
-  ([how_it_works.md §3.1](how_it_works.md#31-what-each-one-is)). It would add two things:
+  ([how_it_works.md section 3.1](how_it_works.md#31-what-each-one-is)). It would add two things:
   - an interop check that a real network server accepts our frames;
   - PQ TLS on its own MQTT links, which is untested.
 

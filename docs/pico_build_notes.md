@@ -228,7 +228,7 @@ the `.uf2` onto the mounted `RPI-RP2` BOOTSEL volume, opens serial (which releas
     `internal/constant_time.h` is used as‑is. Forced to the **portable 32‑bit field path**
     (`f_impl32.c`, no `__int128`) so the host‑verified code is byte‑identical to what the M0+/M33
     runs.
-  - **Verified:** matches the **RFC 8032 §7.4 Ed448** test vector (public key, signature, verify),
+  - **Verified:** matches the **RFC 8032 section 7.4 Ed448** test vector (public key, signature, verify),
     rejects a tampered signature, and the NIST `crypto_sign` wrapper round‑trips. Tiny working set
     (a few KB) → no big‑stack needed.
 
@@ -260,7 +260,7 @@ These exceed the 264 KB SRAM no matter how stack/heap are arranged (so they were
 needs a 263 KB stack), **MQOM cat3 / cat5** (heap 372 KB / 878 KB), **SDitH cat3 / cat5** (heap
 337 KB / 575 KB), **FAEST** all levels (sign heap ≈ 280 KB+; compute is fine — it's a pure RAM
 wall), **UOV** (*keygen only* — pk+sk ≈ 504 KB scratch; sign/verify now run with the keypair baked
-in flash, see §2), **SQIsign** (needs a 32‑bit field port; the reference uses
+in flash, see section 2), **SQIsign** (needs a 32‑bit field port; the reference uses
 `__uint128_t`), and **CROSS** (excluded by request). Several of the cat3 cases (~340–370 KB) would
 fit a Pico 2 / RP2350's 520 KB SRAM if the study is extended to that chip.
 

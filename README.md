@@ -1,10 +1,10 @@
-# IoT-PQC — post-quantum cryptography for IoT / LoRaWAN (SIT Topic C)
+# IoT-PQC — post-quantum cryptography for IoT / LoRaWAN
 
-Benchmarks for everything Topic C compares, on a MacBook, a Raspberry Pi 4/5 and a Pico W / Pico 2 W:
+Benchmarks for everything this project compares, on a MacBook, a Raspberry Pi 4/5 and a Pico W / Pico 2 W:
 PQC signatures and key exchange, payload protection (real LoRaWAN AES-CTR + CMAC, AES-GCM, Ascon),
 TLS / mutual-TLS handshakes with PQ certificates, MQTT over them, and the full pipeline from PQ
-handshake to protected payload to MQTT broker. `./run_all.sh` runs all of it (§0). §0.2 says what each
-bench measures and with which code, §0.3 describes the pipeline and LoRaWAN framing.
+handshake to protected payload to MQTT broker. `./run_all.sh` runs all of it (section 0). Section 0.2 says what each
+bench measures and with which code, section 0.3 describes the pipeline and LoRaWAN framing.
 [docs/how_it_works.md](docs/how_it_works.md) has the test plan per device, every stage's function calls in order, and
 how LoRaWAN, AES, Ascon, GCM and CMAC relate. What the benches found is in [docs/findings.md](docs/findings.md).
 
@@ -126,7 +126,7 @@ cmake -S oqs-provider -B oqs-provider/build -DCMAKE_BUILD_TYPE=Release -Dliboqs_
 #   OPENSSL_PREFIX=/opt/openssl-3.5 MOSQUITTO=/opt/mosquitto-oqs/sbin/mosquitto TAG=pi4 ./run_all.sh
 ```
 
-**Pico W (RP2040) / Pico 2 W (RP2350)**, flashed and read from the Mac:
+**Pico W (RP2040) / Pico 2 W (RP2350)**, flashed and read from the Mac (or a Linux machine, the same commands):
 
 ```bash
 arduino-cli config add board_manager.additional_urls \
@@ -138,6 +138,36 @@ arduino-cli lib install Crypto             # Ed25519 sketch (rweather Crypto)
 # Stage 2 + pipeline on the Pico W / Pico 2 W over Wi-Fi (the broker: ./run_all.sh --serve-broker in another terminal)
 export WIFI_SSID="<your SSID>"; read -rs WIFI_PASS; export WIFI_PASS   # typed, so the password stays out of history
 BROKER=<this Mac's LAN IP> python3 pico/run_benchmarks.py --test mqtt
+```
+
+A sketch that hangs with its USB dead (a fault, a stack overflow) can't be reset by the runner's 1200-baud
+touch. `liboqs_bench` then reboots itself into BOOTSEL: a timer interrupt feeds a 5 s watchdog, and a fault or
+the watchdog sends the board to the bootloader. The runner records that sketch as hung and flashes the next one.
+Any other sketch that hangs that way makes the runner beep and wait for you to hold BOOTSEL and replug
+(`--bootsel-wait`, 900 s; `0` fails that flash and moves on), instead of failing every sketch after it.
+
+**Windows** (not yet tried on a Windows machine):
+- **Mac / Pi stages (Stage 1, the MQTT stages, `--serve-broker`):** in WSL 2 with Debian 13, which ships OpenSSL
+  3.5 like Pi OS Trixie. `wsl --install -d Debian`, clone the repo inside WSL (`~`, not `/mnt/c`), then follow the
+  Raspberry Pi steps above. On Debian 12 or Ubuntu 24.04 (OpenSSL 3.0), build OpenSSL 3.5 and pass
+  `OPENSSL_PREFIX`. WSL 2 runs in a VM, so its rows are a platform of their own (`versions_<tag>.json` records the
+  WSL kernel).
+- **A broker in WSL:** other machines and the Pico can't reach it behind WSL's default NAT. Set
+  `networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` (Windows 11), and allow inbound TCP
+  18830–18950 and 20830–20950 in the Windows firewall. As a client against a Mac or Pi broker, WSL needs neither.
+- **The Pico:** from Windows itself, not WSL (WSL has no USB access without usbipd, and the board re-enumerates
+  at every BOOTSEL). The runner finds the Pico's COM port by its USB vendor ID and its BOOTSEL drive by
+  `INFO_UF2.TXT`. Its two library builders are bash scripts, which it runs with Git for Windows' bash.
+
+```powershell
+winget install Python.Python.3.12 ArduinoSA.CLI Git.Git Kitware.CMake Ninja-build.Ninja
+arduino-cli config add board_manager.additional_urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+arduino-cli core update-index; arduino-cli core install rp2040:rp2040@6.1.1; arduino-cli lib install Crypto
+py -m venv .venv; .venv\Scripts\activate; pip install -r requirements.txt
+python pico\run_benchmarks.py --list                     # the board, its COM port and BOOTSEL drive, nothing flashed
+python pico\run_benchmarks.py --lib liboqs-r3
+$env:WIFI_SSID = "<your SSID>"; $env:WIFI_PASS = Read-Host -MaskInput "Wi-Fi password"; $env:BROKER = "<broker IP>"   # PowerShell 7
+python pico\run_benchmarks.py --test mqtt --tag pi_broker
 ```
 
 All results in one CSV: `run_all.sh` (and the Pico runner) finish by running `python3 scripts/collate_results.py`,
@@ -172,7 +202,7 @@ A run with `--algo` / `--lib` writes `*_<tag>_partial` files, so it never overwr
 ./run_all.sh --no-watch                        # without the independent subscribers (see "Watching" below)
 SIG_N=50 ./run_all.sh --test pqc               # Stage 1 iterations, the same for every algorithm (default 100)
 python3 scripts/collate_results.py                     # rebuild results/all_results.csv from every result file
-./run_all.sh --only openssl,mtls               # named stages (list in §0.2 and run_all.sh's header)
+./run_all.sh --only openssl,mtls               # named stages (list in section 0.2 and run_all.sh's header)
 ```
 
 **PQC signatures (Stage 1)**: OpenSSL (+ oqs-provider), liboqs, wolfSSL, NIST reference code, Pico
@@ -312,6 +342,7 @@ python3 pico/run_benchmarks.py --lib liboqs-r3 --match snova  # round 3 SNOVA (m
 python3 pico/run_benchmarks.py --lib liboqs --keccak xkcp    # liboqs 0.16 with XKCP assembler Keccak
 python3 pico/run_benchmarks.py --freq 133                    # the clock the RP2040 study used (default 200)
 python3 pico/run_benchmarks.py --opt O2                      # sketch + core at -O2 (default -Os)
+python3 pico/run_benchmarks.py --bootsel-wait 0                  # unattended: a hung board fails its flash, no wait
 bash pico/tests/qemu_liboqs/run.sh             # no board: Keccak swap checked + instruction counts in QEMU
 ```
 
@@ -329,7 +360,7 @@ bash pico/tests/qemu_liboqs/run.sh             # no board: Keccak swap checked +
 | `kex` | mqtt | the KEM exchange as MQTT messages, for KEMs that can't (or can't only) run in TLS: Classic McEliece 348864 / 460896 / 6688128 / 6960119 / 8192128, HQC-1/3/5, ML-KEM-768 as the reference. Per exchange: key pair on the client, public key PUBLISHed, the broker's responder encapsulates and replies with ciphertext + SHA-256 of the secret + its encapsulation time, the client decapsulates and checks. keygen / encaps / decaps µs, broker round trip and exchange total ms (mean / median / std / min / max / p90), bytes up / down | `mqtt_kem_timer` (the timer's source built with liboqs 0.16: `KEM=` client, `KEM_RESPOND=1` responder started by `--serve-broker`), plain MQTT on :18830 | two machines: `--serve-broker` + `--broker IP` | `kem_exchange_{summary,raw,meta}_<tag>` |
 | `mtls` | mqtt | Stage 2: TCP, handshake, MQTT CONNECT→CONNACK, total: mean / median / std / min / max; bytes up / down for the handshake, MQTT and the whole connect, and totals; socket writes / reads; TCP segments; on-wire estimate; cert sizes; failures as rows | Mosquitto + `mqtt_tls_timer` on OpenSSL or wolfSSL; X25519MLKEM768 | two machines: `--serve-broker` + `--broker IP` | `mqtt_mtls_{summary,raw,meta}_<tag>` |
 | `pipeline` | pipeline | the only LoRaWAN / AES / Ascon measurement: per message, uplink and downlink frames: seal, open, broker round trip, end-to-end, each mean / median / std / min / max (+ p90), bytes per message; plus the Stage 2 columns | as `mtls` + `app_aead.c` (LoRaWAN 1.0.x / 1.1, AES-GCM, Ascon) | two machines, as `mtls` | `pipeline_{summary,msgs_raw,meta}_<tag>` |
-| `pico` | pqc, mqtt | keygen / sign / verify, peak stack, flash / RAM; Pico W only (`mqtt_tls_bench`, needs `--broker` and `WIFI_SSID` / `WIFI_PASS`): the `mtls` and `pipeline` columns over Wi-Fi (6 payload schemes × up / down; no TCP segment counts) + wolfSSL's peak heap and peak stack | see the Pico table in §4; wolfSSL 5.9.4 TLS 1.3 client, X25519MLKEM768, ECDSA-P256 / ML-DSA-44 / Falcon-512 certs; `lora_aead.h` (BearSSL, ascon-c) | Pico W, Pico 2 W | `pico/logs/`, `results/*_pico_<board>.*` |
+| `pico` | pqc, mqtt | keygen / sign / verify, peak stack, flash / RAM; Pico W only (`mqtt_tls_bench`, needs `--broker` and `WIFI_SSID` / `WIFI_PASS`): the `mtls` and `pipeline` columns over Wi-Fi (6 payload schemes × up / down; no TCP segment counts) + wolfSSL's peak heap and peak stack | see the Pico table in section 4; wolfSSL 5.9.4 TLS 1.3 client, X25519MLKEM768, ECDSA-P256 / ML-DSA-44 / Falcon-512 certs; `lora_aead.h` (BearSSL, ascon-c) | Pico W, Pico 2 W | `pico/logs/`, `results/*_pico_<board>.*` |
 | (every run) | — | OS, board, compiler, library versions, ascon-c commit | `provenance.py` | — | `versions_<tag>.json` |
 
 **Algorithms and their characteristics.** Sizes in bytes, from `results/sig_meta_*.csv`. "Where" says
@@ -395,7 +426,7 @@ MHDR(1) | DevAddr(4) | FCtrl(1) | FCnt(2) | FPort(1) | FRMPayload | MIC (4) or t
 * **AES-GCM and Ascon** take the 9-byte header as associated data, use a nonce built from DevAddr, FCnt
   and the direction, and add a 16-byte tag.
 
-The version differences are in [docs/how_it_works.md §3.2](docs/how_it_works.md#32-what-each-lorawan-version-includes).
+The version differences are in [docs/how_it_works.md section 3.2](docs/how_it_works.md#32-what-each-lorawan-version-includes).
 
 The code is checked against a published LoRaWAN 1.0 uplink (`40F17DBE49…2B11FF0D`), ChirpStack's LoRaWAN
 1.1 downlink MIC, and the RFC 4493 CMAC examples; the host pipeline and the Pico run these checks before
@@ -411,7 +442,7 @@ host's OpenSSL / ascon-c version, byte for byte, for every scheme in both direct
 
 Python 3.12 or newer (pinned: 3.14.7 on the Mac; the Pi uses Pi OS Trixie's 3.13). The exact package
 versions are in `requirements.txt`. On the Mac the venv is `.venv.nosync` (iCloud Drive skips `*.nosync`),
-with `.venv` linking to it (§0).
+with `.venv` linking to it (section 0).
 
 ```bash
 # from the repo root
@@ -662,7 +693,7 @@ IETF and oqs-provider ML-KEM hybrids, X25519 / P-256, HQC-1/3/5, FrodoKEM-640-AE
 one being measured. Stage 2 and the pipeline keep the customer's X25519MLKEM768. The Pico W runs the same sweep
 for the 13 groups its wolfSSL has ([finding 78](docs/findings.md)).
 It loads oqs-provider for Falcon / MAYO / SNOVA. Each row has the handshake's time stats, bytes up / down,
-socket writes / reads, TCP segments, the on-wire estimate (§0.2) and a status; a failed combination keeps its
+socket writes / reads, TCP segments, the on-wire estimate (section 0.2) and a status; a failed combination keeps its
 reason.
 
 > **bash gotcha:** do not name a shell variable `GROUPS` — it is reserved (the
@@ -693,20 +724,20 @@ columns fill: run it before the Stage 1 table (`run_all.sh` does not call it).
 
 ---
 
-## 4.  Project plan (Topic C) on the Pi — Stage 1, Stage 2, AES vs Ascon, wolfSSL
+## 4.  Project plan on the Pi — Stage 1, Stage 2, AES vs Ascon, wolfSSL
 
-`./run_all.sh` (§0) runs everything below and writes into `results/` with a `_$TAG` suffix
+`./run_all.sh` (section 0) runs everything below and writes into `results/` with a `_$TAG` suffix
 (default `mac` / `pi`; use `TAG=pi4` / `TAG=pi5` per board):
 
 ```bash
 ./run_all.sh --only openssl,wolfssl,liboqs                  # Stage 1 signatures: the only local stages
-./run_all.sh --broker <broker-ip> --only mtls,pipeline,tls   # MQTT stages: broker on another machine (§0.1)
+./run_all.sh --broker <broker-ip> --only mtls,pipeline,tls   # MQTT stages: broker on another machine (section 0.1)
 # customer's custom builds instead of the system ones:
 OPENSSL_PREFIX=/opt/openssl-3.5 MOSQUITTO=/opt/mosquitto-oqs/sbin/mosquitto ./run_all.sh --only openssl,mtls --broker <broker-ip>
 ```
 
 PQ TLS needs OpenSSL ≥ 3.5 (Raspberry Pi OS Trixie ships it; on Bookworm use
-`OPENSSL_PREFIX`). Falcon (and round 3 MAYO / SNOVA) inside OpenSSL need oqs-provider (§3.1);
+`OPENSSL_PREFIX`). Falcon (and round 3 MAYO / SNOVA) inside OpenSSL need oqs-provider (section 3.1);
 the runner picks up `oqs-provider/_build/lib` or `oqs-provider/build/lib`.
 
 **Which library runs which algorithm**
@@ -737,7 +768,7 @@ the runner picks up `oqs-provider/_build/lib` or `oqs-provider/build/lib`.
 
 Stage 2 broker: `mqtt_bench.py` starts one Mosquitto per signature, with mTLS on port
 `base+1+i`, server-auth TLS on `base+101+i` and plain MQTT on `base` (default 18830). `run_all.sh`
-runs it only against `--serve-broker` on another machine (§0.1). The mTLS listener has `require_certificate true` and `use_identity_as_username true`,
+runs it only against `--serve-broker` on another machine (section 0.1). The mTLS listener has `require_certificate true` and `use_identity_as_username true`,
 all listeners use TLS 1.3, and their OpenSSL config accepts X25519MLKEM768 (the customer's broker setting,
 and the only group every Stage 2 client offers) plus the `tls` sweep's 16 other groups (`?`-optional: skipped where this OpenSSL lacks them). A cert the broker or client library can't
 handle becomes a row with the reason in `status`. To put the broker on the Pi 5 and the
@@ -779,8 +810,8 @@ wrapper around mldsa-native, ML-DSA-87 only; `mldsa_bench` (ML-DSA-87) already r
 | R5 all algorithms, customer's form | `stage1_customer_form_$TAG.csv` (Pico columns); Stage 2 sweeps every cert type |
 | R6 AES and Ascon | `pipeline_summary_$TAG.csv` and `pipeline_summary_pico_<board>.csv`: real LoRaWAN 1.0.x / 1.1 vs AES-GCM vs Ascon on the same frame, uplink and downlink, end to end through the broker (host and Pico W) |
 | R7 versions | `versions_$TAG.json` and every `*_meta_$TAG.json`, plus a `Library` column per row |
-| §4.1 plain MQTT reference | plain row in `mqtt_mtls_summary_$TAG.csv`; `plain` × `none` rows in `pipeline_summary_$TAG.csv` |
-| §4.2 sizes, sign/verify, handshake bytes each way, mTLS + MQTT connect time, failures as results | Stage 1 table + `mqtt_mtls_summary_$TAG.csv` (`status`). Peak stack and firmware size are Pico-only metrics (`pico/`). |
+| Plan section 4.1: plain MQTT reference | plain row in `mqtt_mtls_summary_$TAG.csv`; `plain` × `none` rows in `pipeline_summary_$TAG.csv` |
+| Plan section 4.2: sizes, sign/verify, handshake bytes each way, mTLS + MQTT connect time, failures as results | Stage 1 table + `mqtt_mtls_summary_$TAG.csv` (`status`). Peak stack and firmware size are Pico-only metrics (`pico/`). |
 | R9 progress meetings | Not code; the CSVs above are the material for the 2 Oct 2026 meeting |
 
 ---
@@ -789,6 +820,7 @@ wrapper around mldsa-native, ML-DSA-87 only; `mldsa_bench` (ML-DSA-87) already r
 
 | Symptom | Fix |
 |---|---|
+| Pico: one sketch shows `STUCK_NO_PROGRESS` and the next fails to flash | That sketch hung with its USB dead, so the 1200-baud reset can't reach it. The runner now beeps and waits for you: hold BOOTSEL and replug (or RESET while holding BOOTSEL). `liboqs_bench` puts itself in BOOTSEL (watchdog); its row then ends in "hung: the board reset itself into BOOTSEL". |
 | Pico: `flash ... failed (write failed: [Errno 1] Operation not permitted: '/Volumes/RPI-RP2/...')` | macOS privacy blocks the terminal app from removable drives. The runner now falls back to `picotool load -x` over USB by itself. To allow the drive too: System Settings → Privacy & Security → Files and Folders → your terminal app → Removable Volumes, then reopen the terminal. |
 | `tls handshake failed: self-signed certificate in certificate chain` (every TLS row) | This machine's `certs/` is not the broker's (a different CA). On the broker machine, from the repo root: `rsync -a --delete certs/ <user>@<client>:<repo>/certs/`. `run_all.sh --broker` now checks this first and skips the TLS stages. |
 | `cannot load client key: ...: Permission denied` or `key values mismatch` (every mTLS row) | The keys are unreadable (made with `sudo`: `sudo chown -R $USER certs`) or from another certificate set (rsync as above). |

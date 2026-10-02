@@ -41,7 +41,7 @@
 #            ML-KEM-768, X25519, X25519MLKEM768): public key out, ciphertext back via the broker's responder
 #            against the broker machine's Stage 2 listeners
 #   sdith faest hawk sqisign qruov   NIST reference code            pqc  / reference
-#   pico     Pico sketches (macOS host)                             pqc,mqtt / pqclean, mldsa-native,
+#   pico     Pico sketches (Mac or Linux host)                      pqc,mqtt / pqclean, mldsa-native,
 #            liboqs, liboqs-r3, wolfssl, bearssl, ascon-c, reference, rweather-crypto, openssl-goldilocks
 #
 # Env: OPENSSL_PREFIX (custom OpenSSL, e.g. /opt/openssl-3.5), OPENSSL_MODULES (oqs-provider dir),
@@ -155,7 +155,7 @@ if [ -n "${OPENSSL_PREFIX:-}" ]; then
     export CPATH="$OPENSSL_PREFIX/include${CPATH:+:$CPATH}"            # reference builds link -lcrypto
     export LIBRARY_PATH="$OPENSSL_PREFIX/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
 fi
-# oqs-provider (Falcon/MAYO/SNOVA inside OpenSSL), if built in ./oqs-provider (README §3.1)
+# oqs-provider (Falcon/MAYO/SNOVA inside OpenSSL), if built in ./oqs-provider (README section 3.1)
 for d in "$HERE/oqs-provider/_build/lib" "$HERE/oqs-provider/build/lib"; do
     [ -z "${OPENSSL_MODULES:-}" ] && ls "$d"/oqsprovider.* >/dev/null 2>&1 && export OPENSSL_MODULES="$d"
 done
@@ -276,7 +276,8 @@ if [ -n "$BROKER" ] && [ "$REACH" = 1 ] && ls "$HERE"/certs/*/client.crt >/dev/n
     done
 fi
 # a Pico on USB: its serial port, or its BOOTSEL drive (existence tests: no ls, which fails on a missing path)
-pico_present() { compgen -G "/dev/cu.usbmodem*" >/dev/null || [ -d /Volumes/RPI-RP2 ] || [ -d /Volumes/RP2350 ]; }
+pico_present() { compgen -G "/dev/cu.usbmodem*" >/dev/null || compgen -G "/dev/ttyACM*" >/dev/null \
+    || compgen -G "/Volumes/RP[I2]*" >/dev/null || compgen -G "/media/*/RP[I2]*" >/dev/null; }
 need_broker() {  # need_broker STAGE [plain]: MQTT results count only between two machines; TLS needs the broker's certs
     [ -n "$BROKER" ] || { echo "[i] $1: skipped - MQTT runs count only against a broker on another machine (--broker IP, README 0.1)"; return 1; }
     [ "$REACH" = 1 ] || { echo "[i] $1: skipped - broker $BROKER:18830 unreachable (the [!] line at the start: wrong IP, another network?)"; return 1; }
@@ -518,8 +519,8 @@ PICO_LIBS="pqclean,mldsa-native,liboqs,liboqs-r3,wolfssl,bearssl,ascon-c,referen
 # mqtt = the Pico W's Stage 2 + pipeline (pico/sketches/mqtt_tls_bench): needs --broker and WIFI_SSID / WIFI_PASS exported
 PICO_TEST=$(has "$TESTS" pqc && printf pqc,; has "$TESTS" "mqtt,pipeline" && printf mqtt)
 if stage pico "pqc,mqtt,pipeline" "$PICO_LIBS"; then
-    if [ "$OS" != Darwin ]; then
-        echo "[i] pico: run from the Mac (the runner flashes via /Volumes/RPI-RP2 and /dev/cu.usbmodem*)"
+    if ! command -v arduino-cli >/dev/null; then
+        echo "[i] pico: needs arduino-cli + the rp2040 core (README section 0, Pico)"
     elif ! pico_present; then
         echo "[i] pico: no board connected - skipped (plug it in; brand-new boards: hold BOOTSEL)"
     else
