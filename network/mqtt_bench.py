@@ -86,7 +86,8 @@ KEX_KEMS = ["ML-KEM-768", "X25519MLKEM768", "X25519", "HQC-1", "HQC-3", "HQC-5",
 
 
 # the client's crypto inside each handshake, when the client times it (pico/sketches/mqtt_tls_bench/hs_timing.c: the Pico, and
-# the wolfSSL client on Linux): key share, its completion (decapsulation / shared secret), verify, sign; us and calls
+# the wolfSSL client on Linux; network/hs_timing_openssl.c: the OpenSSL client on Linux): key share, its completion
+# (decapsulation / shared secret), verify, sign; us and calls
 HS_COLS = ("hs_keygen_us", "hs_derive_us", "hs_verify_us", "hs_sign_us", "hs_keygen_n", "hs_derive_n", "hs_verify_n",
            "hs_sign_n")
 

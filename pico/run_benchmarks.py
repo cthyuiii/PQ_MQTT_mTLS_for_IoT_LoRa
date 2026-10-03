@@ -146,8 +146,11 @@ SKETCHES = [
     S("liboqs_bench", "SLH-DSA-SHAKE-128s (liboqs)",  3600, BOTH, 0, flags="-DLB_ALG=slh_dsa_pure_shake_128s -DLB_ITERS=2"),
     # --- NIST round 3 MAYO / SNOVA / MQOM / UOV: liboqs main (lib=R3), memory-optimised builds. Round 3 changed
     #     MAYO-1/2 and UOV-Ip, gave SNOVA new sets (v, o, q, l, r, m1) and MQOM v3. Same code as the round3 stage.
-    S("liboqs_bench", "MAYO-1 round 3 (liboqs)",       300, BOTH, 215, lib=R3, flags="-DLB_ALG=mayo_1 -DLB_STACK_KB=224"),  # round 2 verify ~215 KB
-    S("liboqs_bench", "MAYO-2 round 3 (liboqs)",       300, BOTH, 153, lib=R3, flags="-DLB_ALG=mayo_2 -DLB_STACK_KB=224"),  # 160 KB overflowed in round 2
+    #     MAYO stack, this library's M0+ code in QEMU: MAYO-1 keygen / sign / verify 158 / 236 / 225 KB, MAYO-2
+    #     125 / 153 / 363 KB. 224 KB overflowed in MAYO-1's sign; 240 KB is about the most the RP2040 has to give.
+    S("liboqs_bench", "MAYO-1 round 3 (liboqs)",       300, BOTH, 237, lib=R3, flags="-DLB_ALG=mayo_1 -DLB_STACK_KB=240"),
+    S("liboqs_bench", "MAYO-2 round 3 (liboqs)",       300, ("rp2350",), 363, lib=R3, flags="-DLB_ALG=mayo_2",
+      note="verify needs 363 KB of stack: more than the RP2040's 264 KB of RAM"),
     S("liboqs_bench", "MAYO-3 round 3 (liboqs)",       600, (), 504, tier="infeasible", lib=R3, flags="-DLB_ALG=mayo_3",
       note="verify needs 504 KB stack (MAYO-3 is unchanged in round 3)."),
     *[S("liboqs_bench", f"SNOVA_{p} round 3 (liboqs)", 1200, BOTH, 0, lib=R3, flags=f"-DLB_ALG=snova_SNOVA_{p}")
@@ -201,7 +204,7 @@ SKETCHES = [
     S("slhdsa_bench", "SLH-DSA-SHAKE-192s", 900,  BOTH, 25, flags="-DPICO_VARIANT_shake_192s"),
     S("slhdsa_bench",  "SLH-DSA-SHA2-256s", 1500,  BOTH, 30, flags="-DPICO_VARIANT_sha2_256s"),
     S("slhdsa_bench", "SLH-DSA-SHAKE-256s",1500,  BOTH, 30, flags="-DPICO_VARIANT_shake_256s"),
-    # --- SQIsign round 3 (the-sqisign "third-round version"): ref build, 32-bit field arithmetic, mini-GMP, as a
+    # --- SQIsign round 3 (the-sqisign "third-round version"): ref build, 32-bit field arithmetic (no GMP), as a
     #     precompiled library (sqisign_bench/make_sqisign_lib.sh; its KATs match the official ones). No heap; the big
     #     stack is the host-measured peak + margin. Signing takes minutes on the M0+: few iterations, long timeouts.
     S("sqisign_bench", "SQIsign-I round 3",   1800, BOTH, 128, flags="-DSQISIGN_LVL1 -DBIG_STACK_BYTES=131072u -DITERS=5"),
@@ -596,6 +599,7 @@ def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8):
     if ser is None:
         print("    !! could not open serial", port); return rows, sizes, False, ""
     saw_header = fault = False
+    mhz = None
     reconnects = 0
     last = time.time()
     while True:
@@ -623,6 +627,8 @@ def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8):
             saw_header = True
         if "MEMORY FAULT" in line or "HARDFAULTED" in line:
             fault = True
+        if line.startswith("CPU clock: "):
+            mhz = _g(line, r"CPU clock: (\d+)")
         if "sizes:" in line.lower():
             sizes = (_g(line, r"\bpk=(\d+)"), _g(line, r"\bsk=(\d+)"),
                      _g(line, r"\bsigMax=(\d+)"), _g(line, r"\bsig=(\d+)"))
@@ -634,6 +640,9 @@ def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8):
                 std=_g(line, r"\bstd=(\d+)us"),
                 mean_cyc=_g(line, r"\bmean_cyc=(\d+)"), median_cyc=_g(line, r"\bmedian_cyc=(\d+)"),
                 ops=_g(line, r"\bops/s=([\d.]+)", float))
+            if mhz:  # the sketches print us x MHz as a 32-bit unsigned long: it wraps for ops over 21.5 s at 200 MHz
+                for k in ("mean", "median"):
+                    if rows[op][k] != "": rows[op][k + "_cyc"] = rows[op][k] * mhz
         if "=== done" in line and saw_header:
             break
     try:

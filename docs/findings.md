@@ -928,7 +928,8 @@ Pico W's pipeline; no run of the new form yet)
       short 23.7 / 23.6 s, GF(2) shorter 61.1 / 40.1 s, with at most 28 KB of stack.
     - **MAYO round 3 on the Pico W:** MAYO-1 hung at its first keygen with a 224 KB stack (round 2 MAYO-1 fit), and
       took the next flash (MAYO-2) with it: the runner's USB reset can't reach a board whose USB died. The runner
-      now waits for a manual BOOTSEL there, and `liboqs_bench` reboots itself into BOOTSEL after such a hang.
+      now waits for a manual BOOTSEL there, and `liboqs_bench` reboots itself into BOOTSEL after such a hang. The
+      cause was the stack (finding 95).
     - **QR-UOV cat1** now runs from `qruov_zoo_bench` with a 64 KB stack: the same times as its old sketch (sign
       1.20 s, verify 1.08 s).
     - **Still older code here:** SDitH (2023 threshold variant; round 3 is SDitH v3, Aug 2026), FAEST (2.0; round
@@ -983,7 +984,7 @@ Pico W's pipeline; no run of the new form yet)
       56 / 59 / 51 KB (1q127L10), 70 / 74 / 63 KB (1q31L10) and 114 / 122 / 102 KB (1q7L10), with no large static
       tables. All five sets now link for the RP2040; in round 2 only cat1 (1q127L3) fitted.
     - **SQIsign** (the "third-round version"; new primes p324 / p500 / p664 for levels I / III / V): its portable ref
-      build with 32-bit field arithmetic (`GF_RADIX=32`), mini-GMP and `SQISIGN_SINGLE_THREADED` (no thread-local
+      build with 32-bit field arithmetic (`GF_RADIX=32`; round 3 needs no GMP) and `SQISIGN_SINGLE_THREADED` (no thread-local
       storage on bare metal) is KAT-identical at all three levels. No heap; host stack peaks 73 / 102 / 39 KB (I),
       97 / 136 / 62 KB (III), 131 / 185 / 82 KB (V). All three link for the RP2040 (`sqisign_bench`). Round 2's
       SQIsign needed `__uint128_t` and could not be built for the Pico at all.
@@ -995,13 +996,69 @@ Pico W's pipeline; no run of the new form yet)
     - **SDitH v3** (Aug 2026): signing needs a 335 KB scratch buffer at cat 1 fast (959 KB short), verifying 329 KB,
       so it cannot run on the RP2040; on an RP2350 it would also need its `__uint128_t` GF(2^128) code ported to
       32-bit first. Recorded in the runner, not built; the round 1 `sdith_bench` is removed.
-    - Not yet run on the board. The host stage (`run_all.sh` reference stages) still uses the older code for these four.
+    - **On the Pico W (RP2040 at 200 MHz, 3 Oct), keygen / sign / verify medians:**
+      - QR-UOV, all five sets OK (10 / 10 verified): 1q127L3 4.53 s / 0.79 s / 0.74 s, 1q31L3 6.31 / 1.02 / 0.96 s,
+        1q127L10 12.3 / 3.36 / 3.21 s, 1q31L10 20.5 / 4.93 / 4.70 s, 1q7L10 63.5 / 11.5 / 10.9 s. The board's stack
+        peaks match the host's (27.6 / 25.5 / 21.8 KB for 1q127L3 up to 116.7 / 124.8 / 105.1 KB for 1q7L10). Against
+        round 2's cat1 on the same board (12.58 / 1.20 / 1.08 s), round 3's 1q127L3 is 2.8x faster at keygen and
+        1.5x at signing and verifying.
+      - SQIsign-I OK (5 / 5): 13.7 s / 40.1 s / 6.05 s, 103 KB of stack when signing.
+      - SQIsign-III crashed in its first keygen (silent for the 3,600 s timeout); SQIsign-V wasn't reached. The
+        cause was our library build, not SQIsign. `make_sqisign_lib.sh` merged the three levels into one archive, but
+        each level defines the same 193 `sqisign_gen_*` functions (big integers, quaternions), each sized for its
+        own integers (80 limbs at level III vs 60 at I). The linker took level I's copies, so III and V computed
+        with level-I-sized integers and corrupted memory: a bus fault in `ibz_mod`, reproduced in QEMU. The Mac
+        check had linked one level per program, which is why it passed. The script now renames each level's copies
+        (`sqisign_gen_<level>_*`). In QEMU (the Pico's M0+ code on an MPS2 board, unaligned accesses trapped as on
+        an M0+) all three levels then produce the same key pair and signature as a Mac build with the same RNG.
+        They take keygen / sign / verify 2.7 / 8.1 / 1.2 G instructions (I; the board took 2.7 / 8.0 / 1.2 G
+        cycles), 17.9 / 28.9 / 4.2 G (III) and 21.9 / 65.0 / 10.0 G (V): about 4.5 and 8 minutes per iteration on
+        the Pico. Level I's board numbers stand, since it linked its own copies. The sketch now reboots into
+        BOOTSEL on a hard fault, so a crash shows at once instead of as an hour of silence.
+    - The host stage (`run_all.sh` reference stages) still uses the older code for these four.
 91. [Mac, Pico] **LoRaWAN 1.1 with 256-bit keys (`lorawan11_256`, 3 Oct 2026).** The 1.1 frame with AES-256-CTR and the
     1.1 MIC rules on AES-256-CMAC: two CMACs per uplink (keys nwk | nwk2 and nwk2 | nwk), one per downlink. Like
     `aes256ctr` for 1.0.x, it is not standard LoRaWAN (AES-128 only): it shows what 256-bit keys cost in LoRaWAN's own
     construction. Host (OpenSSL) and Pico (BearSSL) frames are byte-identical (80 / 80 in `pico/tests/aead_host_test`,
     10 schemes x up / down x 4 sizes), and the host self-test passes. The pipeline now has 10 schemes (89 Pico
-    blocks). Not yet measured through the broker.
+    blocks).
+    - **Measured on the Pico W through the Pi 4's broker** (`pi_broker3`, ML-DSA-44 mTLS, 51 B payload, medians):
+      sealing an uplink takes 928 us vs 696 us for `lorawan11` (+33%), opening it 1,085 vs 854 us (+27%). A downlink
+      takes 570 vs 418 us (+36%) to seal and 726 vs 591 us (+23%) to open. Both send 112 B per message on the
+      socket. The broker round trip (6.3-7.7 ms) is unchanged, so 256-bit keys cost only AES-256's extra rounds
+      and key schedule: about 0.2-0.3 ms per frame on the Pico.
+
+92. [Pico, Pi] **The third Pico W run against the Pi 4's brokers (`pi_broker3`, 3 Oct, ML-DSA-44): valid.** 83 of 89
+    blocks OK. The 6 failures are the same as in `pi_broker2` (finding 88): the two ML-KEM-512 hybrids over TLS and
+    mTLS, and p384_mlkem768, the group tested next, which then stalls. The other nine payload schemes repeat
+    `pi_broker2` within 1% (seal / open). The TLS key-exchange sweep repeats it within ±1% (ML-KEM-768 166.0 vs
+    165.7 ms). The mTLS sweep varies by up to ±21%, because ML-DSA signing time varies per signature
+    (rejection sampling) and each group has 20 connections. Stage 2 TLS: 284 vs 283 ms.
+93. [Pico] **Cycle counts over 21.5 s were wrong (fixed 3 Oct).** The sketches print cycles = us x MHz as a 32-bit
+    `unsigned long`, which wraps past 2^32 cycles: 21.5 s at 200 MHz. 68 cycle values in 25 rows of
+    `pico/logs/results.csv` had wrapped (RSA keygen, SLH-DSA 's' and 128s signing, MQOM, QR-UOV-1q7L10 keygen,
+    SQIsign-I signing). The microsecond columns were always right. The runner now computes cycles from the
+    microseconds and the CPU clock the board prints. The existing rows are corrected, each only after checking
+    that us x MHz mod 2^32 equals the printed value.
+94. [Pi, Mac] **The OpenSSL client's handshake broken down (3 Oct).** `network/hs_timing_openssl.c` gives
+    `mqtt_tls_timer` on Linux the same `hs_*` columns as the wolfSSL clients (finding 83): key share, its
+    completion, verify, sign, per connection. Per handshake it counts 1 key share (`EVP_PKEY_keygen`; a hybrid
+    group is one provider key), 1 derive (`EVP_PKEY_derive` / `EVP_PKEY_decapsulate`), 2 verifies (the broker's
+    chain through `X509_verify_cert`, and its CertificateVerify) and, for mTLS, 1 signature. OpenSSL also runs
+    `X509_verify_cert` to build the client's own chain before sending it; that call is not counted.
+    - Tested on the Mac through a test-only interposing library, against local brokers, 20 handshakes,
+      X25519MLKEM768: ML-DSA-44 mTLS 1.56 ms = 0.08 keygen + 0.08 derive + 0.18 verify + 0.54 sign + 0.69 ms
+      for the broker and loopback. Ed25519: 0.85 ms with 0.03 ms of signing. The Pi's rows come from its next
+      `mtls` / `pipeline` run.
+95. [Pico] **Why MAYO round 3 hung on the Pico W: its stack (3 Oct).** Run in QEMU, the Pico's own M0+ build of liboqs
+    main needs (keygen / sign / verify) 158 / 236 / 225 KB of stack for MAYO-1 and 125 / 153 / 363 KB for MAYO-2.
+    It gets there with no faults and no heap, at 70 / 138 / 47 M instructions for MAYO-1 (about 0.35 / 0.7 /
+    0.24 s on the Pico).
+    - The sketch had given both 224 KB, so MAYO-1 overflowed while signing; no output appears until the first
+      keygen-sign-verify round ends.
+    - MAYO-1 now gets 240 KB: about the most the RP2040 can give (the sketch's other static RAM is 9 KB, and 7 KB
+      stays free for the heap).
+    - MAYO-2's verify needs more than the RP2040's whole 264 KB of RAM, so MAYO-2 now runs only on the RP2350.
 
 ### Sources
 

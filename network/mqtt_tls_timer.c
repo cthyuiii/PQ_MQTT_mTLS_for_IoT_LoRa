@@ -74,14 +74,14 @@
 #ifdef USE_WOLFSSL
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
-#ifdef HS_TIMING  // the client's crypto inside each handshake (../pico/sketches/mqtt_tls_bench/hs_timing.c, Linux + --wrap)
-#include "hs_timing.h"
-#endif
 #else
 #include <openssl/err.h>
 #include <openssl/provider.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#endif
+#ifdef HS_TIMING  // the client's crypto inside each handshake, Linux: ../pico/sketches/mqtt_tls_bench/hs_timing.c (wolfSSL,
+#include "hs_timing.h"  // --wrap) or hs_timing_openssl.c (OpenSSL, the executable's own EVP_* in front of libcrypto's)
 #endif
 #include "wire_stats.h"   /* socket writes / reads, TCP segments */
 

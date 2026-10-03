@@ -27,6 +27,7 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   ├── mqtt_tls_timer.c           ← MQTT client: plain / TLS / mTLS connect, the pipeline, the KEM exchange (OpenSSL or wolfSSL)
 │   ├── app_aead.{c,h}             ← the pipeline's LoRaWAN 1.0.x / 1.1 frames (up / down), AES-GCM, Ascon, self-test
 │   ├── wire_stats.h               ← socket writes / reads and TCP segments, for the on-wire byte estimate
+│   ├── hs_timing_openssl.c        ← the OpenSSL client's crypto inside each handshake (Linux)
 │   ├── mqtt_bench.py              ← Stage 2 + pipeline + KEM exchange driver (one Mosquitto per certificate)
 │   ├── tls_sweep.sh               ← TLS / mTLS key-exchange sweep: MQTT connections to the broker's listeners
 │   ├── provenance.py              ← board name + versions record
@@ -392,7 +393,7 @@ which benches run it.
 | ML-DSA-44 / 65 / 87 | module lattice | FIPS 204 | 3 | 1312 / 1952 / 2592 | 2420 / 3309 / 4627 | all, TLS, pipeline |
 | Falcon-512 / 1024 | NTRU lattice | FIPS 206 draft | 2 (+padded) | 897 / 1793 | ≤ 752 / ≤ 1462 | all, TLS (OpenSSL; wolfSSL since [finding 51](docs/findings.md)), pipeline |
 | SLH-DSA SHA2 / SHAKE 128–256 s / f | hash-based | FIPS 205 | 12 | 32 / 48 / 64 | 7856 – 49856 | Stage 1 + Pico only (TLS refuses it) |
-| MAYO-1 / 2 / 3 / 5 | multivariate | round 3 [33] | 4 | 1456 – 5554 | 239 – 964 | `round3`: Stage 1 (OpenSSL, liboqs), TLS; Pico (liboqs main; MAYO-3/5 too big) |
+| MAYO-1 / 2 / 3 / 5 | multivariate | round 3 [33] | 4 | 1456 – 5554 | 239 – 964 | `round3`: Stage 1 (OpenSSL, liboqs), TLS; Pico (liboqs main; MAYO-1 on both boards, MAYO-2 on the Pico 2 W only, MAYO-3/5 too big) |
 | SNOVA I / III / V × K / B / S | multivariate | round 3 [32] | 9 | 376 – 2716 | 272 – 896 | `round3`: Stage 1, TLS; Pico (liboqs main, memory-optimised) |
 | MQOM v3, cat 1 / 3 / 5, GF(16) fast / short, GF(2) shorter, constant time | MPC-in-the-head | round 3 [34] | 9 (of 18) | 52 – 128 | 2492 – 13540 | `round3`: Stage 1 (OpenSSL: the 3 GF(16) fast sets); Pico (cat 1, memory-optimised) |
 | UOV Is / Ip / III / V (+ pkc, pkc-skc) | multivariate | round 3 | 12 | 46591 – 3.2 M | 96 – 275 | `round3`: Stage 1 (liboqs); Pico: pkc on RP2350 (liboqs main), Ip classic (round 2 code, baked keys) |

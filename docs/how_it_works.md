@@ -404,9 +404,14 @@ So each handshake costs:
      chain from its own trust store, so with a single CA the broker also sent the CA the peer already holds
      (README finding 82).
 2. **Broker**: one Mosquitto 2.1.2 process per certificate type.
-   - The wolfSSL clients (Pico W; Pi, Linux) also time their own crypto inside each handshake (`hs_timing.c`,
-     `--wrap`): key share, its completion, verify, sign. They are extra columns on every connection row
-     (README finding 83).
+   - The clients on the Pico W and on Linux also time their own crypto inside each handshake: key share, its
+     completion, verify, sign. They are extra columns on every connection row (findings 83 and 94).
+     - wolfSSL (Pico W, Pi): `hs_timing.c` with the linker's `--wrap`.
+     - OpenSSL (Pi): `network/hs_timing_openssl.c`. `mqtt_tls_timer` defines the six libcrypto functions
+       libssl calls during a handshake (`EVP_PKEY_keygen`, `EVP_PKEY_derive`, `EVP_PKEY_decapsulate`,
+       `X509_verify_cert`, `EVP_DigestVerify`, `EVP_DigestSign`). The dynamic linker binds libssl to those
+       copies, and each one times libcrypto's own. macOS binds libssl to libcrypto directly, so the Mac's rows
+       have no such columns.
    - Settings: `per_listener_settings true`, `set_tcp_nodelay true` (no Nagle delay on the CONNACK after the
      TLS 1.3 session tickets), `cafile` = `ClientCA.crt` (only mTLS uses it), and `OPENSSL_CONF` with
      `Groups = ?X25519MLKEM768:?MLKEM512:...`: the Stage 2 group (the customer's X25519MLKEM768) plus the `tls`

@@ -25,7 +25,11 @@ if [ -f "$Q/include/oqs/oqs.h" ]; then
 fi
 case "${1:-openssl}" in
     openssl)
-        cc -O2 mqtt_tls_timer.c app_aead.c $ASCON $INC $LIB -lssl -lcrypto -lm -o mqtt_tls_timer
+        HS=""   # Linux: time the client's crypto inside each handshake (hs_timing_openssl.c); macOS can't interpose
+        [ "$(uname)" = Linux ] && HS="-DHS_TIMING -I../pico/sketches/mqtt_tls_bench hs_timing_openssl.c -ldl"
+        cc -O2 mqtt_tls_timer.c app_aead.c $ASCON $HS $INC $LIB -lssl -lcrypto -lm -o mqtt_tls_timer
+        [ -z "$HS" ] || nm -D --defined-only mqtt_tls_timer | grep -q ' EVP_DigestSign$' ||
+            echo "[!] EVP_DigestSign is not exported: libssl will bypass hs_timing_openssl.c (hs_* columns stay 0)"
         # the KEM exchange (client + responder) links liboqs: its own binary. On Linux, oqs-provider loaded into a
         # process that already holds a liboqs calls that one, not its own (round-3 MAYO / SNOVA ran round-2 code)
         [ -z "$OQS" ] || cc -O2 mqtt_tls_timer.c app_aead.c $ASCON $OQS $INC $LIB -lssl -lcrypto -lm -o mqtt_kem_timer ;;

@@ -1,11 +1,14 @@
 // sqisign_bench.ino - SQIsign round 3 (isogenies; the-sqisign "third-round version") on RP2040 / RP2350.
-//   Library: make_sqisign_lib.sh cross-compiles the portable ref build with 32-bit field arithmetic (GF_RADIX=32) and
-//   mini-GMP for both CPUs (precompiled libsqisign.a). The runner picks the level: -DSQISIGN_LVL1 (p324_3, default),
+//   Library: make_sqisign_lib.sh cross-compiles the portable ref build with 32-bit field arithmetic (GF_RADIX=32) for
+//   both CPUs (precompiled libsqisign.a). The runner picks the level: -DSQISIGN_LVL1 (p324_3, default),
 //   -DSQISIGN_LVL3 (p500_27), -DSQISIGN_LVL5 (p664_17), and the big stack. Host stack peaks (keygen / sign / verify,
 //   KB, no heap): I 73 / 102 / 39, III 97 / 136 / 62, V 131 / 185 / 82. Serial @115200.
 
 #include <Arduino.h>
 #include <string.h>
+#include <pico/bootrom.h>
+// a crash (e.g. past the big stack) drops to BOOTSEL: the runner reports it at once and can flash the next sketch
+extern "C" void isr_hardfault(void) { reset_usb_boot(0, 0); }
 
 extern "C" {
   #include <sqisign.h>
