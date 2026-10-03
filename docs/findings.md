@@ -1116,6 +1116,40 @@ All links checked on 28 Sep 2026.
 39. freenode, *NIST locks FN-DSA to fixed-point math for FIPS 206* (28 Sep 2026: 32.32 key generation, 64.64 signing, one KAT-testable signing procedure). <https://freenode.net/article/nist-locks-fn-dsa-to-fixed-point-math-for-fips-206>
 40. R. Perlner, *FIPS 206 Status Update*, NIST, 6th PQC Standardization Conference (2025). <https://csrc.nist.gov/csrc/media/Presentations/2025/fips-206-fn-dsa-(falcon)/images-media/fips_206-perlner_2.1.pdf>
 
+## In progress (planned, waiting for the go)
+
+What a real deployment adds on top of the benchmark. Each one gets a plan here and is built only when approved.
+
+- **Trust-anchor updates through signed firmware.** The Pico's CA certificate is compiled into its firmware, so
+  moving devices to a post-quantum root means shipping the new CA securely.
+  - Plan: keep the CA in a LittleFS file instead of the firmware. An update message on an MQTT topic carries the
+    new CA plus an ML-DSA signature from an "update key" whose public half is baked into the firmware. The Pico
+    verifies it (wolfSSL ML-DSA, already built in), writes the file and reconnects under the new CA.
+  - A host script signs and publishes the update.
+  - Measures: verify time, flash write time, bytes, and the first handshake under the new root.
+  - arduino-pico's `PicoOTA` / `Updater` could carry a whole signed firmware image later.
+- **Hostname checks, a CRL and NTP on the Pico.** Today the Pico checks only that the broker's chain ends at the
+  CA: no name check, no revocation list, and no dates (`NO_ASN_TIME`).
+  - Plan for the name check: `gen_certs.sh` adds the broker's IP / name to the server certificate's SAN (now
+    `localhost`, `127.0.0.1`), and the sketch calls `wolfSSL_check_domain_name`.
+  - Plan for revocation: `gen_certs.sh` also issues a CRL. wolfSSL gets `HAVE_CRL`, and the sketch loads the CRL
+    with `wolfSSL_CTX_LoadCRLBuffer` and enables it.
+  - Plan for time: the sketch sets the clock with arduino-pico's `NTP` before connecting, and wolfSSL drops
+    `NO_ASN_TIME`. This needs an NTP server the Pico can reach (internet, or `chrony` on the Pi).
+  - Measures: the added handshake time, flash and RAM, against today's runs.
+  - The host clients get the same checks (OpenSSL `SSL_set1_host` and CRL flags; wolfSSL the same calls).
+- **Keep FCnt across Pico reboots.** FCnt is part of every frame's nonce: restarting it under the same keys reuses
+  nonces.
+  - Today the keys are new on every boot, so nothing repeats.
+  - Plan: store DevAddr, the keys and FCnt in a LittleFS file. Save FCnt every N frames, and on boot continue from
+    the saved value plus N, so a counter never repeats even after a crash between saves.
+  - Measures: the flash write per save and its effect on per-message time.
+- **KEM exchange inside mTLS.** The KEM exchange now sends raw public keys and ciphertexts over the plain MQTT
+  listener, so a man in the middle could swap a public key.
+  - Plan, two variants: (a) the same exchange over the mTLS listener, the Pico and `mqtt_kem_timer` both
+    presenting certificates; (b) over plain MQTT with each public key / ciphertext signed by ML-DSA.
+  - Measures: added time and bytes against the plain exchange (finding 8).
+
 ## Future implementations (KIV)
 
 - **ChirpStack as the network server.** It sits between gateway and application
