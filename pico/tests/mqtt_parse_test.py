@@ -143,6 +143,11 @@ with tempfile.TemporaryDirectory() as d:
     assert any(x["platform"] == "rp2040" and x["stage"] == "KEM exchange (MQTT)" and x["algorithm"] == "X25519MLKEM768"
                and x["operation"] == "decapsulate (client)" and x["metric"] == "median" and x["value"] == "855000.0"
                for x in rows)
+    # a round 3 certificate's set is in certs/round3 (the SNOVA firmware)
+    import mqtt_bench
+    r.save_mqtt(blocks[:2], TXT, "rp2040", "SNOVA1K", "rp2040:rp2040:rpipicow")
+    s = {x["Signature"]: x for x in csv.DictReader(open(d / "results/mqtt_mtls_summary_pico_rp2040.csv")) if x["Mode"] == "mTLS"}
+    assert s["SNOVA1K"]["server_cert_B"] == str(mqtt_bench.der_bytes(ROOT / "certs/round3/SNOVA1K/server.crt"))
 # a reset that isn't the watchdog's runs the first blocks again: one block per label, the fullest run
 H = "iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B,hs_writes,hs_reads,writes,reads"
 dup = r.mqtt_blocks(f"=== x on RP2040 ===\n#block connect plain\n{H}\n0,1,0,1,2,0,0,23,4,0,0,1,1\n1,1,0,1,2,0,0,23,4,0,0,1,1\n"

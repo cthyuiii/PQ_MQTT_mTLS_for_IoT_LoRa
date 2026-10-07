@@ -261,12 +261,17 @@ MQTT_ENV = ("WIFI_SSID", "WIFI_PASS", "BROKER")
 MQTT_BASE_PORT = 18830  # ./run_all.sh --serve-broker
 MQTT_R3_PORT = 20830    # its round 3 broker (MAYO / SNOVA certificates in certs/round3)
 
+def cert_dir(sig):
+    """a certificate set's folder and its broker's base port: round 3 sets (MAYO / SNOVA) are in certs/round3"""
+    sys.path.insert(0, os.path.join(ROOT, "network"))
+    from mqtt_bench import SIGS_R3
+    return (os.path.join(ROOT, "certs", "round3", sig), MQTT_R3_PORT) if sig in SIGS_R3 else (os.path.join(ROOT, "certs", sig), MQTT_BASE_PORT)
+
 def mqtt_secrets(sig, gen):
     """mt_secrets.h in gen/: Wi-Fi + broker from the environment, certs/<sig>'s CA, client cert and key as DER,
     the broker's ports for sig. Returns why it can't (a status), else None. Deleted after the compile."""
-    sys.path.insert(0, os.path.join(ROOT, "network"))
-    from mqtt_bench import port_of, SIGS_R3
-    d, base = (os.path.join(ROOT, "certs", "round3", sig), MQTT_R3_PORT) if sig in SIGS_R3 else (os.path.join(ROOT, "certs", sig), MQTT_BASE_PORT)
+    d, base = cert_dir(sig)
+    from mqtt_bench import port_of
     if not all(os.path.exists(os.path.join(d, f)) for f in ("CA.crt", "client.crt", "client.key")):
         return f"NO_CERTS: {d} (run gen_certs.sh, or rsync the broker machine's certs/)"
     def der(f):  # PEM (certificate, CRL, key) -> DER
@@ -350,7 +355,7 @@ def save_mqtt(blocks, txt, family, sig, fqbn):
     res, tag = Path(ROOT, "results"), f"pico_{family}{RUN_TAG}"
     kv = lambda prefix: dict(re.findall(r"(\w+)=(\S+)", next((ln for ln in txt.splitlines() if ln.startswith(prefix)), "")))
     cfg, wifi = kv("#config "), kv("#wifi ")
-    certs = (bmm.der_bytes(Path(ROOT, "certs", sig, "server.crt")), bmm.der_bytes(Path(ROOT, "certs", sig, "client.crt")))
+    certs = (bmm.der_bytes(Path(cert_dir(sig)[0], "server.crt")), bmm.der_bytes(Path(cert_dir(sig)[0], "client.crt")))
     res.mkdir(exist_ok=True)
     for stage, stem, rawname in (("connect", "mqtt_mtls", "raw"), ("pipeline", "pipeline", "msgs_raw")):
         summary, raw = [], []
