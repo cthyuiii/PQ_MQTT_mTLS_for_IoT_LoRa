@@ -40,6 +40,9 @@
 #   kex      KEM exchange as MQTT messages (Classic McEliece, HQC,  mqtt / liboqs                 (--broker)
 #            ML-KEM-768, X25519, X25519MLKEM768): public key out, ciphertext back via the broker's responder
 #            against the broker machine's Stage 2 listeners
+#   deploy   Deployment checks (certs/DEPLOY: gen_certs.sh --deploy): mqtt / openssl,liboqs           (--broker)
+#            the broker's IP and the CA's CRL checked, revoked / expired / wrong-name connections refused, the
+#            KEM exchange over mTLS and signed (ML-DSA-44)
 #   sdith faest hawk sqisign qruov   NIST reference code            pqc  / reference
 #   pico     Pico sketches (Mac or Linux host)                      pqc,mqtt / pqclean, mldsa-native,
 #            liboqs, liboqs-r3, wolfssl, bearssl, ascon-c, reference, rweather-crypto, openssl-goldilocks
@@ -123,13 +126,13 @@ if [ "$DEPS" = 1 ]; then
         command -v brew >/dev/null || { echo "[-] Homebrew required: https://brew.sh"; exit 1; }
         # plain `brew install` upgrades outdated formulae (man brew): that would change versions mid-study
         HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_AUTO_UPDATE=1 \
-            brew install openssl@3 cmake mosquitto autoconf automake libtool arduino-cli \
+            brew install openssl@3 cmake mosquitto autoconf automake libtool arduino-cli meson \
             || echo "[!] brew install failed - continuing, individual stages may break"
     else
         log "installing build deps (apt)"
         sudo apt-get update -qq || true
         sudo apt-get install -y --no-upgrade build-essential cmake libssl-dev python3 python3-venv unzip wget curl \
-            git autoconf automake libtool mosquitto mosquitto-clients \
+            git autoconf automake libtool mosquitto mosquitto-clients meson ninja-build \
             || echo "[!] apt failed - continuing, individual stages may break"
     fi
 fi
@@ -461,6 +464,18 @@ if stage kex mqtt liboqs && need_broker kex plain; then   # plain MQTT: no certi
         --board "$BOARD" ${ALGOS:+--match "$ALGOS"} ${RB[@]+"${RB[@]}"} || echo "[!] KEM exchange failed"
 fi
 
+# ---- 2d. Deployment checks: name / CRL / dates, refused certificates, KEM exchange over mTLS and signed --
+if stage deploy mqtt "openssl,liboqs" && need_broker deploy; then
+    if [ ! -f "$HERE/certs/DEPLOY/ta_update.bin" ]; then
+        echo "[i] deploy: skipped - no certs/DEPLOY (scripts/gen_certs.sh --deploy <broker IP>, then copy certs/ over)"
+    else
+        log "Deployment checks against $BROKER: CRL + broker IP, refused certificates, KEM exchange over mTLS / signed"
+        liboqs_host; timer
+        python3 "$NE/mqtt_bench.py" --deploy --kex-n "${KEX_N:-50}" --results-dir "$RESULTS" --tag "$TAG" \
+            --board "$BOARD" ${RB[@]+"${RB[@]}"} || echo "[!] deployment checks failed"
+    fi
+fi
+
 if stage tls mqtt openssl && need_broker tls; then
     log "TLS + mTLS handshake sweep against $BROKER (full MQTT connections; every cert x 17 groups)"
     timer
@@ -470,15 +485,16 @@ if stage tls mqtt openssl && need_broker tls; then
 fi
 
 # ------------------------ 5. NIST reference implementations (Stage 1) --
-if stage sdith pqc reference && has "$ALGOS" SDitH; then
-    log "SDitH (generic bench harness)"
-    (cd "$REF" && python3 run_reference_benchmarks.py --algos SDitH --iterations $SIG_N) || echo "[!] SDitH failed"
-fi
-if stage faest pqc reference && has "$ALGOS" FAEST; then
-    log "FAEST (flatten once, then generic bench harness)"
-    [ -d "$REF/FAEST_flat" ] || bash "$REF/prepare_faest_flat.sh"
-    (cd "$REF" && python3 run_reference_benchmarks.py --algos FAEST --iterations $SIG_N) || echo "[!] FAEST failed"
-fi
+# round 3 code (the Pico's): setup_round3.sh fetches + builds it once into $CACHE/ref-r3, the generic bench measures
+# each set through its NIST API (mean / median / std / p90 / p99, as the other Stage 1 benches)
+for R3A in SDitH:sdith FAEST:faest SQIsign:sqisign QR-UOV:qruov; do
+    A="${R3A%%:*}"; S="${R3A##*:}"
+    if stage "$S" pqc reference && has "$ALGOS" "$A"; then
+        log "$A round 3 (setup_round3.sh, then the generic bench)"
+        bash "$REF/setup_round3.sh" "$A" && (cd "$REF" && python3 run_reference_benchmarks.py --algos "$A" --iterations $SIG_N) \
+            || echo "[!] $A failed"
+    fi
+done
 if stage hawk pqc reference && has "$ALGOS" HAWK; then
     log "HAWK (native tests/speed: its own time-based loop, mean only)"
     # macOS: the Makefile's c99 wrapper rejects GCC-style flags, so build with clang
@@ -490,28 +506,6 @@ if stage hawk pqc reference && has "$ALGOS" HAWK; then
         && python3 "$REF/parse_native_output.py" --algo HAWK --input "$REF/hawk_results.txt" \
               ${MHZ_ARG[@]+"${MHZ_ARG[@]}"} --csv "$RESULTS/sig_summary_reference.csv") \
         || echo "[!] HAWK failed"
-fi
-if stage sqisign pqc reference && has "$ALGOS" SQIsign; then
-    log "SQIsign (cmake ref build, NO_CYCLE_COUNTER -> ms output; PMCCNTR_EL0 SIGILLs on Pi)"
-    SQ_FLAGS="-DNO_CYCLE_COUNTER -Wno-error"; SQ_GMP=()
-    [ "$OS" = Darwin ] && SQ_FLAGS="$SQ_FLAGS -Wno-macro-redefined" || SQ_GMP=(-DGMP_LIBRARY=MINI)
-    (cd "$REF/SQIsign" \
-        && cmake -B "build_$TAG" -DSQISIGN_BUILD_TYPE=ref -DCMAKE_BUILD_TYPE=Release ${SQ_GMP[@]+"${SQ_GMP[@]}"} \
-                 -DCMAKE_C_FLAGS="$SQ_FLAGS" . \
-        && make -C "build_$TAG" -j"$NPROC") || echo "[!] SQIsign build failed"
-    for L in 1:I 3:III 5:V; do
-        lvl="${L%%:*}"; roman="${L##*:}"
-        "$REF/SQIsign/build_$TAG/apps/benchmark_lvl$lvl" --iterations="$SIG_N" > "$REF/sqisign_lvl${lvl}.txt" 2>&1 \
-            && python3 "$REF/parse_native_output.py" --algo SQIsign --input "$REF/sqisign_lvl${lvl}.txt" \
-                  --label "SQIsign-NIST-$roman" ${MHZ_ARG[@]+"${MHZ_ARG[@]}"} --csv "$RESULTS/sig_summary_reference.csv" \
-            || echo "[!] SQIsign lvl$lvl failed"
-    done
-fi
-if stage qruov pqc reference && has "$ALGOS" QR-UOV; then
-    log "QR-UOV (download NIST package if needed, then generic bench)"
-    ls "$REF/QR-UOV/variants"/*/ >/dev/null 2>&1 || bash "$REF/setup_qruov.sh" || echo "[!] QR-UOV setup failed"
-    (cd "$REF" && python3 run_reference_benchmarks.py --algos QR-UOV --iterations $SIG_N) \
-        || echo "[!] QR-UOV failed (check algos.json variants vs package layout)"
 fi
 
 # ----------------------------------------------- 6. Pico W / Pico 2 W --

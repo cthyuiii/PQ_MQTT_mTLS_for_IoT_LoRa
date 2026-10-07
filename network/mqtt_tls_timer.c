@@ -35,6 +35,8 @@
  *   iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B
  * and with MSGS > 0 also
  *   msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B      (per message; tx/rx = bytes on the socket)
+ *   whole,iter,first_ms,all_ms,msgs                     (per connection, the pipeline as a whole: from the TCP connect
+ *     to the first reading verified after its trip through the broker, and to the last one)
  * Any failure: reason on stderr, exit 1 (the driver records it as the result).
  * mqtt_rx_B includes TLS 1.3 NewSessionTickets the broker sends after the handshake.
  *
@@ -47,6 +49,11 @@
  *   The device decapsulates and checks the hash (key confirmation). Rows:
  *     kex,iter,idx,keygen_us,rtt_us,decaps_us,encaps_us,tx_B,rx_B    (rtt: PUBLISH of the key -> ciphertext back)
  *   KEM_RESPOND=1: the responder (mqtt_bench.py --role broker starts it on the plain listener).
+ *   Signed (KEM_SIGN_KEY=<PEM private key>, KEM_PEER_CERT=<PEM cert>, KEM_PEER_CA=<its CA>; certs/DEPLOY): the device
+ *   sends pk | its ML-DSA signature on pqc/kem/<pid>/spk/<KEM>, the responder checks it with the device's cert and
+ *   signs its reply (ct | hash | time) together with pk. Signed rows add sign_us,verify_us (the device's side).
+ * Deployment checks (any TLS connection): CHECK_HOST=<name or IP> the broker's certificate must name it;
+ *   CHECK_CRL=<PEM CRL> the CA's revocation list (OpenSSL build; wolfSSL's host build has no CRL support).
  *   This is how Classic McEliece gets measured through the broker: its 261 KB - 1.36 MB public keys do not fit a
  *   TLS 1.3 key share (at most 65,535 B).
  */
@@ -79,6 +86,7 @@
 #include <openssl/provider.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#include <openssl/pem.h>
 #endif
 #ifdef HS_TIMING  // the client's crypto inside each handshake, Linux: ../pico/sketches/mqtt_tls_bench/hs_timing.c (wolfSSL,
 #include "hs_timing.h"  // --wrap) or hs_timing_openssl.c (OpenSSL, the executable's own EVP_* in front of libcrypto's)
@@ -158,6 +166,7 @@ static void tls_init(const char *ca, const char *cert, const char *key, const ch
     wolfSSL_CTX_SetIORecv(ctx, cb_recv);
     wolfSSL_CTX_SetIOSend(ctx, cb_send);
     if (suite && wolfSSL_CTX_set_cipher_list(ctx, suite) != WOLFSSL_SUCCESS) die("unsupported suite", suite);
+    if (getenv("CHECK_CRL")) die("CHECK_CRL", "this wolfSSL build has no CRL support (the OpenSSL client has)");
 }
 static const char *tls_cipher(conn_t *c) { return wolfSSL_get_cipher_name(c->tls); }
 static const char *tls_err(conn_t *c, int r) {
@@ -166,6 +175,10 @@ static const char *tls_err(conn_t *c, int r) {
 static int tls_connect(conn_t *c) {
     WOLFSSL *s = wolfSSL_new(ctx); c->tls = s;
     wolfSSL_SetIOReadCtx(s, c); wolfSSL_SetIOWriteCtx(s, c);
+    const char *h = getenv("CHECK_HOST");  /* an IP literal has its own call: the name check refuses it */
+    if (h && (strspn(h, "0123456789.") == strlen(h) || strchr(h, ':') ? wolfSSL_check_ip_address(s, h)
+                                                                       : wolfSSL_check_domain_name(s, h)) != WOLFSSL_SUCCESS)
+        die("CHECK_HOST", h);
     if (wolfSSL_set_groups(s, &group_id, 1) != WOLFSSL_SUCCESS || wolfSSL_UseKeyShare(s, group_id) != WOLFSSL_SUCCESS)
         die("group not usable by this wolfSSL build", "");
     int r = wolfSSL_connect(s);
@@ -194,6 +207,16 @@ static void tls_init(const char *ca, const char *cert, const char *key, const ch
     if (cert && SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM) != 1)
         die("cannot load client key", load_why(key, ERR_reason_error_string(ERR_peek_last_error())));
     if (suite && SSL_CTX_set_ciphersuites(ctx, suite) != 1) die("unsupported suite", suite);
+    const char *crl = getenv("CHECK_CRL");  /* the CA's revocation list: every certificate in the chain is checked */
+    if (crl) {
+        FILE *f = fopen(crl, "r");
+        X509_CRL *x = f ? PEM_read_X509_CRL(f, NULL, NULL, NULL) : NULL;
+        if (f) fclose(f);
+        X509_STORE *st = SSL_CTX_get_cert_store(ctx);
+        if (!x || X509_STORE_add_crl(st, x) != 1) die("cannot load CHECK_CRL", crl);
+        X509_STORE_set_flags(st, X509_V_FLAG_CRL_CHECK);
+        X509_CRL_free(x);
+    }
 }
 static const char *tls_cipher(conn_t *c) { return SSL_get_cipher_name(c->tls); }
 static const char *tls_err(conn_t *c, int r) {
@@ -210,6 +233,7 @@ static void sync_bytes(conn_t *c) {
 static int tls_connect(conn_t *c) {
     SSL *s = SSL_new(ctx); c->tls = s;
     SSL_set_fd(s, c->fd);
+    if (getenv("CHECK_HOST") && SSL_set1_host(s, getenv("CHECK_HOST")) != 1) die("CHECK_HOST", getenv("CHECK_HOST"));
     count_socket_io(SSL_get_rbio(s), c->io);
     int r = SSL_connect(s);
     sync_bytes(c);
@@ -281,8 +305,10 @@ static void use_shared_keys(void) {  /* APP_KEYS -> app_aead (after app_aead_ini
     if (have_keys) app_aead_set_keys(keys, keys + 32, keys + 48, devaddr);
 }
 
-/* SUBSCRIBE to `topic`, then time `msgs` protected PUBLISHes that the broker echoes back to us */
-static void pipeline(conn_t *c, int iter, int msgs, int payload, const char *topic, int report, int down) {
+/* SUBSCRIBE to `topic`, then time `msgs` protected PUBLISHes that the broker echoes back to us; t_conn = when this
+ * connection's TCP connect started (ms): the 'whole' row */
+static void pipeline(conn_t *c, int iter, int msgs, int payload, const char *topic, int report, int down, double t_conn) {
+    double first = 0;
     static unsigned char pkt[2048], body[2048], pt[1024], out[1024 + 64];
     int tl = (int)strlen(topic);
     unsigned char type;
@@ -313,10 +339,12 @@ static void pipeline(conn_t *c, int iter, int msgs, int payload, const char *top
         if (app_open(body + off, len - off, out) != payload || memcmp(out, pt, payload))
             die("payload verification failed", app_aead_label());
         double t3 = now_us();
+        if (m == 0) first = now_ms() - t_conn;
         if (report)
             printf("msg,%d,%d,%.3f,%.3f,%.3f,%llu,%llu\n", iter, m, t1 - t0, t2 - t1, t3 - t2,
                    (unsigned long long)(c->tx - tx0), (unsigned long long)(c->rx - rx0));
     }
+    if (report && msgs > 0) printf("whole,%d,%.3f,%.3f,%d\n", iter, first, now_ms() - t_conn, msgs);
 }
 
 #ifdef HAVE_LIBOQS
@@ -390,23 +418,58 @@ static int kem_decaps(const kem_t *k, unsigned char *ss, const unsigned char *ct
     return !k->x || x25519_dh(ss + k->ss - 32, sk + k->sk - 32, ct + k->ct - 32);
 }
 
+/* signed KEM exchange (KEM_SIGN_KEY, KEM_PEER_CERT, KEM_PEER_CA): see the header comment */
+static EVP_PKEY *sign_key, *peer_key;
+static void kem_sign_init(void) {
+    const char *k = getenv("KEM_SIGN_KEY"), *c = getenv("KEM_PEER_CERT"), *ca = getenv("KEM_PEER_CA");
+    if (!k) return;
+    if (!c || !ca) die("KEM_SIGN_KEY needs KEM_PEER_CERT and KEM_PEER_CA", "");
+    FILE *f;
+    X509 *x = NULL, *a = NULL;
+    if ((f = fopen(k, "r"))) { sign_key = PEM_read_PrivateKey(f, NULL, NULL, NULL); fclose(f); }
+    if ((f = fopen(c, "r"))) { x = PEM_read_X509(f, NULL, NULL, NULL); fclose(f); }
+    if ((f = fopen(ca, "r"))) { a = PEM_read_X509(f, NULL, NULL, NULL); fclose(f); }
+    if (!sign_key || !x || !a) die("cannot read KEM_SIGN_KEY / KEM_PEER_CERT / KEM_PEER_CA", k);
+    if (X509_verify(x, X509_get0_pubkey(a)) != 1) die("KEM_PEER_CERT is not signed by KEM_PEER_CA", c);
+    peer_key = X509_get_pubkey(x);
+    X509_free(x); X509_free(a);
+}
+static size_t kem_sign(const unsigned char *m, size_t n, unsigned char *sig, size_t cap) {  /* -> length, 0 = failed */
+    EVP_MD_CTX *c = EVP_MD_CTX_new();
+    size_t l = cap;
+    int ok = EVP_DigestSignInit_ex(c, NULL, NULL, NULL, NULL, sign_key, NULL) == 1 && EVP_DigestSign(c, sig, &l, m, n) == 1;
+    EVP_MD_CTX_free(c);
+    return ok ? l : 0;
+}
+static int kem_verify(const unsigned char *m, size_t n, const unsigned char *sig, size_t sl) {  /* 1 = valid */
+    EVP_MD_CTX *c = EVP_MD_CTX_new();
+    int ok = EVP_DigestVerifyInit_ex(c, NULL, NULL, NULL, NULL, peer_key, NULL) == 1 && EVP_DigestVerify(c, sig, sl, m, n) == 1;
+    EVP_MD_CTX_free(c);
+    return ok;
+}
+enum { SIG_CAP = 8192 };  /* the largest signature the exchange carries (ML-DSA-87: 4,627 B) */
+
 /* the device side of the KEM exchange: see the header comment */
 static void kem_exchange(conn_t *c, int iter, int n, int warm, const char *name, int report) {
     kem_t k;
     if (!kem_new(&k, name)) die("unknown or disabled KEM", name);
     char pk_topic[160], ct_topic[64];
-    snprintf(pk_topic, sizeof pk_topic, "pqc/kem/%d/pk/%s", (int)getpid(), name);
+    int sg = sign_key != NULL;
+    snprintf(pk_topic, sizeof pk_topic, "pqc/kem/%d/%s/%s", (int)getpid(), sg ? "spk" : "pk", name);
     snprintf(ct_topic, sizeof ct_topic, "pqc/kem/%d/ct", (int)getpid());
-    size_t cap = k.pk + k.ct + 512;
-    unsigned char *pk = malloc(k.pk), *sk = malloc(k.sk), *ss = malloc(k.ss), *pkt = malloc(cap), *body = malloc(cap),
-                  h[32], type;
-    if (!pk || !sk || !ss || !pkt || !body) die("out of memory", name);
+    size_t cap = k.pk + k.ct + 512 + 2 * SIG_CAP;
+    unsigned char *pk = malloc(k.pk + SIG_CAP), *sk = malloc(k.sk), *ss = malloc(k.ss), *pkt = malloc(cap), *body = malloc(cap),
+                  *m = malloc(k.ct + 36 + k.pk), h[32], type;
+    if (!pk || !sk || !ss || !pkt || !body || !m) die("out of memory", name);
     subscribe(c, ct_topic);
     for (int x = 0; x < warm + n; x++) {
         double t0 = now_us();
         if (!kem_keypair(&k, pk, sk)) die("key pair failed", name);
-        double ta = now_us();
-        int pl = publish_packet(pkt, pk_topic, pk, k.pk), len;
+        double ta = now_us(), sign_us = 0, verify_us = 0;
+        size_t sl = sg ? kem_sign(pk, k.pk, pk + k.pk, SIG_CAP) : 0;
+        if (sg && !sl) die("signing the public key failed", name);
+        sign_us = now_us() - ta;
+        int pl = publish_packet(pkt, pk_topic, pk, k.pk + sl), len;
         uint64_t tx0 = c->tx, rx0 = c->rx;
         double t1 = now_us();
         if (io_write(c, pkt, pl) != pl) die("mqtt publish failed", "write");
@@ -416,41 +479,61 @@ static void kem_exchange(conn_t *c, int iter, int n, int warm, const char *name,
         if (len < 0) die("kem exchange failed", "no reply (is the responder running next to the broker?)");
         int off = 2 + (body[0] << 8 | body[1]);
         const unsigned char *r = body + off;
-        if ((size_t)(len - off) != k.ct + 36) die("kem exchange failed", "reply has the wrong length");
+        if (sg ? (size_t)(len - off) <= k.ct + 36 : (size_t)(len - off) != k.ct + 36)
+            die("kem exchange failed", "reply has the wrong length");
+        if (sg) {  /* the responder's signature over its reply and our public key */
+            double v0 = now_us();
+            memcpy(m, r, k.ct + 36); memcpy(m + k.ct + 36, pk, k.pk);
+            if (!kem_verify(m, k.ct + 36 + k.pk, r + k.ct + 36, len - off - (k.ct + 36)))
+                die("kem exchange failed", "the responder's signature does not verify");
+            verify_us = now_us() - v0;
+        }
+        double td = now_us();  /* decaps_us: decapsulation only */
         if (!kem_decaps(&k, ss, r, sk)) die("decapsulation failed", name);
         double t3 = now_us();
         sha256(ss, k.ss, h);
         if (memcmp(h, r + k.ct, 32)) die("kem exchange failed", "the shared secrets differ");
         const unsigned char *e = r + k.ct + 32;
         unsigned enc_us = e[0] | e[1] << 8 | e[2] << 16 | (unsigned)e[3] << 24;
-        if (report && x >= warm)
-            printf("kex,%d,%d,%.3f,%.3f,%.3f,%u,%llu,%llu\n", iter, x - warm, ta - t0, t2 - t1, t3 - t2, enc_us,
+        if (report && x >= warm) {
+            printf("kex,%d,%d,%.3f,%.3f,%.3f,%u,%llu,%llu", iter, x - warm, ta - t0, t2 - t1, t3 - td, enc_us,
                    (unsigned long long)(c->tx - tx0), (unsigned long long)(c->rx - rx0));
+            if (sg) printf(",%.3f,%.3f", sign_us, verify_us);
+            printf("\n");
+        }
     }
     OQS_MEM_secure_free(sk, k.sk); OQS_MEM_secure_free(ss, k.ss);
-    free(pk); free(pkt); free(body); kem_free(&k);
+    free(pk); free(pkt); free(body); free(m); kem_free(&k);
 }
 
 /* the responder next to the broker: encapsulates every public key on pqc/kem/+/pk/+, replies on pqc/kem/<id>/ct */
 static void kem_respond(conn_t *c) {
     size_t cap = 2u << 20;  /* the largest public key, Classic-McEliece-8192128's 1,357,824 B, fits */
-    unsigned char *body = malloc(cap), *pkt = malloc(cap), *reply = malloc(cap), type;
+    unsigned char *body = malloc(cap), *pkt = malloc(cap), *reply = malloc(cap), *signed_msg = malloc(cap), type;
     kem_t k = {0};
     char cur[64] = "";
     int len, ok = 0;
-    if (!body || !pkt || !reply) die("out of memory", "kem responder");
-    subscribe(c, "pqc/kem/+/pk/+");
-    printf("[kem responder] liboqs %s: encapsulates public keys on pqc/kem/+/pk/+\n", OQS_version());
+    if (!body || !pkt || !reply || !signed_msg) die("out of memory", "kem responder");
+    subscribe(c, "pqc/kem/+/+/+");  /* <id>/pk/<KEM> and, signed, <id>/spk/<KEM> */
+    printf("[kem responder] liboqs %s: encapsulates public keys on pqc/kem/+/pk/+%s\n", OQS_version(),
+           sign_key ? " and signed ones on pqc/kem/+/spk/+" : "");
     fflush(stdout);
     while ((len = read_packet(c, &type, body, (int)cap)) >= 0) {
         if ((type & 0xF0) != 0x30 || len < 2) continue;
         int tl = body[0] << 8 | body[1];
-        char topic[256], id[32], name[64], out_topic[64];
+        char topic[256], id[32], kind[8], name[64], out_topic[64];
         snprintf(topic, sizeof topic, "%.*s", tl, (const char *)body + 2);
-        if (sscanf(topic, "pqc/kem/%31[^/]/pk/%63s", id, name) != 2) continue;
+        if (sscanf(topic, "pqc/kem/%31[^/]/%7[^/]/%63s", id, kind, name) != 3 || (strcmp(kind, "pk") && strcmp(kind, "spk")))
+            continue;
+        int sg = !strcmp(kind, "spk");
         if (strcmp(name, cur)) { kem_free(&k); ok = kem_new(&k, name); snprintf(cur, sizeof cur, "%s", name); }
-        if (!ok || (size_t)(len - 2 - tl) != k.pk) {
+        if (!ok || (sg ? (size_t)(len - 2 - tl) <= k.pk : (size_t)(len - 2 - tl) != k.pk)) {
             fprintf(stderr, "[kem responder] %s: unknown KEM or wrong key length\n", name);
+            continue;
+        }
+        if (sg && (!sign_key || !kem_verify(body + 2 + tl, k.pk, body + 2 + tl + k.pk, len - 2 - tl - k.pk))) {
+            fprintf(stderr, "[kem responder] %s from %s: %s\n", name, id, sign_key ? "the device's signature does not verify"
+                                                                               : "signed, but no KEM_SIGN_KEY here");
             continue;
         }
         unsigned char ss[128];
@@ -461,8 +544,15 @@ static void kem_respond(conn_t *c) {
         sha256(ss, k.ss, reply + k.ct);
         unsigned char *e = reply + k.ct + 32;
         e[0] = us; e[1] = us >> 8; e[2] = us >> 16; e[3] = us >> 24;
+        size_t rl = k.ct + 36;
+        if (sg) {  /* sign the reply together with the device's public key */
+            memcpy(signed_msg, reply, rl); memcpy(signed_msg + rl, body + 2 + tl, k.pk);
+            size_t sl = kem_sign(signed_msg, rl + k.pk, reply + rl, SIG_CAP);
+            if (!sl) { fprintf(stderr, "[kem responder] %s: signing failed\n", name); continue; }
+            rl += sl;
+        }
         snprintf(out_topic, sizeof out_topic, "pqc/kem/%s/ct", id);
-        int pl = publish_packet(pkt, out_topic, reply, k.ct + 36);
+        int pl = publish_packet(pkt, out_topic, reply, rl);
         if (io_write(c, pkt, pl) != pl) die("kem responder", "publish failed");
         printf("[kem responder] %s from %s: %zu B key -> %zu B ciphertext, encapsulation %u us\n", name, id, k.pk, k.ct, us);
         fflush(stdout);
@@ -548,6 +638,7 @@ int main(int argc, char **argv) {
     const char *kem = getenv("KEM");
 #ifdef HAVE_LIBOQS
     int kexs = getenv("KEXS") ? atoi(getenv("KEXS")) : 50, kex_warm = getenv("KEX_WARM") ? atoi(getenv("KEX_WARM")) : 2;
+    kem_sign_init();  /* KEM_SIGN_KEY: the signed exchange (device and responder) */
 #else
     if (kem || getenv("KEM_RESPOND")) die("KEM exchange", "this build has no liboqs: use mqtt_kem_timer (build_timer.sh)");
 #endif
@@ -579,14 +670,14 @@ int main(int argc, char **argv) {
 #else
     printf("iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B,hs_writes,hs_reads,writes,reads,tx_segs,rx_segs\n");
 #endif
-    if (msgs > 0) printf("msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B\n");
+    if (msgs > 0) printf("msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B\nwhole,iter,first_ms,all_ms,msgs\n");
 #ifdef HAVE_LIBOQS
     if (kem) {
         kem_t k;
         if (!kem_new(&k, kem)) die("unknown or disabled KEM", kem);
         printf("#kem %s lib=%s pk_B=%zu ct_B=%zu ss_B=%zu nist_level=%d\n", kem, kem_lib(&k), k.pk, k.ct, k.ss, k.level);
         kem_free(&k);
-        printf("kex,iter,idx,keygen_us,rtt_us,decaps_us,encaps_us,tx_B,rx_B\n");
+        printf("kex,iter,idx,keygen_us,rtt_us,decaps_us,encaps_us,tx_B,rx_B%s\n", sign_key ? ",sign_us,verify_us" : "");
     }
 #endif
 
@@ -636,7 +727,7 @@ int main(int argc, char **argv) {
         if (i >= warm) printf(HS_FMT, HS_ARGS(hs));
 #endif
         if (i >= warm) printf("\n");
-        if (msgs > 0) pipeline(&c, i - warm, msgs, payload, topic, i >= warm, down);
+        if (msgs > 0) pipeline(&c, i - warm, msgs, payload, topic, i >= warm, down, t0);
 #ifdef HAVE_LIBOQS
         if (kem) kem_exchange(&c, i - warm, kexs, kex_warm, kem, i >= warm);
 #endif

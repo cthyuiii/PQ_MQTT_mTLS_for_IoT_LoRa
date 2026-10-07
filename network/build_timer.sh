@@ -30,6 +30,13 @@ case "${1:-openssl}" in
         cc -O2 mqtt_tls_timer.c app_aead.c $ASCON $HS $INC $LIB -lssl -lcrypto -lm -o mqtt_tls_timer
         [ -z "$HS" ] || nm -D --defined-only mqtt_tls_timer | grep -q ' EVP_DigestSign$' ||
             echo "[!] EVP_DigestSign is not exported: libssl will bypass hs_timing_openssl.c (hs_* columns stay 0)"
+        # the broker's side of each handshake (broker_hs_timing.c, preloaded into Mosquitto by mqtt_bench.py): it uses
+        # the OpenSSL Mosquitto loaded, so it links none itself (macOS: looked up at load time)
+        if [ "$(uname)" = Darwin ]; then
+            cc -O2 -shared -fPIC $INC broker_hs_timing.c -undefined dynamic_lookup -o libbroker_hs.dylib
+        else
+            cc -O2 -shared -fPIC $INC broker_hs_timing.c -ldl -o libbroker_hs.so
+        fi
         # the KEM exchange (client + responder) links liboqs: its own binary. On Linux, oqs-provider loaded into a
         # process that already holds a liboqs calls that one, not its own (round-3 MAYO / SNOVA ran round-2 code)
         [ -z "$OQS" ] || cc -O2 mqtt_tls_timer.c app_aead.c $ASCON $OQS $INC $LIB -lssl -lcrypto -lm -o mqtt_kem_timer ;;

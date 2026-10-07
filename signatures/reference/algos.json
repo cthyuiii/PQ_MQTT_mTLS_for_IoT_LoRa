@@ -24,315 +24,423 @@
         ]
     },
     "SDitH": {
-        "github": "https://github.com/sdith/sdith",
-        "root_dir": "SDitH",
+        "github": "https://csrc.nist.gov/csrc/media/Projects/pqc-dig-sig/documents/sdith3_submission_package.zip",
+        "root_dir": "{CACHE}/ref-r3/SDitH/Reference_Implementation",
         "build_strategy": "generic-bench",
-        "build_notes": "Standard NIST submission layout BUT the hypercube variant's sdith.c #includes x86 immintrin.h / x86intrin.h unconditionally - won't build on arm64 (Apple Silicon). Only the 6 threshold variants are listed below. If you're on x86 you can add the hypercube ones back. opt64/ Keccak subdir is portable C and works on both.",
+        "build_notes": "Round 3 (VOLE-in-the-head, Aug 2026), the NIST package: setup_round3.sh SDitH builds each set's libsdith / libsha3 / libaes with its CMake; the bench links generator/sign.c (the NIST API) against them.",
         "variants": [
             {
-                "name": "SDitH-threshold-cat1-gf256",
-                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat1_gf256",
-                "include_subdirs": [
-                    "sha3",
-                    "sha3/opt64"
+                "name": "SDitH-cat1-fast round 3",
+                "dir": "cat1_fast/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-Wno-error"
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast/src"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast/build/lib/aes/libaes.a",
                     "-lm"
                 ]
             },
             {
-                "name": "SDitH-threshold-cat1-p251",
-                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat1_p251",
-                "include_subdirs": [
-                    "sha3",
-                    "sha3/opt64"
+                "name": "SDitH-cat1-short round 3",
+                "dir": "cat1_short/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-Wno-error"
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short/src"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short/build/lib/aes/libaes.a",
                     "-lm"
                 ]
             },
             {
-                "name": "SDitH-threshold-cat3-gf256",
-                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat3_gf256",
-                "include_subdirs": [
-                    "sha3",
-                    "sha3/opt64"
+                "name": "SDitH-cat1-fast-cipherpow round 3",
+                "dir": "cat1_fast_cipherpow/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-Wno-error"
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast_cipherpow/src"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast_cipherpow/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_fast_cipherpow/build/lib/aes/libaes.a",
                     "-lm"
                 ]
             },
             {
-                "name": "SDitH-threshold-cat3-p251",
-                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat3_p251",
-                "include_subdirs": [
-                    "sha3",
-                    "sha3/opt64"
+                "name": "SDitH-cat1-short-cipherpow round 3",
+                "dir": "cat1_short_cipherpow/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-Wno-error"
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short_cipherpow/src"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short_cipherpow/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat1_short_cipherpow/build/lib/aes/libaes.a",
                     "-lm"
                 ]
             },
             {
-                "name": "SDitH-threshold-cat5-gf256",
-                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat5_gf256",
-                "include_subdirs": [
-                    "sha3",
-                    "sha3/opt64"
+                "name": "SDitH-cat3-fast round 3",
+                "dir": "cat3_fast/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-Wno-error"
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast/src"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast/build/lib/aes/libaes.a",
                     "-lm"
                 ]
             },
             {
-                "name": "SDitH-threshold-cat5-p251",
-                "dir": "Reference_Implementation/Threshold_Variant/sdith_threshold_cat5_p251",
-                "include_subdirs": [
-                    "sha3",
-                    "sha3/opt64"
+                "name": "SDitH-cat3-short round 3",
+                "dir": "cat3_short/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-Wno-error"
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short/src"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short/build/lib/aes/libaes.a",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-cat3-fast-cipherpow round 3",
+                "dir": "cat3_fast_cipherpow/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast_cipherpow/src"
+                ],
+                "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast_cipherpow/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_fast_cipherpow/build/lib/aes/libaes.a",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-cat3-short-cipherpow round 3",
+                "dir": "cat3_short_cipherpow/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short_cipherpow/src"
+                ],
+                "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short_cipherpow/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat3_short_cipherpow/build/lib/aes/libaes.a",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-cat5-fast round 3",
+                "dir": "cat5_fast/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast/src"
+                ],
+                "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast/build/lib/aes/libaes.a",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-cat5-short round 3",
+                "dir": "cat5_short/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short/src"
+                ],
+                "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short/build/lib/aes/libaes.a",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-cat5-fast-cipherpow round 3",
+                "dir": "cat5_fast_cipherpow/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast_cipherpow/src"
+                ],
+                "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast_cipherpow/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_fast_cipherpow/build/lib/aes/libaes.a",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "SDitH-cat5-short-cipherpow round 3",
+                "dir": "cat5_short_cipherpow/generator",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short_cipherpow/src"
+                ],
+                "extra_ldflags": [
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short_cipherpow/build/lib/aes/libaes.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short_cipherpow/build/libsdith.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short_cipherpow/build/lib/sha3/libsha3.a",
+                    "{CACHE}/ref-r3/SDitH/Reference_Implementation/cat5_short_cipherpow/build/lib/aes/libaes.a",
                     "-lm"
                 ]
             }
         ]
     },
     "FAEST": {
-        "github": "https://github.com/faest-sign/faest-ref",
-        "root_dir": "FAEST_flat",
+        "github": "https://github.com/faest-sign/faest-ref (v3.0.0)",
+        "root_dir": "{CACHE}/ref-r3/FAEST/build_release",
         "build_strategy": "generic-bench",
-        "build_notes": "No meson needed: run ./prepare_faest_flat.sh once to flatten FAEST/build_release pre-generated sources into FAEST_flat/<variant>/ with a Linux config.h. Requires OpenSSL dev headers (libssl-dev on Pi/Debian) - HAVE_OPENSSL selects hardware AES; without it FAEST is ~50x slower. On macOS keep using the meson route (FAEST/bench.sh).",
+        "build_notes": "FAEST 3.0 (round 3), built by its own meson build (setup_round3.sh FAEST; meson + ninja): each set's crypto_sign.c (the NIST API) against libfaest_no_random / libfaest. Linked with -lcrypto: meson builds it on OpenSSL's AES when it finds OpenSSL.",
         "variants": [
             {
-                "name": "FAEST-128f",
+                "name": "FAEST-128f round 3",
                 "dir": "faest_128f",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-128s",
+                "name": "FAEST-128s round 3",
                 "dir": "faest_128s",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-192f",
+                "name": "FAEST-192f round 3",
                 "dir": "faest_192f",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-192s",
+                "name": "FAEST-192s round 3",
                 "dir": "faest_192s",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-256f",
+                "name": "FAEST-256f round 3",
                 "dir": "faest_256f",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-256s",
+                "name": "FAEST-256s round 3",
                 "dir": "faest_256s",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-EM-128f",
+                "name": "FAEST-EM-128f round 3",
                 "dir": "faest_em_128f",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-EM-128s",
+                "name": "FAEST-EM-128s round 3",
                 "dir": "faest_em_128s",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-EM-192f",
+                "name": "FAEST-EM-192f round 3",
                 "dir": "faest_em_192f",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-EM-192s",
+                "name": "FAEST-EM-192s round 3",
                 "dir": "faest_em_192s",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-EM-256f",
+                "name": "FAEST-EM-256f round 3",
                 "dir": "faest_em_256f",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
             },
             {
-                "name": "FAEST-EM-256s",
+                "name": "FAEST-EM-256s round 3",
                 "dir": "faest_em_256s",
-                "include_subdirs": [
-                    "sha3"
-                ],
                 "extra_cflags": [
-                    "-D_GNU_SOURCE",
-                    "-DNDEBUG",
-                    "-DFAEST_EXPORT=",
-                    "-DHAVE_RANDOMBYTES",
-                    "-DHAVE_OPENSSL"
+                    "-I{CACHE}/ref-r3/FAEST",
+                    "-I{CACHE}/ref-r3/FAEST/build_release"
                 ],
                 "extra_ldflags": [
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest_no_random.a",
+                    "{CACHE}/ref-r3/FAEST/build_release/libfaest.a",
                     "-lcrypto",
                     "-lm"
                 ]
@@ -340,49 +448,62 @@
         ]
     },
     "SQIsign": {
-        "github": "https://github.com/SQISign/the-sqisign",
-        "root_dir": "SQIsign",
-        "build_strategy": "native-bench",
-        "build_notes": "CMake-based. Build with: `cd SQIsign && mkdir build && cd build && cmake -DSQISIGN_BUILD_TYPE=ref .. && make`. Then `./test/SQIsign_test_bench lvl1` (or lvl3/lvl5). Parse the printed cycle counts.",
+        "github": "https://github.com/SQISign/the-sqisign (f417ebd, round 3)",
+        "root_dir": "{CACHE}/ref-r3/SQIsign/bench",
+        "build_strategy": "generic-bench",
+        "build_notes": "Round 3 (new primes p324 / p500 / p664 for levels I / III / V), CMake ref build (setup_round3.sh SQIsign): per level an api.h namespaced as its NIST API library, and that level's archives (libs.txt).",
         "variants": [
             {
-                "name": "SQIsign-NIST-I",
-                "level": "lvl1"
+                "name": "SQIsign-I round 3",
+                "dir": "p324_3",
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SQIsign/include"
+                ],
+                "ldflags_file": "{CACHE}/ref-r3/SQIsign/bench/p324_3/libs.txt",
+                "extra_ldflags": [
+                    "-lm"
+                ]
             },
             {
-                "name": "SQIsign-NIST-III",
-                "level": "lvl3"
+                "name": "SQIsign-III round 3",
+                "dir": "p500_27",
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SQIsign/include"
+                ],
+                "ldflags_file": "{CACHE}/ref-r3/SQIsign/bench/p500_27/libs.txt",
+                "extra_ldflags": [
+                    "-lm"
+                ]
             },
             {
-                "name": "SQIsign-NIST-V",
-                "level": "lvl5"
+                "name": "SQIsign-V round 3",
+                "dir": "p664_17",
+                "extra_cflags": [
+                    "-I{CACHE}/ref-r3/SQIsign/include"
+                ],
+                "ldflags_file": "{CACHE}/ref-r3/SQIsign/bench/p664_17/libs.txt",
+                "extra_ldflags": [
+                    "-lm"
+                ]
             }
         ]
     },
     "QR-UOV": {
-        "github": "(no canonical repo; NIST CSRC hosts the round-2 submission package)",
-        "download": "https://csrc.nist.gov/csrc/media/Projects/pqc-dig-sig/documents/round-2/submission-pkg/qr-uov-submission-round2.zip",
-        "root_dir": "QR-UOV",
+        "github": "https://csrc.nist.gov/csrc/media/Projects/pqc-dig-sig/documents/QR_UOV%20-%20Round3.zip",
+        "root_dir": "{CACHE}/ref-r3/QR-UOV",
         "build_strategy": "generic-bench",
-        "build_notes": "Run ./setup_qruov.sh - it downloads the 109MB NIST round-2 package, extracts it, discovers every Reference_Implementation variant dir containing api.h, and rewrites this entry to generic-bench with the discovered variants. Then: python3 run_reference_benchmarks.py --algos QR-UOV --probe-only.",
+        "build_notes": "Round 3 (spec v3.0), the NIST package: one reference tree, -DQRUOV_PARAM_<set>, the AES PRG (its GNUmakefile's default; OpenSSL libcrypto). setup_round3.sh QR-UOV fetches it.",
         "variants": [
             {
-                "name": "QR-UOV-I-q127L3",
-                "dir": "variants/qruov1q127L3v156m54",
+                "name": "QR-UOV-1q127L3 round 3",
+                "dir": "ref",
                 "exclude_files": [
-                    "PQCgenKAT_sign.c",
-                    "api_h_gen.c",
-                    "qruov_config_h_gen.c",
-                    "rng.c"
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-O3",
-                    "-fwrapv",
-                    "-DQRUOV_PLATFORM=ref",
-                    "-Wno-deprecated-declarations",
-                    "-Wno-unused-result",
-                    "-Wno-error",
-                    "-fopenmp"
+                    "-DQRUOV_PARAM_1q127L3",
+                    "-DPRG_IS_AES=1"
                 ],
                 "extra_ldflags": [
                     "-lcrypto",
@@ -390,22 +511,15 @@
                 ]
             },
             {
-                "name": "QR-UOV-III-q127L3",
-                "dir": "variants/qruov3q127L3v228m78",
+                "name": "QR-UOV-1q31L3 round 3",
+                "dir": "ref",
                 "exclude_files": [
-                    "PQCgenKAT_sign.c",
-                    "api_h_gen.c",
-                    "qruov_config_h_gen.c",
-                    "rng.c"
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-O3",
-                    "-fwrapv",
-                    "-DQRUOV_PLATFORM=ref",
-                    "-Wno-deprecated-declarations",
-                    "-Wno-unused-result",
-                    "-Wno-error",
-                    "-fopenmp"
+                    "-DQRUOV_PARAM_1q31L3",
+                    "-DPRG_IS_AES=1"
                 ],
                 "extra_ldflags": [
                     "-lcrypto",
@@ -413,22 +527,207 @@
                 ]
             },
             {
-                "name": "QR-UOV-V-q127L3",
-                "dir": "variants/qruov5q127L3v306m105",
+                "name": "QR-UOV-1q127L10 round 3",
+                "dir": "ref",
                 "exclude_files": [
-                    "PQCgenKAT_sign.c",
-                    "api_h_gen.c",
-                    "qruov_config_h_gen.c",
-                    "rng.c"
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
                 ],
                 "extra_cflags": [
-                    "-O3",
-                    "-fwrapv",
-                    "-DQRUOV_PLATFORM=ref",
-                    "-Wno-deprecated-declarations",
-                    "-Wno-unused-result",
-                    "-Wno-error",
-                    "-fopenmp"
+                    "-DQRUOV_PARAM_1q127L10",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-1q31L10 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_1q31L10",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-1q7L10 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_1q7L10",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-3q127L3 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_3q127L3",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-3q31L3 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_3q31L3",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-3q127L10 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_3q127L10",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-3q31L10 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_3q31L10",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-3q7L10 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_3q7L10",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-5q127L3 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_5q127L3",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-5q31L3 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_5q31L3",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-5q127L10 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_5q127L10",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-5q31L10 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_5q31L10",
+                    "-DPRG_IS_AES=1"
+                ],
+                "extra_ldflags": [
+                    "-lcrypto",
+                    "-lm"
+                ]
+            },
+            {
+                "name": "QR-UOV-5q7L10 round 3",
+                "dir": "ref",
+                "exclude_files": [
+                    "rng.c",
+                    "PQCgenKAT_sign.c"
+                ],
+                "extra_cflags": [
+                    "-DQRUOV_PARAM_5q7L10",
+                    "-DPRG_IS_AES=1"
                 ],
                 "extra_ldflags": [
                     "-lcrypto",

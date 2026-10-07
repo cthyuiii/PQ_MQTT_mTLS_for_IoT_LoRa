@@ -89,6 +89,17 @@ LIB_BY_PREFIX = [("wolfssl_bench", "wolfssl"), ("mqtt_tls_bench", "wolfssl+bears
 R3 = "liboqs-r3"
 def lib_of(s):
     return s.get("lib") or next(lib for prefix, lib in LIB_BY_PREFIX if s["folder"].startswith(prefix))
+def libraries(s):
+    """the Arduino libraries dir of a build: arduino-libs (wolfSSL, liboqs 0.16), -xkcp / -r3 (liboqs only), or for
+    wolfSSL + round 3 liboqs (the SNOVA TLS firmware) -wolfssl-r3: links to both, as each dir has one liboqs"""
+    if s["folder"] == "mqtt_tls_bench" and s["lib"] == R3:
+        d = WOLF_LIBS + "-wolfssl-r3"
+        os.makedirs(d, exist_ok=True)
+        for name, src in (("wolfssl", WOLF_LIBS), ("liboqs", WOLF_LIBS + "-r3")):
+            if not os.path.islink(os.path.join(d, name)):
+                os.symlink(os.path.join(src, name), os.path.join(d, name))
+        return d
+    return WOLF_LIBS + {"liboqs+xkcp": "-xkcp", R3: "-r3"}.get(s["lib"], "")
 def test_of(s):
     return "mqtt" if s["folder"] == "mqtt_tls_bench" else "pqc"
 def norm(t):
@@ -114,7 +125,7 @@ SKETCHES = [
     S("wolfssl_bench", "Falcon-1024 (wolfSSL)",        1800, BOTH, 0, flags="-DWB_FALCON1024 -DWB_ITERS=5"),
     # --- Stage 2 + pipeline on the Pico W / Pico 2 W (Wi-Fi FQBN): MQTT over plain / TLS 1.3 / mTLS, wolfSSL,
     #     X25519MLKEM768 (+ the key-exchange sweep), one certificate type per firmware (every one the broker serves
-    #     and wolfSSL has: not SLH-DSA, MAYO, SNOVA), against ./run_all.sh --serve-broker on another machine.
+    #     and wolfSSL has: not SLH-DSA or MAYO; SNOVA below), against ./run_all.sh --serve-broker on another machine.
     #     Needs WIFI_SSID, WIFI_PASS, BROKER in the environment. Rows: results/*_pico_<board>.csv in the host's columns.
     S("mqtt_tls_bench", "MQTT/TLS RSA-2048 (wolfSSL)",   300, BOTH, 0, flags="-DWB_TLS -DWB_RSA2048 -DMT_SIG=RSA2048"),
     S("mqtt_tls_bench", "MQTT/TLS RSA-3072 (wolfSSL)",   300, BOTH, 0, flags="-DWB_TLS -DWB_RSA3072 -DMT_SIG=RSA3072"),
@@ -125,6 +136,15 @@ SKETCHES = [
     S("mqtt_tls_bench", "MQTT/TLS ML-DSA-87 (wolfSSL)",  300, BOTH, 0, flags="-DWB_TLS -DWB_MLDSA87 -DMT_SIG=MLDSA87"),
     S("mqtt_tls_bench", "MQTT/TLS Falcon-512 (wolfSSL)", 300, BOTH, 0, flags="-DWB_TLS -DWB_FALCON512 -DMT_SIG=FALCON512"),
     S("mqtt_tls_bench", "MQTT/TLS Falcon-1024 (wolfSSL)", 300, BOTH, 0, flags="-DWB_TLS -DWB_FALCON1024 -DMT_SIG=FALCON1024"),
+    # round 3 SNOVA certificates (certs/round3, the round 3 broker from :20830): wolfSSL has no SNOVA, so
+    # make_wolfssl_lib.sh puts it in Falcon-512's place (wolfssl_bench/wb_snova.c, liboqs main's SNOVA: lib=R3, the
+    # same code as the SNOVA rows above). The run is on a stack for SNOVA's signing: 39 / 35 / 26 KB (level I K / B / S),
+    # 59 / 51 / 49 KB (III), 92 / 79 / 76 KB (V) in QEMU (M0+), as the board's own peaks; + 8 KB for wolfSSL.
+    # No sweep (-DMT_NO_SWEEP): a level V mTLS handshake is ~7 s of SNOVA, and the groups were swept with the others.
+    *[S("mqtt_tls_bench", f"MQTT/TLS SNOVA_{p} round 3 (wolfSSL+liboqs)", 600, BOTH, 0, lib=R3,
+        flags=f"-DWB_TLS -DWB_SNOVA{c} -DMT_SIG=SNOVA{c} -DMT_NO_SWEEP -DMT_STACK_KB={kb}")
+      for c, p, kb in (("1K", "I_K", 48), ("1B", "I_B", 44), ("1S", "I_S", 36), ("3K", "III_K", 68), ("3B", "III_B", 60),
+                       ("3S", "III_S", 60), ("5K", "V_K", 104), ("5B", "V_B", 90), ("5S", "V_S", 88))],
     # the KEM exchange as MQTT messages through the broker's plain listener (the host's --kex; no certificate is used):
     # ML-KEM-512/768/1024, X25519, X25519MLKEM768 with wolfCrypt -> results/kem_exchange_*_pico_<board>. The second
     # builds wolfSSL's small Curve25519 code (CURVE25519_SMALL, the TLS firmware's until 1 Oct): the X25519 A/B.
@@ -132,6 +152,10 @@ SKETCHES = [
       flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_KEX_ONLY"),
     S("mqtt_tls_bench", "MQTT KEM exchange, small X25519 (wolfSSL)", 300, BOTH, 0,
       flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_KEX_ONLY -DWB_SMALL_25519"),
+    # deployment checks on certs/DEPLOY (gen_certs.sh --deploy <broker IP>): NTP dates, the CRL, the broker's IP, a signed
+    # trust-anchor update, the KEM exchange over mTLS and signed, FCnt across a reboot (built with a LittleFS partition)
+    S("mqtt_tls_bench", "MQTT deployment checks (wolfSSL)", 600, BOTH, 0,
+      flags="-DWB_TLS -DWB_MLDSA44 -DWB_CHECKS -DMT_DEPLOY -DMT_SIG=DEPLOY"),
     # --- liboqs 0.16 bare-metal (portable C): the same code the Pi/Mac run via oqs-provider and the host liboqs stage.
     #     One algorithm per firmware (-DLB_ALG=<liboqs id>); reports peak stack per op (painted big stack,
     #     -DLB_STACK_KB, default 160 KB RP2040 / 400 KB RP2350).
@@ -185,11 +209,10 @@ SKETCHES = [
     *[S("qruov_bench", f"QR-UOV-{p} round 3", t, BOTH, kb, flags=f"-DQRUOV_PARAM_{p} -DPRG_IS_AES=0 -DBIG_STACK_BYTES={kb * 1024}u")
       for p, t, kb in (("1q127L3", 120, 48), ("1q31L3", 120, 48), ("1q127L10", 180, 88), ("1q31L10", 240, 104),
                        ("1q7L10", 300, 160))],
-    # UOV ov-Ip classic: keygen needs ~504 KB scratch (infeasible) -> keypair baked in flash;
-    # sign/verify read the key by const pointer (XIP) with a few KB stack, so both boards run.
-    # Round 2 parameters: round 3 changed UOV-Ip (pk 321,300 B, sig 135 B); needs the round 3 source + new baked keys.
-    S("uov1_bench",       "UOV-Ip (sign/vrfy)",   120,  BOTH,   8,
-      note="keygen baked (flash); sign+verify only"),
+    # UOV-Ip round 3 classic (liboqs main, lib=R3): keygen needs ~600 KB, so uov_bench/make_uov_keys.sh makes the pair on
+    # the host and it is baked into flash; sign / verify read it there (XIP) with 12 / 5.3 KB of stack: both boards.
+    S("uov_bench",        "UOV-Ip round 3 (sign/vrfy)", 300, BOTH, 12, lib=R3,
+      note="keygen on the host (both keys need ~600 KB of RAM); sign + verify only"),
     # --- SLH-DSA 'f' (fast) ---
     S("slhdsa_bench",  "SLH-DSA-SHA2-128f",  240, BOTH, 20, flags="-DPICO_VARIANT_sha2_128f"),
     S("slhdsa_bench", "SLH-DSA-SHAKE-128f", 240, BOTH, 20, flags="-DPICO_VARIANT_shake_128f"),
@@ -236,23 +259,34 @@ SKETCHES = [
 # mqtt_tls_bench: credentials in, host-format results out
 MQTT_ENV = ("WIFI_SSID", "WIFI_PASS", "BROKER")
 MQTT_BASE_PORT = 18830  # ./run_all.sh --serve-broker
+MQTT_R3_PORT = 20830    # its round 3 broker (MAYO / SNOVA certificates in certs/round3)
 
 def mqtt_secrets(sig, gen):
     """mt_secrets.h in gen/: Wi-Fi + broker from the environment, certs/<sig>'s CA, client cert and key as DER,
     the broker's ports for sig. Returns why it can't (a status), else None. Deleted after the compile."""
     sys.path.insert(0, os.path.join(ROOT, "network"))
-    from mqtt_bench import port_of
-    d = os.path.join(ROOT, "certs", sig)
+    from mqtt_bench import port_of, SIGS_R3
+    d, base = (os.path.join(ROOT, "certs", "round3", sig), MQTT_R3_PORT) if sig in SIGS_R3 else (os.path.join(ROOT, "certs", sig), MQTT_BASE_PORT)
     if not all(os.path.exists(os.path.join(d, f)) for f in ("CA.crt", "client.crt", "client.key")):
         return f"NO_CERTS: {d} (run gen_certs.sh, or rsync the broker machine's certs/)"
-    def der(f):
+    def der(f):  # PEM (certificate, CRL, key) -> DER
         body = "".join(ln for ln in open(os.path.join(d, f)).read().splitlines() if ln and not ln.startswith("-----"))
         return base64.b64decode(body)
     out = [f"#define {k} {json.dumps(os.environ[k])}" for k in MQTT_ENV]  # a JSON string is a C string literal
-    out += [f"#define PORT_PLAIN {MQTT_BASE_PORT}", f"#define PORT_TLS {port_of(MQTT_BASE_PORT, sig, 'TLS')}",
-            f"#define PORT_MTLS {port_of(MQTT_BASE_PORT, sig, 'mTLS')}"]
-    for name, f in (("CA_DER", "CA.crt"), ("CRT_DER", "client.crt"), ("KEY_DER", "client.key")):
-        out.append(f"static const unsigned char {name}[] = {{{','.join(map(str, der(f)))}}};")
+    out += [f"#define PORT_PLAIN {MQTT_BASE_PORT}", f"#define PORT_TLS {port_of(base, sig, 'TLS')}",
+            f"#define PORT_MTLS {port_of(base, sig, 'mTLS')}"]
+    blobs = [("CA_DER", der("CA.crt")), ("CRT_DER", der("client.crt")), ("KEY_DER", der("client.key"))]
+    if sig == "DEPLOY":  # the deployment firmware: its CRL, the broker's certificate, the update key, the old root
+        old = os.path.join("..", "ECDSAP256", "CA.crt")
+        if not all(os.path.exists(os.path.join(d, f)) for f in ("CA.crl", "server.crt", "update.pub", old)):
+            return f"NO_CERTS: {d} (gen_certs.sh --deploy <broker IP>) and certs/ECDSAP256 (the old root)"
+        out += [f"#define PORT_REVOKED {port_of(MQTT_BASE_PORT, sig, 'revoked')}",
+                f"#define PORT_EXPIRED {port_of(MQTT_BASE_PORT, sig, 'expired')}",
+                f"#define NTP_SERVER {json.dumps(os.environ.get('NTP_SERVER', 'pool.ntp.org'))}"]
+        blobs += [("CRL_DER", der("CA.crl")), ("SRV_DER", der("server.crt")), ("OLD_CA_DER", der(old)),
+                  ("UPD_PUB", open(os.path.join(d, "update.pub"), "rb").read())]
+    for name, b in blobs:
+        out.append(f"static const unsigned char {name}[] = {{{','.join(map(str, b))}}};")
     os.makedirs(gen, exist_ok=True)
     with open(os.path.join(gen, "mt_secrets.h"), "w") as f:
         f.write("// generated by run_benchmarks.py for this build only\n#pragma once\n" + "\n".join(out) + "\n")
@@ -270,8 +304,9 @@ def mqtt_blocks(txt):
     blocks, cur = [], None
     def close(b):  # a block cut off (hang, reset, Ctrl-C) keeps its rows, with the reason as its error
         body = b.pop("body")
-        b["rows"] = list(csv.DictReader(x for x in body if not x.startswith(("msg", "kex"))))
+        b["rows"] = list(csv.DictReader(x for x in body if not x.startswith(("msg", "kex", "whole"))))
         b["msgs"] = list(csv.DictReader(x for x in body if x.startswith("msg")))
+        b["wholes"] = list(csv.DictReader(x for x in body if x.startswith("whole")))
         b["kexs"] = list(csv.DictReader(x for x in body if x.startswith("kex")))
         blocks.append(b)
     for ln in txt.splitlines() + ["=== end of capture"]:
@@ -327,10 +362,10 @@ def save_mqtt(blocks, txt, family, sig, fqbn):
                           TLS_suite=b["suite"],
                           status="OK" if not b["err"] else f"PARTIAL: {b['err']}" if b["rows"] else b["err"],
                           server_cert_B=None if plain else certs[0],
-                          client_cert_B=None if plain or b["mode"] == "TLS" else certs[1], library_version=b["lib"])
+                          client_cert_B=None if plain or b["mode"].startswith("TLS") else certs[1], library_version=b["lib"])
             free = [int(r["free_heap_B"]) for r in b["rows"] if r.get("free_heap_B")]
             # a block cut off by a hang keeps what it measured, as PARTIAL (its rows are complete connections)
-            summary.append(dict(bmm.summarize(common, b["rows"], b["msgs"]) if b["rows"] else dict(common, n=0),
+            summary.append(dict(bmm.summarize(common, b["rows"], b["msgs"], b.get("wholes", [])) if b["rows"] else dict(common, n=0),
                                 peak_heap_B=b["heap"], stack_peak_B=b["stack"], free_heap_first_B=free[0] if free else "",
                                 free_heap_last_B=free[-1] if free else ""))
             raw += [dict(Board=family, Library=common["Library"], Signature=common["Signature"], Mode=b["mode"],
@@ -350,7 +385,8 @@ def save_mqtt(blocks, txt, family, sig, fqbn):
                     started=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         (res / f"{stem}_meta_{tag}.json").write_text(json.dumps(meta, indent=2))
     save_sweep([b for b in blocks if b["stage"] == "sweep"], res, tag, sig, family, fqbn, cfg)
-    save_kex([b for b in blocks if b["stage"] == "kex"], res, tag, family, fqbn, cfg)
+    save_kex([b for b in blocks if b["stage"] == "kex"], res, tag, family, fqbn, cfg, modes=sig == "DEPLOY")
+    save_deploy([b for b in blocks if b["stage"] in ("refuse", "ta", "fcnt")], res, tag, family)
     lib = next((b["lib"] for b in blocks if b["lib"].startswith("wolfSSL")), "")
     if lib:  # the KEM-exchange firmware prints no #lib line: keep the version the other sketches recorded
         (res / f"versions_{tag}.json").write_text(json.dumps(dict(board=family, fqbn=fqbn, wolfssl=lib[8:]), indent=2))
@@ -391,15 +427,33 @@ def save_sweep(blocks, res, tag, sig, family, fqbn, cfg):
         warmup=int(cfg.get("sweep_warmup", 0)), started=time.strftime("%Y-%m-%dT%H:%M:%S%z")), indent=2))
     print(f"    sweep rows: {name}")
 
-def save_kex(blocks, res, tag, family, fqbn, cfg):
+def save_deploy(blocks, res, tag, family):
+    """the deployment firmware's refuse / ta / fcnt blocks -> results/deploy_<tag>.csv: one row per block, its
+    '#deploy k=v' fields, the reason a refused connection gave, and whether FCnt resumed past the reboot"""
+    if not blocks:
+        return
+    import mqtt_bench as bmm
+    rows = [dict(Board=family, block=" ".join(x for x in (b["stage"], b["mode"], b["aead"]) if x),
+                 status="OK" if not b["err"] and b.get("deploy") else b["err"] or "no #deploy line",
+                 reason=b.get("reason", ""), **dict(re.findall(r"(\w+)=(\S+)", b.get("deploy", ""))))
+            for b in blocks]
+    save, resume = (next((r for r in rows if r["block"] == f"fcnt plain {k}"), None) for k in ("save", "resume"))
+    if save and resume:  # the same keys after the reboot, and FCnt past every frame sent before it
+        resume["same_devaddr"] = int(save.get("devaddr") == resume.get("devaddr"))
+    bmm.write_csv(res / f"deploy_{tag}.csv", rows)
+    print(f"    deployment checks: {res}/deploy_{tag}.csv")
+
+def save_kex(blocks, res, tag, family, fqbn, cfg, modes=False):
     """the kex blocks -> results/kem_exchange_{summary,raw}_<tag>.csv + meta, as the host's --kex writes them (its
-    kex_summary()). A KEM's rows replace earlier ones from the same build (library_version: the X25519 A/B stays)."""
+    kex_summary()). A KEM's rows replace earlier ones from the same build (library_version: the X25519 A/B stays).
+    modes: the deployment firmware's, named "<KEM> <plain | mTLS | signed>"."""
     if not blocks:
         return
     import mqtt_bench as bmm
     summary, raw = [], []
     for b in blocks:
-        s, r = bmm.kex_summary(family, b["aead"], dict(re.findall(r"(\w+)=(\S+)", b.get("kem", ""))), b["kexs"], b["err"])
+        kem = f"{b['aead']} {b['mode']}" if modes else b["aead"]
+        s, r = bmm.kex_summary(family, kem, dict(re.findall(r"(\w+)=(\S+)", b.get("kem", ""))), b["kexs"], b["err"])
         summary.append(s)
         raw += [dict(x, library_version=s["library_version"]) for x in r]
     key = lambda r: (r["KEM"], r.get("library_version", ""))
@@ -737,10 +791,14 @@ def main():
 
     if args.list:
         return
-    for r3 in {s["lib"] == R3 for s in work if s["folder"] == "liboqs_bench"}:
+    for r3 in {s["lib"] == R3 for s in work if s["folder"] in ("liboqs_bench", "uov_bench") or "-DMT_KEX_ONLY" in s["flags"]
+               or s["lib"] == R3}:
         print(f"Preparing the liboqs{' round 3' if r3 else ''} Arduino library (liboqs_bench/make_liboqs_lib.sh) ...")
         sh([BASH, os.path.join(SKETCH_DIR, "liboqs_bench", "make_liboqs_lib.sh")],
            env=dict(os.environ, LIBOQS_KECCAK=args.keccak or "", LIBOQS_ROUND="3" if r3 else ""))
+    if any(s["folder"] == "uov_bench" for s in work):
+        print("Preparing the UOV-Ip round 3 key pair (uov_bench/make_uov_keys.sh) ...")
+        sh([BASH, os.path.join(SKETCH_DIR, "uov_bench", "make_uov_keys.sh")])
     if any(s["folder"] == "sqisign_bench" for s in work):
         print("Preparing the SQIsign Arduino library (sqisign_bench/make_sqisign_lib.sh) ...")
         sh([BASH, os.path.join(SKETCH_DIR, "sqisign_bench", "make_sqisign_lib.sh")])
@@ -792,13 +850,17 @@ def main():
                 print("    !!", why); row(label, lib=lib_of(s), status=why); continue
             flags += f" -I{os.path.join(outdir, 'gen')}"
         build_fqbn = re.sub(r"^(rp2040:rp2040:rpipico2?)\b", r"\1w", fqbn) if wifi else fqbn
+        if "-DMT_DEPLOY" in flags:  # LittleFS (trust anchor, LoRaWAN state): a 64 KB flash filesystem
+            build_fqbn += ":flash=" + ("4194304_65536" if "rpipico2" in build_fqbn else "2097152_65536")
         cmd = ["arduino-cli","compile","--fqbn",build_fqbn,"--output-dir",outdir]
         if flags:
             cmd += ["--build-path", os.path.join(outdir, "build"),
                     "--build-property", f"compiler.c.extra_flags={flags}",
                     "--build-property", f"compiler.cpp.extra_flags={flags}"]
-        if s["folder"] in ("wolfssl_bench", "liboqs_bench", "mqtt_tls_bench", "sqisign_bench"):
-            cmd += ["--libraries", WOLF_LIBS + {"liboqs+xkcp": "-xkcp", R3: "-r3"}.get(s["lib"], "")]
+        if s["folder"] == "uov_bench":  # the host-made key pair (make_uov_keys.sh)
+            flags += f" -I{os.path.join(os.path.dirname(WOLF_LIBS), 'uov-r3')}"
+        if s["folder"] in ("wolfssl_bench", "liboqs_bench", "mqtt_tls_bench", "sqisign_bench", "uov_bench"):
+            cmd += ["--libraries", libraries(s)]
         if wifi:  # time the handshake's own crypto per connection: wolfSSL's calls go through hs_timing.c
             cmd += ["--build-property", "compiler.c.elf.extra_flags=" + hs_wrap_flags(path)]
         cmd += [path]

@@ -102,34 +102,33 @@ if you're benchmarking the PQC algorithm names.
 ```bash
 cd signatures/reference
 
-# 1. Clone each algorithm's source tree from GitHub (URLs verified May 2026).
+# 1. HAWK (round 2, withdrawn in round 3): clone its source tree.
 ./clone_algos.sh
 
-# 2. One-time setup for the two non-clonable/non-flat algos
-./prepare_faest_flat.sh        # FAEST -> FAEST_flat/<variant>/ (no meson)
-./setup_qruov.sh               # downloads 109MB NIST round-2 zip, registers variants
+# 2. The round 3 code of SDitH, FAEST, SQIsign and QR-UOV (the same code as the Pico's), fetched and built once
+#    per machine into ~/.cache/iot-pqc/ref-r3 ($IOT_PQC_CACHE), out of the repo:
+./setup_round3.sh SDitH QR-UOV FAEST SQIsign
 
-# 3. Probe what builds with the generic harness (SDitH, FAEST, QR-UOV)
-python run_reference_benchmarks.py --probe-only
+# 3. Benchmarks through the generic harness (--iterations, default 200; run_all.sh passes SIG_N)
+python run_reference_benchmarks.py --algos SDitH FAEST SQIsign QR-UOV
 
-# 4. Real benchmarks (--iterations, default 200; run_all.sh passes SIG_N)
-python run_reference_benchmarks.py --algos SDitH FAEST QR-UOV
+# 4. HAWK runs its own benchmark binary; capture the output and feed it to parse_native_output.py (below).
 
-# 5. HAWK / SQIsign run their own benchmark binaries; capture the
-#    output and feed it to parse_native_output.py (recipes below).
-
-# 6. The Stage 1 table: ../../run_all.sh builds results/stage1_customer_form_<tag>.csv from these CSVs.
+# 5. The Stage 1 table: ../../run_all.sh builds results/stage1_customer_form_<tag>.csv from these CSVs.
 ```
 
-### Build-strategy matrix (audited June 2026)
+### Build-strategy matrix (round 3, 7 Oct 2026)
 
-| Algo    | Build strategy   | Why                                                                |
-|---------|------------------|--------------------------------------------------------------------|
-| SDitH   | `generic-bench`  | Repo matches NIST submission layout - drop bench_template.c in     |
-| FAEST   | `generic-bench`  | after `./prepare_faest_flat.sh` (uses pre-generated meson sources) |
-| QR-UOV  | `generic-bench`  | after `./setup_qruov.sh` (downloads NIST round-2 package)          |
-| HAWK    | `native-bench`   | Generator + builds its own `tests/speed.c` benchmark               |
-| SQIsign | `native-bench`   | CMake, complex link graph; `apps/benchmark_lvlN` output is parsed  |
+| Algo    | Source (setup_round3.sh) | How the generic bench gets it |
+|---------|--------------------------|-------------------------------|
+| SDitH v3 | NIST round 3 package (`sdith3_submission_package.zip`), 12 sets | each set's CMake builds `libsdith` / `libsha3` / `libaes`; the bench compiles `generator/sign.c` (the NIST API) |
+| QR-UOV  | NIST round 3 package (`QR_UOV - Round3.zip`), 15 sets | one `ref/` tree, `-DQRUOV_PARAM_<set> -DPRG_IS_AES=1` (its GNUmakefile's default), `-lcrypto` |
+| FAEST 3.0 | faest-ref `v3.0.0`, 12 sets | its own meson build (meson + ninja); each set's `crypto_sign.c` against `libfaest_no_random.a` / `libfaest.a`, `-lcrypto` |
+| SQIsign | the-sqisign `f417ebd`, levels I / III / V | CMake ref build (64-bit field arithmetic on a 64-bit host); per level an `api.h` namespaced as its NIST API library, and the level's archives (`libs.txt`) |
+| HAWK    | `native-bench` (round 2) | builds its own `tests/speed.c` benchmark |
+
+`algos.json` writes the cache as `{CACHE}`; `run_reference_benchmarks.py` resolves it on each machine. On macOS it
+also maps `explicit_bzero` to `bzero` (QR-UOV uses it; macOS lacks it).
 
 ### Native benchmark recipes
 
@@ -151,51 +150,6 @@ python ../../parse_native_output.py --algo HAWK --input ../../hawk_results.txt
 # and go straight into Reference_Implementation/.
 ```
 
-**FAEST** (no meson needed anymore — `prepare_faest_flat.sh` reuses the
-pre-generated sources in `FAEST/build_release/` and the generic harness
-builds the result on both platforms):
-```bash
-cd signatures/reference
-./prepare_faest_flat.sh                     # writes FAEST_flat/<variant>/
-python run_reference_benchmarks.py --algos FAEST
-# Requires OpenSSL dev headers (libssl-dev / brew openssl@3): the build
-# defines HAVE_OPENSSL for hardware AES. Without it FAEST still builds but
-# is ~50x slower (measured 900 ms vs 15 ms per FAEST-128f sign) - if your
-# numbers look insane, this is why.
-#
-# The old meson route (FAEST/bench.sh) still works if you prefer it:
-# brew install meson ninja jq && meson setup build_release && ninja -C
-# build_release && ./bench.sh  - note bench.sh needs GNU grep (`grep -P`),
-# so on macOS: brew install grep and put it first in PATH.
-```
-
-**SQIsign** (binary is `apps/benchmark_lvlN`, NOT `test/SQIsign_test_bench`;
-mini-gmp is vendored so GMP is NOT required):
-```bash
-cd signatures/reference/SQIsign
-cmake -B build -DSQISIGN_BUILD_TYPE=ref -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_C_FLAGS="-DNO_CYCLE_COUNTER -Wno-error -Wno-macro-redefined" .
-make -C build -j
-build/apps/benchmark_lvl1 > sqisign_lvl1.txt    # also lvl3 / lvl5
-python ../parse_native_output.py --algo SQIsign \
-    --input sqisign_lvl1.txt --label SQIsign-NIST-I
-# -DNO_CYCLE_COUNTER makes the bench print milliseconds (auto-detected by
-# the parser, no --cpu-mhz). It is MANDATORY on Pi/Linux-arm64: the default
-# build reads the PMCCNTR_EL0 cycle register, which SIGILLs on a stock
-# kernel. On macOS the default build instead uses kperf megacycles and must
-# run as root - then parse with --cpu-mhz 3200 (M1 Pro P-core).
-```
-
-**QR-UOV** (no active GitHub repo; NIST CSRC hosts the round-2 package):
-```bash
-cd signatures/reference
-./setup_qruov.sh        # downloads 109MB zip (URL verified June 2026),
-                        # discovers Reference_Implementation variants,
-                        # registers them in algos.json as generic-bench
-python run_reference_benchmarks.py --algos QR-UOV --probe-only
-python run_reference_benchmarks.py --algos QR-UOV
-```
-
 ## Output files
 
 Written to `../results/` (the repo's top-level `results/` directory):
@@ -213,10 +167,10 @@ Where to get the source and any gotchas:
 | Algorithm | URL | Variants in `algos.json` | Notes |
 |---|---|---|---|
 | **HAWK**    | https://hawk-sign.info/  | HAWK-256/512/1024 | Pure C, builds cleanly with `cc -O3`. The fastest one to try first. |
-| **SDitH**   | https://sdith.org/       | SDitH threshold variant × cat1/3/5 × gf251/gf256 | Threshold variant is the round-2 default. May require AES-NI on x86. |
-| **QR-UOV**  | NIST CSRC (qruov.org DNS is dead) | QR-UOV I/III/V at r=3 | Pure C. Large public keys — keygen can be slow. Fetch + register with `./setup_qruov.sh`. |
-| **FAEST**   | https://faest.info/      | FAEST(-EM)-128f/s 192f/s 256f/s (12 total) | Links against `libcrypto` (OpenSSL) for hardware AES. Flatten once with `./prepare_faest_flat.sh`; the run-all scripts export the right `CPATH`/`LIBRARY_PATH`. |
-| **SQIsign** | https://sqisign.org/     | NIST-I/III/V | **CMake build**, not flat Makefile. No GMP needed (mini-gmp is vendored). See the SQIsign recipe above; the run-all scripts handle it end-to-end. liboqs integration is still pending (draft PR [#2277](https://github.com/open-quantum-safe/liboqs/pull/2277)). |
+| **SDitH**   | https://sdith.org/ (NIST round 3 package) | v3 (VOLE-in-the-head): cat1/3/5 × fast/short × with/without cipher PoW (12) | `setup_round3.sh SDitH` |
+| **QR-UOV**  | NIST CSRC round 3 package | 1/3/5 × q127L3, q31L3, q127L10, q31L10, q7L10 (15) | `setup_round3.sh QR-UOV`; large public keys, keygen can be slow |
+| **FAEST**   | https://faest.info/ (faest-ref v3.0.0) | FAEST(-EM)-128f/s 192f/s 256f/s (12) | `setup_round3.sh FAEST`; meson + ninja; links OpenSSL `libcrypto` for AES |
+| **SQIsign** | https://sqisign.org/ (the-sqisign f417ebd) | I / III / V (p324, p500, p664) | `setup_round3.sh SQIsign`; CMake; round 3 needs no GMP |
 
 ## Adding a new algorithm
 

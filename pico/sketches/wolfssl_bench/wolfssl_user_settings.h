@@ -20,7 +20,13 @@
 #define SINGLE_THREADED
 #define WOLFSSL_SMALL_STACK
 #define WOLFSSL_IGNORE_FILE_WARN
-#define NO_ASN_TIME
+#ifdef WB_CHECKS  /* mqtt_tls_bench -DMT_DEPLOY: what a deployed client checks besides the chain */
+    #define WB_ASN_TIME            /* certificate and CRL dates, on time() set by NTP (needs make_wolfssl_lib.sh's patch) */
+    #define HAVE_CRL               /* revocation lists (wolfSSL_CTX_LoadCRLBuffer) */
+    #define WOLFSSL_IP_ALT_NAME    /* wolfSSL_check_domain_name matches the broker's IP in the certificate */
+#else
+    #define NO_ASN_TIME            /* the benchmark firmware: chain only, no clock on the board */
+#endif
 #define NO_DH
 #define NO_DSA
 #define NO_RC4
@@ -73,6 +79,75 @@ int wb_rand_block(unsigned char *output, unsigned int sz);
     #define WOLFSSL_EXPERIMENTAL_SETTINGS
 #endif
 
+/* -DWB_SNOVA<1K|1B|1S|3K|3B|3S|5K|5B|5S> (with -DWB_TLS; certs/round3/SNOVA<set>): round 3 SNOVA certificates, which
+ * wolfSSL doesn't have, in Falcon-512's place. make_wolfssl_lib.sh makes Falcon-512's OID sum, OID, TLS codepoint and sizes
+ * the WB_FALCON1_* values below and swaps falcon.c for wb_snova.c (liboqs main's SNOVA: the arduino-libs-r3 library),
+ * so wolfSSL's own certificate and TLS 1.3 code for Falcon carries SNOVA. Per set (oqs-provider 36cafae / liboqs main):
+ * the OID 1.3.9999.10.<n>.3, its sum (wc_oid_sum), the codepoint 0xFF<minor>, public key and signature bytes. */
+#if   defined(WB_SNOVA1K)
+    #define WB_SNOVA_SET I_K
+    #define WB_SNOVA_N 1, 0x0af0cd2a, 0x83,  376, 528
+#elif defined(WB_SNOVA1B)
+    #define WB_SNOVA_SET I_B
+    #define WB_SNOVA_N 2, 0x0af0cd29, 0x85,  656, 388
+#elif defined(WB_SNOVA1S)
+    #define WB_SNOVA_SET I_S
+    #define WB_SNOVA_N 3, 0x0af0cd28, 0x87, 1016, 272
+#elif defined(WB_SNOVA3K)
+    #define WB_SNOVA_SET III_K
+    #define WB_SNOVA_N 4, 0x0af0cd2f, 0x89,  912, 688
+#elif defined(WB_SNOVA3B)
+    #define WB_SNOVA_SET III_B
+    #define WB_SNOVA_N 5, 0x0af0cd2e, 0x8b, 1416, 532
+#elif defined(WB_SNOVA3S)
+    #define WB_SNOVA_SET III_S
+    #define WB_SNOVA_N 6, 0x0af0cd2d, 0x8d, 2032, 456
+#elif defined(WB_SNOVA5K)
+    #define WB_SNOVA_SET V_K
+    #define WB_SNOVA_N 7, 0x0af0cd2c, 0x8f, 1216, 896
+#elif defined(WB_SNOVA5B)
+    #define WB_SNOVA_SET V_B
+    #define WB_SNOVA_N 8, 0x0af0cd23, 0x91, 1891, 691
+#elif defined(WB_SNOVA5S)
+    #define WB_SNOVA_SET V_S
+    #define WB_SNOVA_N 9, 0x0af0cd22, 0x93, 2716, 591
+#endif
+#define WB_SN_ARG(i, n, sum, minor, pk, sig) WB_SN_##i(n, sum, minor, pk, sig)
+#define WB_SN_GET(i, ...) WB_SN_ARG(i, __VA_ARGS__)
+#define WB_SN_ARC(n, sum, minor, pk, sig) n
+#define WB_SN_SUM(n, sum, minor, pk, sig) sum
+#define WB_SN_MINOR(n, sum, minor, pk, sig) minor
+#define WB_SN_PK(n, sum, minor, pk, sig) pk
+#define WB_SN_SIG(n, sum, minor, pk, sig) sig
+#ifdef WB_SNOVA_SET
+    #define WB_SNOVA
+    #define HAVE_FALCON
+    #define WOLFSSL_EXPERIMENTAL_SETTINGS
+    #define WB_SNOVA_PK  WB_SN_GET(PK, WB_SNOVA_N)
+    #define WB_SNOVA_SK  96             /* every set: seeds */
+    #define WB_SNOVA_SIG WB_SN_GET(SIG, WB_SNOVA_N)
+    #define WB_FALCON1_SUM      WB_SN_GET(SUM, WB_SNOVA_N)
+    #define WB_FALCON1_OID      43, 206, 15, 10, WB_SN_GET(ARC, WB_SNOVA_N), 3
+    #define WB_FALCON1_SA_MAJOR 0xFF
+    #define WB_FALCON1_SA_MINOR WB_SN_GET(MINOR, WB_SNOVA_N)
+    #define WB_FALCON1_KEY_SIZE WB_SNOVA_SK
+    #define WB_FALCON1_PUB_SIZE WB_SNOVA_PK
+    #define WB_FALCON1_SIG_SIZE WB_SNOVA_SIG
+    #define WB_FALCON_MAX_PUB   2716        /* SNOVA_V_S's: more than Falcon-1024's 1,793 */
+    #define MIN_FALCONKEY_SZ    WB_SNOVA_SK /* wolfSSL's minimum is Falcon-512's 1,281 B secret key */
+    #define WOLFSSL_MAX_SIGALGO 256         /* the round 3 broker offers 80 signature algorithms (160 B): wolfSSL's
+                                             * 128 B cut its list before SNOVA level V's */
+#else  /* wolfSSL's own Falcon-512 (1.3.9999.3.11) */
+    #define WB_FALCON1_SUM      0x7c0f3120
+    #define WB_FALCON1_OID      43, 206, 15, 3, 11
+    #define WB_FALCON1_SA_MAJOR 0xFE
+    #define WB_FALCON1_SA_MINOR 0xD7
+    #define WB_FALCON1_KEY_SIZE 1281
+    #define WB_FALCON1_PUB_SIZE 897
+    #define WB_FALCON1_SIG_SIZE 666
+    #define WB_FALCON_MAX_PUB   1793
+#endif
+
 #if defined(WB_SLHDSA_SHA2_128F) || defined(WB_SLHDSA_SHA2_128S) || \
     defined(WB_SLHDSA_SHAKE_128F) || defined(WB_SLHDSA_SHAKE_128S)
     #define WOLFSSL_HAVE_SLHDSA
@@ -86,9 +161,9 @@ int wb_rand_block(unsigned char *output, unsigned int sz);
     #define WOLFSSL_SP_SMALL
     #if defined(__ARM_ARCH_6M__)
         #define WOLFSSL_SP_ARM_THUMB_ASM   /* RP2040 Cortex-M0+ */
-    #else
+    #elif defined(__ARM_ARCH_8M_MAIN__)
         #define WOLFSSL_SP_ARM_CORTEX_M_ASM /* RP2350 Cortex-M33 */
-    #endif
+    #endif                                 /* else (pico/tests/deploy_host_test on the Mac / Pi): portable C */
 #endif
 #if defined(WB_ECDSA_P256) || defined(WB_TLS)
     #define HAVE_ECC

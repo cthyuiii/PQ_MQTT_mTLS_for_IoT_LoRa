@@ -321,7 +321,7 @@ Pico W's pipeline; no run of the new form yet)
       - Its benchmark has no Falcon keygen, so those Stage 1 rows are `PARTIAL`.
       - The double-precision build needs `ac_cv_vcs_checkout=no`: 5.9.4's Falcon code leaves unused
         helpers, which a git checkout's `-Werror` rejects.
-    - **wolfSSL client with MAYO or SNOVA: not fixable.** wolfSSL has no implementation.
+    - **wolfSSL client with MAYO or SNOVA: not fixable.** wolfSSL has no implementation. (SNOVA since: finding 106.)
     - **SLH-DSA in TLS: not fixable on the pinned stack.**
       - oqs-provider has SLH-DSA with TLS codepoints 0x0911–0x091C [36]; wolfSSL 5.9.4 uses the same ones.
       - But with OpenSSL 3.5 or newer, oqs-provider switches its own ML-DSA and SLH-DSA off at startup
@@ -646,7 +646,8 @@ Pico W's pipeline; no run of the new form yet)
     - **Pico W certificates:** RSA-2048, RSA-3072, Ed25519, ML-DSA-65, ML-DSA-87 and Falcon-1024 join ECDSA-P256,
       ML-DSA-44 and Falcon-512.
       - RSA builds add RSA-PSS (TLS 1.3 needs it); RSA-3072 enables the 3072-bit SP code.
-      - Not possible on the Pico: SLH-DSA (the broker can't serve it, finding 12) and MAYO / SNOVA (not in wolfSSL).
+      - Not possible on the Pico: SLH-DSA (the broker can't serve it, finding 12) and MAYO / SNOVA (not in wolfSSL;
+        SNOVA since: finding 106).
     - **Firmware:** all 9 compile for both boards. Pico W: 598–646 KB, 170 KB RAM free; Pico 2 W: 587–635 KB. None
       has run on hardware yet.
     - `pico/tests/mqtt_parse_test.py` now covers sweep blocks, their summary and collate rows, and checks that the
@@ -1015,6 +1016,9 @@ Pico W's pipeline; no run of the new form yet)
         cycles), 17.9 / 28.9 / 4.2 G (III) and 21.9 / 65.0 / 10.0 G (V): about 4.5 and 8 minutes per iteration on
         the Pico. Level I's board numbers stand, since it linked its own copies. The sketch now reboots into
         BOOTSEL on a hard fault, so a crash shows at once instead of as an hour of silence.
+      - **After the fix (Pi-driven run, 3 Oct, commit `c4e4be35`): SQIsign-III and -V OK (3 / 3 each).** Medians:
+        III 60.5 s / 149 s / 22.4 s, V 131 s / 380 s / 58.3 s. The board needed 1.0-1.2x the cycles QEMU counted
+        as instructions (level I 1.0x); keygen varies most (III: 52-61 s), as it retries until it finds a key.
     - The host stage (`run_all.sh` reference stages) still uses the older code for these four.
 91. [Mac, Pico] **LoRaWAN 1.1 with 256-bit keys (`lorawan11_256`, 3 Oct 2026).** The 1.1 frame with AES-256-CTR and the
     1.1 MIC rules on AES-256-CMAC: two CMACs per uplink (keys nwk | nwk2 and nwk2 | nwk), one per downlink. Like
@@ -1059,6 +1063,169 @@ Pico W's pipeline; no run of the new form yet)
     - MAYO-1 now gets 240 KB: about the most the RP2040 can give (the sketch's other static RAM is 9 KB, and 7 KB
       stays free for the heap).
     - MAYO-2's verify needs more than the RP2040's whole 264 KB of RAM, so MAYO-2 now runs only on the RP2350.
+    - **On the board with 240 KB (3 Oct): MAYO-1 OK, 10 / 10.** Medians 0.44 s keygen, 0.79 s sign, 0.37 s verify:
+      1.3 / 1.1 / 1.6x the cycles QEMU predicted as instructions. MAYO reads large tables, so the M0+'s two-cycle
+      loads and the flash cache cost more here than in SQIsign's arithmetic.
+96. [Pico, Mac] **UOV-Ip round 3 on the Pico (7 Oct): `uov_bench`, classic, keys in flash.** Round 3 UOV-Ip
+    (n = 119, o = 45) has a 321,300 B public key and a 278,087 B secret key; key generation holds both (~600 KB), so
+    `make_uov_keys.sh` builds liboqs main (the Pico's round 3 commit, UOV-Ip only) on the host, makes the pair from a
+    fixed seed, checks sign / verify / a changed message, and writes it as const arrays. The sketch links the Pico's
+    round 3 liboqs (now with `SIG_uov_ov_Ip`) and signs / verifies with the keys read straight from flash.
+    - QEMU (the M0+ build, unaligned accesses trapped): sign 17.4 M instructions with 12 KB of stack, verify 7.8 M
+      with 5.3 KB, no heap, changed messages refused: about 0.1 s and 0.05 s on the Pico before flash-cache misses.
+    - Builds for both boards: 727 KB of flash (34% of the Pico W's), 42 KB of static RAM. Not yet run on a board.
+    - It replaces the round 2 `uov1_bench` (pqov sources, round 2 keys). UOV-Ip-pkc stays RP2350-only: its verify
+      expands the compressed key into RAM.
+97. [Mac, Pi, Pico] **The four deployment items, built (7 Oct): `gen_certs.sh --deploy`, `mqtt_bench.py --deploy`,
+    run_all's `deploy` stage, the Pico's `-DMT_DEPLOY` firmware.** How they work: how_it_works.md, `deploy`.
+    - On the Mac, with the Pico's own wolfSSL settings (`pico/tests/deploy_host_test`): the broker's IP accepted and
+      a wrong one refused (`wolfSSL_check_domain_name` refuses IP literals in 5.9.4, so IPs go through
+      `wolfSSL_check_ip_address`); `revoked.crt` accepted without the CRL and refused with it; `expired.crt`
+      refused; the signed trust-anchor update verified and refused with any changed byte; ML-DSA-44 signatures cross
+      between wolfCrypt and OpenSSL both ways.
+    - On the Mac, end to end (`mqtt_bench.py --role both --deploy`, OpenSSL client, 5 connections each): TLS
+      1.13 ms, TLS-checked 1.24 ms, mTLS 1.33 ms, mTLS-checked 1.62 ms; the three bad connections refused (IP
+      address mismatch, certificate revoked, certificate has expired); the KEM exchange OK plain, over mTLS and
+      signed. Signed, the device signs in 0.23 ms (ML-KEM-768) to 0.43 ms and verifies in 0.08-0.10 ms; the round
+      trip grows from 0.22 to 0.86 ms with the responder's own check and signature.
+    - The retained update reaches a subscriber intact (6,429 B). The Pico firmware builds (672 KB of flash, 136 KB
+      of static RAM, 64 KB LittleFS); the benchmark firmware is unchanged (92 KB static RAM, as before).
+    - Not yet run on the Pico or between the Pi and the broker.
+98. [all] **Round 4 (checked 7 Oct 2026).** NIST's additional-signatures process has no round 4: its third round (9
+    candidates, 14 May 2026; tweaks due 14 Aug 2026; HAWK since withdrawn) runs until the 7th PQC Standardization
+    Conference (spring / summer 2027), where NIST decides what to standardise [41]. The "fourth round" so far is the
+    main process's for KEMs (2022-2025: BIKE, Classic McEliece, HQC, SIKE). It ended on 11 Mar 2025 with HQC alone
+    selected (NIST IR 8545) [42]; NIST planned its draft standard (FIPS 207) about a year later and the final one for
+    2027 [44]. Classic
+    McEliece was not selected by NIST but became an ISO standard in June 2026 (ISO/IEC 18033-2:2006/Amd 2:2026, with
+    ML-KEM and FrodoKEM) [43]. SIKE was broken in 2022. Here: HQC-1/3/5 run in the Pi's TLS sweep and KEM exchange,
+    Classic McEliece (5 sets) in the Pi's KEM exchange; BIKE in none (liboqs builds it only on 64-bit hosts; it fails
+    in TLS through oqs-provider), and none of them on the Pico yet.
+
+99. [Mac, Pi, Pico] **The pipeline now measures LoRaWAN 1.1 only (7 Oct).** By default, `lorawan11` (the standard,
+    AES-128) and `lorawan11_256` (the same 1.1 frame and MIC rules with AES-256 keys), uplink and downlink, on the
+    host (`mqtt_bench.AEADS_DEFAULT`) and the Pico (`PIPE[]`: 12 pipeline blocks instead of 60, 41 in all). The
+    others stay in the code: `--aeads`, and `-DMT_ALL_SCHEMES` on the Pico. AES-GCM, AES-CCM and Ascon put a 16 B tag
+    and their own encryption into the LoRaWAN-shaped frame, which no LoRaWAN network server reads, so `lorawan11_256`
+    is the only 256-bit method that keeps LoRaWAN 1.1's own construction.
+100. [Pico, Mac] **HQC-1 on the Pico W (7 Oct): fits, through liboqs.** HQC is NIST's code-based KEM (the only one
+     selected from the KEM round 4, finding 98); wolfSSL has none, so the KEM-exchange firmware adds it through liboqs
+     0.16 (`KEM_hqc_1` in the Pico's liboqs, `kem_wolf.h` with `-DKW_LIBOQS`).
+     - The Pico's M0+ code in QEMU (unaligned accesses trapped): keygen 66 M instructions, encapsulation 132 M,
+       decapsulation 200 M (about 0.33 / 0.66 / 1.0 s on the Pico), with 52 / 59 / 65 KB of stack and the same secret
+       on both sides. pk 2,241 B, ciphertext 4,433 B, secret 32 B.
+     - The device keeps keygen and decapsulation, the responder encapsulates. That firmware now runs on an 80 KB
+       stack (178 KB of static RAM, 86 KB left for the heap). On the host, the Pico's code agrees with the
+       responder's liboqs on all 20 exchanges (`pico/tests/kem_host_test`). Not yet run on a board.
+101. [Mac] **The broker's side of the handshake (7 Oct): `broker_hs_timing.c`.** Preloaded into Mosquitto, it times
+     the broker's own work per handshake. Mac, loopback, X25519MLKEM768, OpenSSL client, medians of 6:
+     ML-DSA-44 TLS 0.86 ms (the client saw 1.11 ms in all): encapsulation 0.10, signing 0.52; mTLS 1.04 ms, with
+     0.20 ms to check the client's chain and signature. Ed25519: TLS 0.30 ms (signing 0.03), mTLS 0.53 ms. ML-DSA
+     signing varies by handshake (0.24-0.75 ms), as on the clients (finding 5). The broker machine writes
+     `results/broker_hs_{raw,summary}_<machine>.csv`, one row per client IP, so Pico and Pi runs stay apart.
+102. [Mac] **The reference stage runs the round 3 code (7 Oct).** `setup_round3.sh` fetches and builds SDitH v3
+     (NIST package, 12 sets), QR-UOV (NIST package, 15 sets), FAEST 3.0 (faest-ref v3.0.0 through its meson build, 12
+     sets) and SQIsign (f417ebd, I / III / V) into `~/.cache/iot-pqc/ref-r3`; all of them now go through
+     `bench_template.c` (SQIsign used its own benchmark before, mean only). The round 2 scripts are gone.
+     - A smoke run on the Mac (3-5 iterations, medians, keygen / sign / verify): SQIsign-I 11.4 / 32.9 / 4.8 ms,
+       III 45 / 132 / 17 ms, V 70 / 200 / 29 ms; SDitH cat1-fast 0.03 / 21.8 / 18.8 ms; QR-UOV 1q127L3 2.5 / 0.45 /
+       0.40 ms; FAEST-128f 0.002 / 28.6 / 15.6 ms, EM-128f 0.001 / 23.1 / 11.9 ms. The Pico W's SQIsign-I takes
+       about 1,200x the Mac's time (finding 90).
+
+103. [Pico] **What the deployment features cost in flash and RAM (Pico W, built as the runner builds, 7 Oct).** The
+     deployment firmware is 672,312 B against 622,760 B for the ML-DSA-44 benchmark firmware (+49.6 KB of the 2 MB
+     flash), with 136,376 against 92,264 B of static RAM (+44.1 KB), and it reserves a 64 KB LittleFS partition.
+     - The trust anchor itself, the CA certificate (4,005 B for ML-DSA-44), is in every firmware already.
+     - The CRL: 2,562 B of data (2,420 B of it the CA's ML-DSA-44 signature; each revoked certificate adds a few
+       dozen bytes) and 6,062 B of wolfSSL CRL code; certificate dates and NTP add 1.6 KB. No static RAM: wolfSSL
+       parses the CRL onto the heap when it loads it.
+     - Keeping an updated trust anchor in flash: LittleFS (25.5 KB of code, the 64 KB partition) and the update key
+       (1,312 B). Checking the update reuses the ML-DSA verify that TLS already has.
+     - The rest is the test, not what a device needs: the broker's certificate for the signed KEM exchange (4,015 B),
+       the old ECDSA root (412 B), the blocks' code (about 6 KB) and their RAM (the update and read-back buffers
+       14.3 KB, the KEM exchange's buffers 20.8 KB, two ML-DSA key objects 8.6 KB).
+     - Builds made under the scratch folder link LittleFS into every Wi-Fi firmware (arduino-pico links the Wi-Fi
+       library's whole dependency chain), 26.6 KB more; the runner's builds in the system temp folder do not.
+
+104. [Mac, Pi, Pico] **The pipeline as a whole, and the same certificates everywhere (8 Oct).**
+     - The pipeline now has one whole number per connection, measured on one clock: `whole_first`, from the TCP
+       connect through the TLS handshake, MQTT CONNECT and SUBSCRIBE to the first reading verified after its trip
+       through the broker (one reading over a fresh post-quantum connection); `whole_all` runs to the last of the N
+       readings. Host and Pico W print `whole,iter,first_ms,all_ms,msgs`. Mac, loopback, LoRaWAN 1.1 uplink, 20
+       readings, medians: ML-DSA-44 TLS 1.37 ms, mTLS 2.07 ms; Ed25519 TLS 1.15 ms, mTLS 1.49 ms; plain MQTT 0.48 ms.
+     - The host's pipeline used to run only the customer's shortlist (ECDSA-P256, ML-DSA-44, Falcon-512), to keep a
+       10-scheme run short, while every Pico W certificate firmware runs its pipeline. With LoRaWAN 1.1 only (2
+       schemes) the host now runs every TLS certificate too (`SIGS_TLS`); `--sigs` brings back the shortlist.
+     - SLH-DSA is skipped in TLS: OpenSSL's TLS layer refuses its certificates, so no TLS / mTLS / pipeline / sweep
+       default includes it (its keygen / sign / verify stay in Stage 1 and on the Pico).
+105. [Pico] **Round 3 certificates on the Pico W: only SNOVA could work, and only by extending wolfSSL (8 Oct).**
+     wolfSSL 5.9.4, the Pico's TLS library, has none of the round 3 schemes and no liboqs bridge. On the broker
+     side, OpenSSL with the round 3 oqs-provider serves only MAYO and SNOVA certificates (`certs/round3`); SQIsign,
+     QR-UOV, MQOM, FAEST, SDitH and UOV have no TLS support there. MAYO-1's verify needs 225 KB of stack (finding
+     95), too much beside TLS on 264 KB. SNOVA fits: small keys and signatures (pk 376 B - 2.7 KB, signature 272 -
+     896 B), verify 0.8 s (level I) to 3.5 s (level V) on the Pico, and little stack. Using it means adding SNOVA to
+     wolfSSL's certificate parsing and TLS 1.3 signature handling (oqs-provider's OIDs and codepoints, liboqs for
+     the maths): a maintained patch to wolfSSL, not a setting. Done in finding 106.
+106. [Mac, Pico] **SNOVA certificates in the Pico W's TLS client: wolfSSL's Falcon-512 code carrying SNOVA (8 Oct).**
+     - **How.** `make_wolfssl_lib.sh` gives Falcon-512's constants SNOVA's:
+       - the OID 1.3.9999.10.<n>.3 and its OID sum;
+       - the TLS codepoint 0xFF83 - 0xFF93 (oqs-provider `36cafae` [35]);
+       - the key and signature sizes.
+     - It also swaps `falcon.c` for `wb_snova.c`, the `wc_falcon_*` calls over liboqs main's SNOVA.
+     - wolfSSL's own certificate parsing and TLS 1.3 code for Falcon then carry SNOVA unchanged: 12 constants and
+       one file, against about 350 places where wolfSSL handles Falcon. One SNOVA set per firmware
+       (`-DWB_SNOVA<set>`); that firmware has no Falcon.
+     - **Two wolfSSL limits had to move.**
+       - It reads Falcon codepoints by their own first byte (`FALCON_SA_MAJOR`, 0xFE), separately from the
+         codepoint it sends.
+       - It keeps only 128 bytes of the server's signature-algorithm list, but the round 3 broker offers 80
+         algorithms (160 B), so the cut-off list had no SNOVA level V. These builds keep 256 B.
+     - **Checked on the Mac** (`pico/tests/snova_tls_host_test`): the Pico's wolfSSL build, compiled natively,
+       against the round 3 broker.
+       - All 9 sets complete TLS and mTLS and get a CONNACK.
+       - A CA key with one bit changed is refused (`ASN sig error, confirm failure`).
+       - Single handshakes took 2.5 - 8.7 ms there (a functional check, not a benchmark).
+     - **On the M0+** (QEMU, the Pico's own liboqs main library): its SNOVA_I_K verifies the broker's `server.crt`,
+       which OpenSSL + oqs-provider signed on the Mac.
+
+       | Set | pk / sig (B) | sign: instructions, stack | verify: instructions, stack |
+       |---|---|---|---|
+       | I_K | 376 / 528 | 92.3 M, 39.4 KB | 48.8 M, 10.0 KB |
+       | I_B | 656 / 388 | 71.8 M, 35.0 KB | 34.5 M, 7.9 KB |
+       | I_S | 1016 / 272 | 47.8 M, 26.1 KB | 20.4 M, 6.3 KB |
+       | III_K | 912 / 688 | 210.5 M, 59.3 KB | 106.4 M, 11.7 KB |
+       | III_B | 1416 / 532 | 173.9 M, 50.9 KB | 83.9 M, 9.6 KB |
+       | III_S | 2032 / 456 | 165.3 M, 49.2 KB | 75.3 M, 8.6 KB |
+       | V_K | 1216 / 896 | 364.1 M, 92.3 KB | 181.5 M, 17.6 KB |
+       | V_B | 1891 / 691 | 299.9 M, 79.1 KB | 140.4 M, 14.1 KB |
+       | V_S | 2716 / 591 | 283.8 M, 76.3 KB | 126.1 M, 12.5 KB |
+
+       - None uses the heap. The board's own peaks (2 Oct, the SNOVA rows above) agree.
+       - The firmware runs the handshake on that stack + 8 KB (`-DMT_STACK_KB`, 36 - 104 KB).
+     - **Firmware (Pico W)** against ML-DSA-44's 622,936 B flash / 92,264 B RAM (built as the runner builds):
+
+       | Set | Flash | RAM (static) |
+       |---|---|---|
+       | SNOVA_I_S | 690,816 B | 112,912 B |
+       | SNOVA_I_K | 699,576 B | 125,200 B |
+       | SNOVA_V_K | 725,632 B | 182,544 B |
+
+       68 - 103 KB more flash than ML-DSA-44 (liboqs main's SNOVA in place of wolfSSL's ML-DSA); most of the RAM
+       is the stack.
+     - **What to expect on the board** (from the 2 Oct sign / verify times at 200 MHz):
+
+       | Level | TLS (two verifies: the chain and CertificateVerify) | mTLS (adds one signature) |
+       |---|---|---|
+       | I | 1.6 - 2.0 s | 2.6 - 3.3 s |
+       | III | 4.4 - 4.6 s | 7.3 - 7.7 s |
+       | V | 6.7 - 7.1 s | 11.1 - 12.0 s |
+
+       For comparison, Falcon-512 mTLS took 2.0 s.
+     - The firmware fed its 8 s watchdog only while waiting for data. When the server's flight had already
+       arrived, level V's two verifies (7.1 s) ran without a feed. It now feeds on every read.
+     - **Not yet run on the board**: `run_benchmarks.py --test mqtt --match snova`, with the round 3 broker
+       running. There is no sweep in these firmware (`-DMT_NO_SWEEP`): the key-exchange groups don't depend on the
+       certificate and were swept with the others.
 
 ### Sources
 
@@ -1115,40 +1282,26 @@ All links checked on 28 Sep 2026.
 38. PostQuantum.com, *NIST Selects 9 Third-Round PQC Signature Candidates* (the five eliminated, the 14 Aug 2026 tweak deadline, SNOVA and the wedge attack). <https://postquantum.com/security-pqc/nist-third-round-pqc-signatures/>
 39. freenode, *NIST locks FN-DSA to fixed-point math for FIPS 206* (28 Sep 2026: 32.32 key generation, 64.64 signing, one KAT-testable signing procedure). <https://freenode.net/article/nist-locks-fn-dsa-to-fixed-point-math-for-fips-206>
 40. R. Perlner, *FIPS 206 Status Update*, NIST, 6th PQC Standardization Conference (2025). <https://csrc.nist.gov/csrc/media/Presentations/2025/fips-206-fn-dsa-(falcon)/images-media/fips_206-perlner_2.1.pdf>
+41. Quantum Computing Report, *NIST Advances Nine Post-Quantum Digital Signature Candidates to Third Evaluation Round* (two-year round, decisions at the 7th PQC Standardization Conference, tweaks by 14 Aug 2026). <https://quantumcomputingreport.com/nist-advances-nine-post-quantum-digital-signature-candidates-to-third-evaluation-round/>
+42. NIST, *Status Report on the Fourth Round of the NIST Post-Quantum Cryptography Standardization Process*, NIST IR 8545 (11 Mar 2025). <https://www.nist.gov/publications/status-report-fourth-round-nist-post-quantum-cryptography-standardization-process>
+43. Classic McEliece team, *ISO* (ISO/IEC 18033-2 amendment, 2026). <https://classic.mceliece.org/iso.html>
+44. NIST, *NIST Selects HQC as Fifth Algorithm for Post-Quantum Encryption* (11 Mar 2025: a draft in about a year, the final standard in 2027). <https://www.nist.gov/news-events/news/2025/03/nist-selects-hqc-fifth-algorithm-post-quantum-encryption>
 
-## In progress (planned, waiting for the go)
+## In progress (built 7 Oct, waiting for the board run)
 
-What a real deployment adds on top of the benchmark. Each one gets a plan here and is built only when approved.
+What a real deployment adds on top of the benchmark: finding 97 and how_it_works.md, `deploy`. Each leaves this list
+once it has run on the Pico W and between the Pi and the broker.
 
-- **Trust-anchor updates through signed firmware.** The Pico's CA certificate is compiled into its firmware, so
-  moving devices to a post-quantum root means shipping the new CA securely.
-  - Plan: keep the CA in a LittleFS file instead of the firmware. An update message on an MQTT topic carries the
-    new CA plus an ML-DSA signature from an "update key" whose public half is baked into the firmware. The Pico
-    verifies it (wolfSSL ML-DSA, already built in), writes the file and reconnects under the new CA.
-  - A host script signs and publishes the update.
-  - Measures: verify time, flash write time, bytes, and the first handshake under the new root.
-  - arduino-pico's `PicoOTA` / `Updater` could carry a whole signed firmware image later.
-- **Hostname checks, a CRL and NTP on the Pico.** Today the Pico checks only that the broker's chain ends at the
-  CA: no name check, no revocation list, and no dates (`NO_ASN_TIME`).
-  - Plan for the name check: `gen_certs.sh` adds the broker's IP / name to the server certificate's SAN (now
-    `localhost`, `127.0.0.1`), and the sketch calls `wolfSSL_check_domain_name`.
-  - Plan for revocation: `gen_certs.sh` also issues a CRL. wolfSSL gets `HAVE_CRL`, and the sketch loads the CRL
-    with `wolfSSL_CTX_LoadCRLBuffer` and enables it.
-  - Plan for time: the sketch sets the clock with arduino-pico's `NTP` before connecting, and wolfSSL drops
-    `NO_ASN_TIME`. This needs an NTP server the Pico can reach (internet, or `chrony` on the Pi).
-  - Measures: the added handshake time, flash and RAM, against today's runs.
-  - The host clients get the same checks (OpenSSL `SSL_set1_host` and CRL flags; wolfSSL the same calls).
-- **Keep FCnt across Pico reboots.** FCnt is part of every frame's nonce: restarting it under the same keys reuses
-  nonces.
-  - Today the keys are new on every boot, so nothing repeats.
-  - Plan: store DevAddr, the keys and FCnt in a LittleFS file. Save FCnt every N frames, and on boot continue from
-    the saved value plus N, so a counter never repeats even after a crash between saves.
-  - Measures: the flash write per save and its effect on per-message time.
-- **KEM exchange inside mTLS.** The KEM exchange now sends raw public keys and ciphertexts over the plain MQTT
-  listener, so a man in the middle could swap a public key.
-  - Plan, two variants: (a) the same exchange over the mTLS listener, the Pico and `mqtt_kem_timer` both
-    presenting certificates; (b) over plain MQTT with each public key / ciphertext signed by ML-DSA.
-  - Measures: added time and bytes against the plain exchange (finding 8).
+- **Trust-anchor updates through signed firmware**: a signed CA update (`ta_update.bin`, ML-DSA-44), retained on the
+  broker, verified on the Pico with the update key in firmware, kept in LittleFS. A whole signed firmware image
+  (arduino-pico's `PicoOTA` / `Updater`) is not done.
+- **Hostname checks, a CRL and NTP on the Pico**: the broker's IP in its certificate, the CA's CRL, dates on NTP time;
+  the host OpenSSL client has the same checks (`CHECK_HOST`, `CHECK_CRL`). The host wolfSSL client has the name check
+  only (its build has no CRL support).
+- **Keep FCnt across Pico reboots**: keys, DevAddr and an FCnt reservation in LittleFS, checked across a deliberate
+  reboot.
+- **KEM exchange inside mTLS**: over the mTLS listener, and signed (ML-DSA-44 on both messages), on the Pico and the
+  host.
 
 ## Future implementations (KIV)
 

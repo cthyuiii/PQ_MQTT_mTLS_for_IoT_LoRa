@@ -1,7 +1,8 @@
 # How the benches work, and how to test them
 
-Four parts:
+Five parts:
 
+0. **Library map.** Which library does each job, on the host and on the Pico, and how it is called.
 1. **Test plan per device.** What to run on the MacBook, the Pi 4, the Pi 5 and the Pico boards, in
    what order, and what to check. Starts with a dry run on the Mac.
 2. **Stage by stage.** Which program runs, which library it calls, which functions it calls in which
@@ -40,6 +41,65 @@ here.
 The [Mac] results so far were measured before this pin: oqs-provider 8b87173 with liboqs 0.15.0,
 wolfSSL 5.9.2, Python 3.9.6, cryptography 48.0.0, arduino-pico 5.6.0. The README's findings state this
 per item.
+
+---
+
+## 0. Library map: what does each job, where, and how it is called
+
+Host = the Mac and the Pi (the same C sources; the Pi uses its system OpenSSL, the Mac Homebrew's). Pico = Pico W
+(RP2040) and Pico 2 W (RP2350), arduino-pico. "No library" means the project's own code.
+
+**Signatures (Stage 1)**
+
+| Job | Host: library, call (file) | Pico: library, call (sketch) |
+|---|---|---|
+| ML-DSA, SLH-DSA, RSA, ECDSA, Ed25519 via OpenSSL | OpenSSL libcrypto, default provider: `EVP_PKEY_generate`, `EVP_DigestSignInit_ex` + `EVP_DigestSign`, `EVP_DigestVerify` (`signatures/sig_speed.c`) | — |
+| Falcon; round 3 MAYO, SNOVA via OpenSSL | the same EVP calls; oqs-provider (on liboqs) does the work (`sig_speed.c`, `OPENSSL_MODULES`) | — |
+| any liboqs signature | liboqs 0.16.0, or main `b196b57a` for round 3: `OQS_SIG_keypair` / `_sign` / `_verify` (`sig_speed.c -DSIG_LIBOQS`) | the same liboqs cross-compiled (`liboqs_bench`: `OQS_SIG_*`; `uov_bench`: `OQS_SIG_uov_ov_Ip_sign` / `_verify`) |
+| wolfSSL signatures | wolfSSL 5.9.4 wolfCrypt: `wc_SignatureGenerate` / `wc_SignatureVerify`, `wc_MlDsaKey_*`, `wc_SlhDsaKey_*`, `wc_ed25519_*` (`sig_speed.c -DSIG_WOLFSSL`) | the same wolfSSL release, compiled per firmware (`wolfssl_bench`) |
+| NIST submission code (round 3: SDitH v3, QR-UOV, FAEST 3.0, SQIsign; HAWK) | the NIST API `crypto_sign_keypair` / `crypto_sign` / `crypto_sign_open`, called by `signatures/reference/bench_template.c`; sources from `setup_round3.sh` (HAWK: its own `tests/speed`) | the same API from the same code, ported (`qruov_bench`, `sqisign_bench`, `faest_bench`, `hawk_bench`) |
+| other Pico implementations | — | mldsa-native ref (`mldsa_bench`), PQClean `clean` (`falcon_bench`, `slhdsa_bench`), BearSSL `br_rsa_*` / `br_ecdsa_*` (`rsa_bench`, `ecdsa_bench`), rweather Crypto `Ed25519::sign` / `verify` (`ed25519_bench`), OpenSSL's Goldilocks port (`ed448_bench`) |
+| timing | `clock_gettime(CLOCK_MONOTONIC)`; cycles from `perf_event_open` on Linux | `micros()` (the chip's 1 µs timer); cycles = µs × MHz |
+| randomness | OpenSSL / the OS (`/dev/urandom` in `bench_template.c`) | `rp2040.hwrand32()` = Pico SDK `get_rand_32()`, through each library's RNG hook |
+
+**MQTT, TLS and the broker (Stage 2, the key-exchange sweep, the pipeline)**
+
+| Job | Host (`network/`) | Pico (`mqtt_tls_bench`) |
+|---|---|---|
+| TCP | BSD sockets (`mqtt_tls_timer.c`) | arduino-pico `WiFiClient`: lwIP over the board's CYW43 Wi-Fi chip |
+| MQTT 3.1.1 | no library: CONNECT, SUBSCRIBE, PUBLISH packets built and parsed in `mqtt_tls_timer.c` | no library: the same packets in `mqtt_tls_bench.ino` |
+| TLS 1.3 client | OpenSSL libssl `SSL_connect` (`mqtt_tls_timer`), or wolfSSL `wolfSSL_connect` (`mqtt_tls_timer_wolfssl`) | wolfSSL `wolfSSL_connect`; its socket I/O goes through the sketch's `cb_send` / `cb_recv` |
+| key exchange inside TLS | OpenSSL's default provider (X25519MLKEM768, ML-KEM, the SecP / X25519 hybrids, X25519, P-256) and oqs-provider (its hybrids, HQC, FrodoKEM) | wolfSSL's own ML-KEM, X25519, X448, P-256 / 384 / 521 |
+| certificates | OpenSSL's command line (`scripts/gen_certs.sh`: `genpkey`, `req`, `x509`, `ca`, `pkeyutl`), read as PEM | the same certificates as DER arrays, written into `mt_secrets.h` by `run_benchmarks.py` |
+| round 3 SNOVA certificates (sign / verify inside the handshake) | OpenSSL libssl + oqs-provider `36cafae` on liboqs main (the round 3 broker from :20830, its clients) | wolfSSL `wolfSSL_connect`, SNOVA in Falcon-512's place: wolfSSL's own Falcon certificate and TLS 1.3 code calls `wc_falcon_sign_msg` / `wc_falcon_verify_msg`, which `wolfssl_bench/wb_snova.c` answers with liboqs main `OQS_SIG_snova_SNOVA_<set>_sign` / `_verify` (`-DWB_SNOVA<set>`) |
+| broker | Mosquitto 2.0.21 (Pi) / 2.1.2 (Mac) on that machine's OpenSSL; `OPENSSL_CONF` loads oqs-provider and the group list (`mqtt_bench.py`) | — |
+| handshake crypto breakdown | wolfSSL client: `hs_timing.c` (`-Wl,--wrap` of wolfCrypt's `wc_*`); OpenSSL client: `hs_timing_openssl.c` (the executable's own `EVP_*` in front of libcrypto's, Linux) | `hs_timing.c` (`--wrap`) |
+| the broker's side of each handshake | `broker_hs_timing.c`, preloaded into Mosquitto (`LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`): `SSL_read` / `SSL_write` / `SSL_accept` while handshaking, and the `EVP_*` inside | — |
+
+**Payload protection (the pipeline; default LoRaWAN 1.1 and its 256-bit form)**
+
+| Job | Host (`network/app_aead.c`) | Pico (`lora_aead.h`) |
+|---|---|---|
+| LoRaWAN FRMPayload encryption (AES-128 / AES-256 counter mode, the A-blocks) | OpenSSL `EVP_aes_128_ctr` / `EVP_aes_256_ctr` | BearSSL `br_aes_ct_ctr_*` |
+| LoRaWAN MIC (AES-CMAC; 1.1: two per uplink) | OpenSSL `EVP_MAC_fetch("CMAC")` on AES-128-CBC / AES-256-CBC | CMAC written in `lora_aead.h` on BearSSL `br_aes_ct_cbcenc_*` |
+| AES-GCM / AES-CCM (`--aeads`, not LoRaWAN frames) | OpenSSL `EVP_aes_*_gcm` / `EVP_aes_*_ccm` | BearSSL `br_gcm_*` / `br_ccm_*` |
+| Ascon-AEAD128 (`--aeads`) | ascon-c `crypto_aead_encrypt` / `_decrypt` (C) | ascon-c `armv6m_lowsize` (M0 assembly) |
+
+**KEM exchange through the broker, and the deployment checks**
+
+| Job | Host | Pico |
+|---|---|---|
+| ML-KEM, HQC, Classic McEliece key pair / encapsulation / decapsulation | liboqs `OQS_KEM_keypair` / `_encaps` / `_decaps` (`mqtt_kem_timer`, the responder too) | ML-KEM: wolfCrypt `wc_MlKemKey_*` (`kem_wolf.h`); HQC-1: liboqs `OQS_KEM_*` (the KEM firmware) |
+| X25519 part of X25519MLKEM768; key confirmation | OpenSSL `EVP_PKEY_derive`, `EVP_Digest` (SHA-256) | wolfCrypt `wc_curve25519_*`, `wc_Sha256Hash` |
+| signed exchange (ML-DSA-44) | OpenSSL `EVP_DigestSign` / `EVP_DigestVerify` | wolfCrypt `wc_MlDsaKey_SignCtx` / `_VerifyCtx` (`deploy_wolf.h`) |
+| broker name, CRL, dates | OpenSSL `SSL_set1_host`, `X509_STORE_add_crl` + `X509_V_FLAG_CRL_CHECK`; dates always | wolfSSL `wolfSSL_check_ip_address`, `wolfSSL_CTX_LoadCRLBuffer`; dates on NTP time (arduino-pico `NTP`, lwIP SNTP) |
+| trust-anchor update | the update signed with OpenSSL (`pkeyutl`, `gen_certs.sh --deploy`), published retained by `mqtt_bench.py` | verified with wolfCrypt (`dp_ta_verify`), kept in LittleFS (arduino-pico) |
+| LoRaWAN keys and FCnt across reboots | — | LittleFS file `/lora.bin` |
+
+**Around them**: `run_all.sh` (bash) runs the stages; `mqtt_bench.py` starts brokers and clients and summarises; the
+Pico runner `pico/run_benchmarks.py` compiles with arduino-cli, flashes (UF2 copy or picotool) and reads the board
+over pyserial; `scripts/collate_results.py` writes `results/all_results.csv`; QEMU (`qemu-system-arm`, MPS2 boards)
+runs the Pico's M0+ / M33 code on the Mac to check it before a board does.
 
 ---
 
@@ -117,7 +177,7 @@ are not the IoT result.
 | 3 | `./run_all.sh --no-deps --only wolfssl` | `wolfssl_sig_speed_mac.meta` has a size line per algorithm; Falcon rows are `PARTIAL` (no keygen). |
 | 5 | on another machine `./run_all.sh --serve-broker`, here `./run_all.sh --no-deps --broker <its IP> --only tls` | `tls_handshake_pure_mac_remote.csv` has one row per mode × cert × group; failures carry their reason. |
 | 5b | `ls certs/*/client.crt` | Stage 2 needs a client certificate per algorithm. `run_all.sh` runs `gen_certs.sh` only when *no* client certificate exists; after changing OpenSSL or oqs-provider, run `bash scripts/gen_certs.sh` yourself. |
-| 6 | on another machine `./run_all.sh --serve-broker`, here `./run_all.sh --no-deps --broker <its IP> --only mtls` | `mqtt_mtls_summary_mac.csv`: status `OK` for classical, ML-DSA and Falcon with both clients. The expected failures (SLH-DSA) are rows with the reason. Round 3 MAYO / SNOVA: `--only round3` (OpenSSL client). |
+| 6 | on another machine `./run_all.sh --serve-broker`, here `./run_all.sh --no-deps --broker <its IP> --only mtls` | `mqtt_mtls_summary_mac.csv`: status `OK` for classical, ML-DSA and Falcon with both clients. SLH-DSA is skipped in TLS (OpenSSL's TLS layer refuses its certificates; `--sigs SLHDSA128F` still tries it). Round 3 MAYO / SNOVA: `--only round3` (OpenSSL client). |
 | 7 | `./run_all.sh --no-deps --broker <its IP> --only pipeline` | `pipeline_summary_mac_remote.csv`: every plain/TLS/mTLS × payload-scheme × uplink/downlink row `OK`. `msg_tx_B` differs by exactly the scheme overhead. |
 | 9 | `bash pico/tests/aead_host_test/run.sh` | "all Pico pipeline crypto checks pass on the host": the Pico's LoRaWAN / GCM / Ascon frames equal the host's, byte for byte. |
 
@@ -188,6 +248,8 @@ python3 pico/run_benchmarks.py --candidates           # RP2350 only: size-feasib
 # Pico W / Pico 2 W over Wi-Fi: Stage 2 + the LoRaWAN / AES / Ascon pipeline, against ./run_all.sh --serve-broker
 export WIFI_SSID="<ssid>"; read -rs WIFI_PASS; export WIFI_PASS
 BROKER=<this Mac's LAN IP> python3 pico/run_benchmarks.py --test mqtt
+BROKER=<this Mac's LAN IP> python3 pico/run_benchmarks.py --test mqtt --match snova   # round 3 SNOVA certificates only
+bash pico/tests/snova_tls_host_test/run.sh            # on the Mac, no board: the SNOVA TLS client against the round 3 broker
 ```
 
 Check:
@@ -199,8 +261,8 @@ Check:
 3. `pico/logs/results.csv`: `RUNTIME_MEMORY_FAIL` / `STACK_OVERFLOW` rows are results the plan
    wants reported, not errors to hide.
 4. Watch the first hardware runs of `wolfssl_bench`, `liboqs_bench` and the new `mqtt_tls_bench` pipeline.
-   - `mqtt_tls_bench` should end `OK (89 MQTT blocks)`: 3 connect blocks, 3 modes × 10 schemes × up / down, then
-     TLS / mTLS × 13 key-exchange groups.
+   - `mqtt_tls_bench` should end `OK (41 MQTT blocks)`: 3 connect blocks, 3 modes × 2 schemes (`lorawan11`,
+     `lorawan11_256`) × up / down, then TLS / mTLS × 13 key-exchange groups (`-DMT_ALL_SCHEMES`: 89, all 10 schemes).
      - Each block is `#block <stage> <mode> [<scheme> <up|down>]`. The stage is `connect` (Stage 2: one row
        per connection) or `pipeline` (connections plus one row per message). The mode is the transport:
        `plain`, `TLS` (server-auth) or `mTLS` (mutual). So `#block pipeline mTLS ascon down` means pipeline
@@ -222,7 +284,10 @@ Check:
    ```
 
    The ratio between these two runs is the real speed-up. The QEMU numbers only count instructions.
-6. For a like-for-like comparison with the RP2040 study [16], add `--freq 133`: the core's default is
+6. The SNOVA certificate firmware (`MQTT/TLS SNOVA_<set> round 3`) needs the round 3 broker, which
+   `./run_all.sh --serve-broker` starts beside the others (from :20830). It should end `OK (15 MQTT blocks)`: no
+   sweep (`-DMT_NO_SWEEP`). A level V mTLS handshake is about 12 s on the RP2040 (two verifies, one signature).
+7. For a like-for-like comparison with the RP2040 study [16], add `--freq 133`: the core's default is
    200 MHz on the RP2040 and 150 MHz on the RP2350 [30]. To compare the two chips, run both at the
    same clock (e.g. `--freq 150`).
 
@@ -412,6 +477,14 @@ So each handshake costs:
        `X509_verify_cert`, `EVP_DigestVerify`, `EVP_DigestSign`). The dynamic linker binds libssl to those
        copies, and each one times libcrypto's own. macOS binds libssl to libcrypto directly, so the Mac's rows
        have no such columns.
+   - The broker's side: `mqtt_bench.py` preloads `network/broker_hs_timing.c` (built by `build_timer.sh`) into every
+     Mosquitto it starts (`LD_PRELOAD`, macOS `DYLD_INSERT_LIBRARIES`). It sums the time Mosquitto spends inside
+     `SSL_accept` / `SSL_read` / `SSL_write` until a connection's handshake is finished (network waits fall between
+     those calls), and the broker's crypto inside them: its key share (`EVP_PKEY_keygen`, `EVP_PKEY_encapsulate`,
+     `EVP_PKEY_derive`), its CertificateVerify (`EVP_DigestSign`) and, for mTLS, the client's chain and
+     CertificateVerify. One line per handshake goes to `results/broker_hs_raw_<machine>.csv` (client IP, listener,
+     group); when the broker stops, `broker_hs_summary_<machine>.csv` has the medians per client, certificate,
+     mode and group, so the Pico's and the Pi's handshakes stay apart.
    - Settings: `per_listener_settings true`, `set_tcp_nodelay true` (no Nagle delay on the CONNACK after the
      TLS 1.3 session tickets), `cafile` = `ClientCA.crt` (only mTLS uses it), and `OPENSSL_CONF` with
      `Groups = ?X25519MLKEM768:?MLKEM512:...`: the Stage 2 group (the customer's X25519MLKEM768) plus the `tls`
@@ -502,8 +575,13 @@ CONNACK, `pipeline()` in `mqtt_tls_timer.c` does the following:
    4. **rtt_us**: `SSL_read` until our PUBLISH comes back.
    5. **open_us**: `app_open()` verifies and decrypts; the payload is compared byte for byte.
    6. tx_B / rx_B: socket bytes for this message.
-3. Across all messages, `mqtt_bench.py` summarises seal and open means, RTT median, and the
-   end-to-end median / p90 / mean.
+3. **The pipeline as a whole**, per connection (`whole,iter,first_ms,all_ms,msgs`): `first_ms` runs from the
+   TCP connect, through the TLS handshake, MQTT CONNECT and SUBSCRIBE, to the first reading verified after its trip
+   through the broker. That is one reading over a fresh post-quantum connection, the single whole-pipeline
+   number. `all_ms` runs to the last of the N readings. Measured on one clock, not added up from the parts.
+4. Across all messages and connections, `mqtt_bench.py` summarises seal and open means, RTT median, the
+   end-to-end median / p90 / mean, and `whole_first` / `whole_all` (mean / median / std / min / max). The Pico W
+   prints the same rows, timed with its microsecond timer.
 
 **Why the client sends to itself.** The timed client both publishes and subscribes to `pqc/pipe/<pid>`,
 so the broker delivers each message back to it. Send and receive are timed on one clock, so the
@@ -536,6 +614,35 @@ delivers to it:
   SUB='pqc/pipe/#' network/mqtt_tls_timer <broker> <TLS port> 1 0 certs/MLDSA44/CA.crt
   ```
 
+### `deploy`: what a deployed device adds (certs/DEPLOY, `mqtt_bench.py --deploy`, the Pico's `-DMT_DEPLOY`)
+
+1. **Certificates**: `gen_certs.sh --deploy <broker IP>` makes an ML-DSA-44 set whose server certificate names the
+   broker's IPs, the CA's CRL (revoking `revoked.crt`), an expired server certificate, the trust-anchor update key and
+   `ta_update.bin` (the CA, signed by that key). Generated once on one machine, then copied, like every `certs/` set.
+2. **Broker** (`mqtt_bench.py --role broker`, when `certs/DEPLOY` exists): one more Mosquitto with four listeners
+   (`port_of(..., "DEPLOY", mode)`: mTLS, TLS, `revoked`, `expired`), the update retained on `pqc/ta/update` of the plain
+   listener, and the KEM responders: the plain one also answers signed requests (`pqc/kem/<id>/spk/<KEM>`: it checks
+   the device's signature with `client.crt` and signs its reply with `server.key`), a second one sits inside mTLS.
+3. **Host client** (`--deploy`, run_all's `deploy` stage): `mqtt_tls_timer` with `CHECK_HOST` / `CHECK_CRL` (OpenSSL
+   `SSL_set1_host`, `X509_V_FLAG_CRL_CHECK`; OpenSSL always checks dates); the three connections that must fail;
+   `mqtt_kem_timer` plain, over mTLS (CA / cert / key arguments) and signed (`KEM_SIGN_KEY` = `client.key`,
+   `KEM_PEER_CERT` = `server.crt`, `KEM_PEER_CA` = `CA.crt`).
+4. **Pico** (`MQTT deployment checks (wolfSSL)`: `-DWB_TLS -DWB_MLDSA44 -DWB_CHECKS -DMT_DEPLOY`, a 64 KB LittleFS
+   partition):
+   - `-DWB_CHECKS` turns on wolfSSL's ASN time (`make_wolfssl_lib.sh` patches wolfSSL's Arduino rule that turns dates
+     off on ARM), `HAVE_CRL` and `WOLFSSL_IP_ALT_NAME`. The board sets its clock with NTP (`NTP_SERVER`, default
+     `pool.ntp.org`) before the first handshake.
+   - `deploy_wolf.h` holds the wolfSSL calls (`wolfSSL_check_ip_address` for an IP, `wolfSSL_CTX_LoadCRLBuffer`,
+     ML-DSA-44 sign / verify with an empty context, as OpenSSL), so `pico/tests/deploy_host_test` runs them on the host
+     with the Pico's own settings against local listeners.
+   - The trust-anchor block starts from `OLD_CA_DER` (certs/ECDSAP256's CA: the classical root a device shipped with),
+     which can't reach the ML-DSA broker; it fetches the retained update, checks it with `UPD_PUB`, writes the CA to
+     `/ta.der`, reads it back and connects under it.
+   - `/lora.bin` keeps DevAddr, the keys and an FCnt reservation (`FCNT_GAP` = 64 frames ahead). The fcnt block reboots
+     the board on purpose (watchdog scratch `REBOOT_MAGIC`); the next block checks FCnt resumed past the last frame.
+   - `run_benchmarks.py` writes the connect rows (modes `TLS`, `TLS-checked`, `mTLS`, `mTLS-checked`) and the kex rows
+     (`<KEM> plain | mTLS | signed`) to the usual files, and `results/deploy_<tag>.csv` (refuse / ta / fcnt).
+
 ### `pico`: `pico/run_benchmarks.py` + the sketches
 
 1. **Detect the board.** A 1200-baud "touch" on `/dev/cu.usbmodem*` drops the running sketch into
@@ -548,6 +655,12 @@ delivers to it:
      from the environment, and `certs/<sig>`'s CA, client certificate and key as DER.
    - It deletes the header after compiling, and the build folder after flashing, because the firmware
      holds the password and the key.
+   - SNOVA certificates (`-DWB_SNOVA<set>`, `certs/round3/SNOVA<set>`, the round 3 broker's ports): wolfSSL has no
+     SNOVA, so `make_wolfssl_lib.sh` gives Falcon-512's constants SNOVA's (the OID 1.3.9999.10.<n>.3 and its OID
+     sum, the TLS codepoint 0xFF83 - 0xFF93, the key and signature sizes; `wolfssl_user_settings.h`) and swaps
+     `falcon.c` for `wb_snova.c`. wolfSSL's certificate parsing and TLS 1.3 code for Falcon then carry SNOVA
+     unchanged. The build links wolfSSL with the round 3 liboqs (`--libraries ~/.cache/iot-pqc/arduino-libs-wolfssl-r3`,
+     links to both) and runs on a stack big enough for SNOVA's signing (`-DMT_STACK_KB`, 36 - 104 KB).
 3. **Flash**: byte-copy the `.uf2` onto the BOOTSEL drive.
 4. **Capture**: pyserial reads the serial port until the sketch prints `=== done`, or the entry's
    timeout expires.

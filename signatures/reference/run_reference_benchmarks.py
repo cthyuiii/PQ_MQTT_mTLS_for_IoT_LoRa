@@ -53,6 +53,10 @@ ALGOS_JSON = HERE / "algos.json"
 # Default results dir is IoT-PQC/results/ - two levels up from
 # signatures/reference/run_reference_benchmarks.py.
 DEFAULT_RESULTS = HERE.parent.parent / "results"
+# setup_round3.sh builds the round 3 code out of the repo; algos.json writes that place as {CACHE}
+CACHE = os.environ.get("IOT_PQC_CACHE", os.path.expanduser("~/.cache/iot-pqc"))
+def _cache(x: str) -> str:
+    return x.replace("{CACHE}", CACHE)
 
 
 # ---------------------------------------------------------------------------
@@ -153,11 +157,13 @@ def build_variant(algo_name: str, variant_cfg: dict, *, compiler: str,
     cmd += auto_defines                            # extracted from Makefile
     cmd.append(str(BENCH_C))
     cmd += [str(s) for s in sources]
-    cmd += variant_cfg.get("extra_cflags", [])
-    if sys.platform == "darwin":  # Apple clang has no OpenMP (QR-UOV's -fopenmp is for the Pi's gcc)
-        cmd = [c for c in cmd if c != "-fopenmp"]
+    cmd += [_cache(f) for f in variant_cfg.get("extra_cflags", [])]
+    if sys.platform == "darwin":  # Apple clang has no OpenMP (QR-UOV's -fopenmp is for the Pi's gcc), and macOS
+        cmd = [c for c in cmd if c != "-fopenmp"] + ["-Dexplicit_bzero=bzero"]  # no explicit_bzero (QR-UOV round 3)
     cmd += ["-o", str(bench_exe)]
-    cmd += variant_cfg.get("extra_ldflags", ["-lm"])
+    cmd += [_cache(f) for f in variant_cfg.get("extra_ldflags", ["-lm"])]
+    if variant_cfg.get("ldflags_file"):  # flags that differ per machine (SQIsign's archives: setup_round3.sh)
+        cmd += Path(_cache(variant_cfg["ldflags_file"])).read_text().split()
     if verbose and auto_defines:
         print(f"    [defines] {' '.join(auto_defines)}")
 
@@ -344,7 +350,7 @@ def main():
     # Resolve variant dirs (each is relative to reference/<root_dir>/)
     work_list = []
     for algo_name, cfg in algos.items():
-        root = HERE / cfg["root_dir"]
+        root = HERE / _cache(cfg["root_dir"])
         strategy = cfg.get("build_strategy", "generic-bench")
         if not root.is_dir():
             github = cfg.get("github", "(no github URL)")
@@ -359,7 +365,7 @@ def main():
         for v in variants:
             v["_build_strategy"] = strategy
             if "dir" in v:
-                v["_resolved_dir"] = Path(cfg["root_dir"]) / v["dir"]
+                v["_resolved_dir"] = Path(_cache(cfg["root_dir"])) / v["dir"]
             if args.variants and v["name"] not in args.variants:
                 continue
             work_list.append((algo_name, v))

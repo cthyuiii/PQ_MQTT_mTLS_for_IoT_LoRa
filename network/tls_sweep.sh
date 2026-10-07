@@ -49,8 +49,8 @@ print(",".join(map(str, [n, round(m, 4), round(st.median(t), 4), round(st.pstdev
     tx + 52 * ts, rx + 52 * rs, tx + rx + 52 * (ts + rs)])))'; }
 
 # the broker's signatures and ports (mqtt_bench.py: TLS on base+101+i, mTLS on base+1+i), with certs here
-PORTS=$(cd network && python3 -c 'from mqtt_bench import SIGS, port_of
-[print(s, port_of(18830, s, "TLS"), port_of(18830, s, "mTLS")) for s in SIGS]')
+PORTS=$(cd network && python3 -c 'from mqtt_bench import SIGS_TLS, port_of
+[print(s, port_of(18830, s, "TLS"), port_of(18830, s, "mTLS")) for s in SIGS_TLS]')
 SIGS=()
 while read -r s tport mport; do
   if [ -n "${MATCH:-}" ]; then   # run_all.sh --algo: case/punctuation-insensitive substring

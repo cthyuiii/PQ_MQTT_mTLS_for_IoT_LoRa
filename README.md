@@ -5,29 +5,32 @@ PQC signatures and key exchange, payload protection (real LoRaWAN AES-CTR + CMAC
 TLS / mutual-TLS handshakes with PQ certificates, MQTT over them, and the full pipeline from PQ
 handshake to protected payload to MQTT broker. `./run_all.sh` runs all of it (section 0). Section 0.2 says what each
 bench measures and with which code, section 0.3 describes the pipeline and LoRaWAN framing.
-[docs/how_it_works.md](docs/how_it_works.md) has the test plan per device, every stage's function calls in order, and
-how LoRaWAN, AES, Ascon, GCM and CMAC relate. What the benches found is in [docs/findings.md](docs/findings.md).
+[docs/how_it_works.md](docs/how_it_works.md) has the library map (which library does each job on the host and on the
+Pico, and how it is called: [section 0](docs/how_it_works.md#0-library-map-what-does-each-job-where-and-how-it-is-called)),
+the test plan per device, every stage's function calls in order, and how LoRaWAN, AES, Ascon, GCM and CMAC relate. What the benches found is in [docs/findings.md](docs/findings.md).
 
 ```text
 PQ_MQTT_mTLS_for_IoT_LoRa/
 ├── run_all.sh                     ← ONE command for every bench (Mac / Pi; + Pico when plugged in)
 ├── requirements.txt               ← pyserial (the Pico runner); every timed stage is C
 ├── docs/
-│   ├── how_it_works.md            ← test plan per device, each stage's calls, LoRaWAN / AES / Ascon explained
+│   ├── how_it_works.md            ← library map, test plan per device, each stage's calls, LoRaWAN / AES / Ascon
 │   ├── findings.md                ← what the benches found (numbered findings, sources, future work)
 │   └── pico_build_notes.md        ← how each Pico sketch was ported / what failed and why
 ├── scripts/
-│   ├── gen_certs.sh               ← CA + server + client certificate per signature → certs/<SIG>/
+│   ├── gen_certs.sh               ← CA + server + client certificate per signature → certs/<SIG>/; --deploy <IP>:
+│   │                                certs/DEPLOY (CRL, revoked / expired certs, the signed trust-anchor update)
 │   └── collate_results.py         ← every result file → results/all_results.csv
 ├── signatures/                    ← Stage 1: keygen / sign / verify
 │   ├── sig_speed.c                ← one C bench for OpenSSL, liboqs (-DSIG_LIBOQS) and wolfSSL (-DSIG_WOLFSSL)
 │   ├── to_customer_form.py        ← the customer's table (stage1_customer_form_<tag>.csv)
-│   └── reference/                 ← NIST submission code: HAWK, SDitH, QR-UOV, FAEST, SQIsign
+│   └── reference/                 ← NIST submission code: round 3 SDitH, QR-UOV, FAEST, SQIsign (setup_round3.sh); HAWK
 ├── network/                       ← everything measured through the MQTT broker
 │   ├── mqtt_tls_timer.c           ← MQTT client: plain / TLS / mTLS connect, the pipeline, the KEM exchange (OpenSSL or wolfSSL)
 │   ├── app_aead.{c,h}             ← the pipeline's LoRaWAN 1.0.x / 1.1 frames (up / down), AES-GCM, Ascon, self-test
 │   ├── wire_stats.h               ← socket writes / reads and TCP segments, for the on-wire byte estimate
 │   ├── hs_timing_openssl.c        ← the OpenSSL client's crypto inside each handshake (Linux)
+│   ├── broker_hs_timing.c         ← the broker's side of each handshake, preloaded into Mosquitto
 │   ├── mqtt_bench.py              ← Stage 2 + pipeline + KEM exchange driver (one Mosquitto per certificate)
 │   ├── tls_sweep.sh               ← TLS / mTLS key-exchange sweep: MQTT connections to the broker's listeners
 │   ├── provenance.py              ← board name + versions record
@@ -39,14 +42,19 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   │   │                          ← one folder per family; -DPICO_VARIANT_<set> picks the parameter set
 │   │   ├── liboqs_bench/          ← liboqs bare-metal: 0.16 (the host liboqs stage's code) and liboqs main for the
 │   │   │                            round 3 MAYO / SNOVA / MQOM / UOV sets; keccak_swap.sh = optional XKCP Keccak
-│   │   ├── wolfssl_bench/         ← wolfSSL 5.9.4: ML-DSA, SLH-DSA, ECDSA, Ed25519, RSA, Falcon
+│   │   ├── wolfssl_bench/         ← wolfSSL 5.9.4: ML-DSA, SLH-DSA, ECDSA, Ed25519, RSA, Falcon; make_wolfssl_lib.sh
+│   │   │                            builds the Arduino library, wb_snova.c = round 3 SNOVA in Falcon-512's place (TLS)
 │   │   ├── mqtt_tls_bench/        ← Pico W: MQTT over TLS / mTLS (wolfSSL) + the pipeline; lora_aead.h = LoRaWAN
-│   │   │                            1.0.x / 1.1, AES-128/256-GCM (BearSSL), Ascon (M0 assembly), via the broker
+│   │   │                            1.0.x / 1.1, AES-128/256-GCM (BearSSL), Ascon (M0 assembly), via the broker;
+│   │   │                            -DMT_DEPLOY = the deployment firmware (deploy_wolf.h: CRL, name, dates, trust-
+│   │   │                            anchor update, signed KEM exchange; FCnt in flash); -DWB_SNOVA<set> = SNOVA certs
 │   │   ├── rsa_bench/ ecdsa_bench/ ← classical baselines (BearSSL), the same -DPICO_VARIANT_<set> scheme
 │   │   ├── qruov_bench/           ← QR-UOV round 3 reference, -DQRUOV_PARAM_<set>
 │   │   ├── sqisign_bench/         ← SQIsign round 3 (32-bit radix), precompiled by make_sqisign_lib.sh
-│   │   └── ed25519_bench/ ed448_bench/ uov1_bench/ (UOV-Ip, keys in flash)
-│   ├── tests/                     ← aead_host_test, kem_host_test (Pico code vs the host's, on the Mac),
+│   │   ├── uov_bench/             ← UOV-Ip round 3 (liboqs main); make_uov_keys.sh makes the pair on the host, in flash
+│   │   └── ed25519_bench/ ed448_bench/
+│   ├── tests/                     ← aead_host_test, kem_host_test, deploy_host_test, snova_tls_host_test (Pico code vs
+│   │                                the host's, on the Mac),
 │   │                                mqtt_parse_test.py (log → all_results.csv), qemu_liboqs (Keccak swap in QEMU)
 │   └── logs/, logs_<tag>/         ← results.csv (customer's form) + one .log per sketch; logs_<tag>: --tag runs
 └── certs/   results/              ← made by the runs (gitignored)
@@ -239,6 +247,10 @@ pipeline (below). Checks that need no network:
 
 ```bash
 bash pico/tests/aead_host_test/run.sh          # the Pico's LoRaWAN / AES / Ascon frames == the host's, byte for byte
+bash pico/tests/deploy_host_test/run.sh        # the deployment firmware's checks with the Pico's wolfSSL settings:
+                                               # CRL, broker IP, dates, trust-anchor update, ML-DSA both ways
+bash pico/tests/snova_tls_host_test/run.sh     # the Pico's wolfSSL with SNOVA (9 sets) against the round 3 broker:
+                                               # TLS, mTLS, a changed CA key refused
 ```
 
 **TLS and mTLS key-exchange sweep**: every certificate × key exchange (17 groups), as full MQTT connections to the
@@ -332,7 +344,7 @@ PICO_ARGS="--tag pi_broker" ./run_all.sh --only pico --test mqtt --broker <pi-ip
 LoRaWAN / AES / Ascon are measured, as uplink and downlink frames (`--dirs up,down`, both by default).
 
 ```bash
-./run_all.sh --broker <IP> --test pipeline     # ECDSA-P256, ML-DSA-44, Falcon-512 x 10 payload schemes x up / down
+./run_all.sh --broker <IP> --test pipeline     # every TLS certificate x LoRaWAN 1.1 (128- / 256-bit keys) x up / down
 PIPE_MSGS=1000 ./run_all.sh --only pipeline --algo mldsa44,lorawan10,aes128gcm
 python3 network/mqtt_bench.py --messages 200 --modes mtls \
     --aeads lorawan10,lorawan11,aes128gcm,ascon --payload 51 --suite TLS_AES_128_GCM_SHA256
@@ -353,6 +365,10 @@ where that round trip is the number you report.
 python3 pico/run_benchmarks.py --lib liboqs --match ml-dsa --list
 BROKER=<ip> python3 pico/run_benchmarks.py --test mqtt       # Pico W: MQTT / TLS / mTLS + the LoRaWAN / AES /
                                                                  # Ascon pipeline, up + down (WIFI_SSID, WIFI_PASS exported)
+BROKER=<ip> python3 pico/run_benchmarks.py --test mqtt --match deployment   # the deployment firmware (certs/DEPLOY;
+                                                                 # NTP_SERVER=<host> if the board can't reach pool.ntp.org)
+BROKER=<ip> python3 pico/run_benchmarks.py --test mqtt --match snova   # round 3 SNOVA certificates (the round 3
+                                                                 # broker; wolfSSL + liboqs main, no sweep)
 python3 pico/run_benchmarks.py --lib wolfssl,liboqs --match falcon,slh-dsa-sha2-128f
 python3 pico/run_benchmarks.py --only mldsa_bench --match ml-dsa-44 --board rp2040
 PICO_ARGS="--candidates" ./run_all.sh --no-deps --only pico      # + RP2350 size-feasible extras
@@ -373,12 +389,13 @@ bash pico/tests/qemu_liboqs/run.sh             # no board: Keccak swap checked +
 | `round3` | pqc, mqtt | Stage 1 as `openssl` and `liboqs` + Stage 2 as `mtls`, for the round 3 MAYO / SNOVA / MQOM / UOV sets (MQOM, UOV: Stage 1 only) | OpenSSL + oqs-provider `36cafae` on liboqs main `b196b57a`, and that liboqs directly; OpenSSL client | Mac, Pi | `{openssl,liboqs}_sig_speed_r3_<tag>.*`, `mqtt_mtls_*_<tag>_r3` |
 | `liboqs` | pqc | same as `openssl`: the same C timing code, on liboqs directly | liboqs 0.16.0 (`liboqs_sig_speed` = `sig_speed.c` with `-DSIG_LIBOQS`) | Mac, Pi | `liboqs_sig_speed_<tag>.{csv,meta}` |
 | `wolfssl` | pqc | signatures as `openssl` (the same C bench); the build is also the Stage 2 wolfSSL client | wolfSSL 5.9.4 (`wolfssl_sig_speed` = `sig_speed.c -DSIG_WOLFSSL`) | Mac, Pi | `wolfssl_sig_speed_<tag>.{csv,meta}` |
-| `sdith` `faest` `hawk` `sqisign` `qruov` | pqc | SDitH, FAEST, QR-UOV: `SIG_N` runs, mean / median / std / min / max / p90 / p99 through `bench_template.c`. SQIsign: its own bench at `SIG_N`, mean only. HAWK: its own time-based bench, mean only | NIST submission reference C | Mac, Pi | `sig_summary_reference*.csv` |
+| `sdith` `faest` `hawk` `sqisign` `qruov` | pqc | round 3 SDitH v3 (12 sets), FAEST 3.0 (12), SQIsign (I / III / V), QR-UOV (15): `SIG_N` runs, mean / median / std / min / max / p90 / p99 through `bench_template.c`, sources built by `setup_round3.sh` into `~/.cache/iot-pqc/ref-r3`. HAWK: its own time-based bench, mean only | NIST submission reference C (the Pico's code) | Mac, Pi | `sig_summary_reference*.csv` |
 | (end of every pqc run) | pqc | every signature above in the customer's Pico table | `to_customer_form.py` | — | `stage1_customer_form_<tag>.csv` |
 | `tls` | mqtt | the key-exchange sweep: TLS 1.3 and mTLS handshake inside a full MQTT connection, every cert × 17 groups (`mqtt_bench.SWEEP_GROUPS`: ML-KEM-512/768/1024, the ML-KEM hybrids, X25519, P-256, HQC-1/3/5, FrodoKEM-640-AES), 200 connections each: mean / median / std / min / max / p90 / p99, handshakes/s; bytes up / down / total; socket writes / reads; TCP segments; on-wire estimate | `mqtt_tls_timer` (OpenSSL) against the broker machine's Mosquitto TLS / mTLS listeners; a failed combination is a row with its reason | two machines: `--serve-broker` + `--broker IP` | `tls_handshake_{pure,meta}_<tag>` |
 | `kex` | mqtt | the KEM exchange as MQTT messages, for KEMs that can't (or can't only) run in TLS: Classic McEliece 348864 / 460896 / 6688128 / 6960119 / 8192128, HQC-1/3/5, ML-KEM-768 as the reference. Per exchange: key pair on the client, public key PUBLISHed, the broker's responder encapsulates and replies with ciphertext + SHA-256 of the secret + its encapsulation time, the client decapsulates and checks. keygen / encaps / decaps µs, broker round trip and exchange total ms (mean / median / std / min / max / p90), bytes up / down | `mqtt_kem_timer` (the timer's source built with liboqs 0.16: `KEM=` client, `KEM_RESPOND=1` responder started by `--serve-broker`), plain MQTT on :18830 | two machines: `--serve-broker` + `--broker IP` | `kem_exchange_{summary,raw,meta}_<tag>` |
 | `mtls` | mqtt | Stage 2: TCP, handshake, MQTT CONNECT→CONNACK, total: mean / median / std / min / max; bytes up / down for the handshake, MQTT and the whole connect, and totals; socket writes / reads; TCP segments; on-wire estimate; cert sizes; failures as rows | Mosquitto + `mqtt_tls_timer` on OpenSSL or wolfSSL; X25519MLKEM768 | two machines: `--serve-broker` + `--broker IP` | `mqtt_mtls_{summary,raw,meta}_<tag>` |
-| `pipeline` | pipeline | the only LoRaWAN / AES / Ascon measurement: per message, uplink and downlink frames: seal, open, broker round trip, end-to-end, each mean / median / std / min / max (+ p90), bytes per message; plus the Stage 2 columns | as `mtls` + `app_aead.c` (LoRaWAN 1.0.x / 1.1, AES-GCM, Ascon) | two machines, as `mtls` | `pipeline_{summary,msgs_raw,meta}_<tag>` |
+| `deploy` | mqtt | the deployment checks (certs/DEPLOY): connect TLS / mTLS without and with the checks (`CHECK_HOST` = the broker's IP, `CHECK_CRL` = the CA's CRL); the wrong-name, revoked and expired connections, which must fail; the KEM exchange (ML-KEM-768, X25519MLKEM768) over plain MQTT, over mTLS and signed (ML-DSA-44 on both messages: `KEM_SIGN_KEY` / `KEM_PEER_CERT` / `KEM_PEER_CA`) | `mqtt_tls_timer` + `mqtt_kem_timer` (OpenSSL) against the broker machine's DEPLOY listeners | two machines: `--serve-broker` + `--broker IP` | `{mqtt_mtls,kem_exchange}_{summary,raw}_<tag>_deploy`, `deploy_<tag>` |
+| `pipeline` | pipeline | the only LoRaWAN / AES / Ascon measurement, on every TLS certificate (as the Pico; SLH-DSA skipped): per message, uplink and downlink frames: seal, open (the integrity check), broker round trip, end-to-end, each mean / median / std / min / max (+ p90), bytes per message; per connection the pipeline as a whole, `whole_first` (TCP connect to the first reading verified: the single number) and `whole_all` (to the last reading); plus the Stage 2 columns | as `mtls` + `app_aead.c` (LoRaWAN 1.0.x / 1.1, AES-GCM, Ascon) | two machines, as `mtls` | `pipeline_{summary,msgs_raw,meta}_<tag>` |
 | `pico` | pqc, mqtt | keygen / sign / verify, peak stack, flash / RAM; Pico W only (`mqtt_tls_bench`, needs `--broker` and `WIFI_SSID` / `WIFI_PASS`): the `mtls` and `pipeline` columns over Wi-Fi (10 payload schemes × up / down; no TCP segment counts) + wolfSSL's peak heap and peak stack | see the Pico table in section 4; wolfSSL 5.9.4 TLS 1.3 client, X25519MLKEM768, the 9 certificates; `lora_aead.h` (BearSSL, ascon-c) | Pico W, Pico 2 W | `pico/logs/`, `results/*_pico_<board>.*` |
 | (every run) | — | OS, board, compiler, library versions, ascon-c commit | `provenance.py` | — | `versions_<tag>.json` |
 
@@ -392,14 +409,14 @@ which benches run it.
 | Ed25519 / Ed448 | elliptic curve (classical) | baseline | 2 | 32 / 57 | 64 / 114 | all, TLS |
 | ML-DSA-44 / 65 / 87 | module lattice | FIPS 204 | 3 | 1312 / 1952 / 2592 | 2420 / 3309 / 4627 | all, TLS, pipeline |
 | Falcon-512 / 1024 | NTRU lattice | FIPS 206 draft | 2 (+padded) | 897 / 1793 | ≤ 752 / ≤ 1462 | all, TLS (OpenSSL; wolfSSL since [finding 51](docs/findings.md)), pipeline |
-| SLH-DSA SHA2 / SHAKE 128–256 s / f | hash-based | FIPS 205 | 12 | 32 / 48 / 64 | 7856 – 49856 | Stage 1 + Pico only (TLS refuses it) |
+| SLH-DSA SHA2 / SHAKE 128–256 s / f | hash-based | FIPS 205 | 12 | 32 / 48 / 64 | 7856 – 49856 | Stage 1 + Pico only; skipped in TLS (OpenSSL's TLS layer refuses its certificates), so no `--sigs` default includes it |
 | MAYO-1 / 2 / 3 / 5 | multivariate | round 3 [33] | 4 | 1456 – 5554 | 239 – 964 | `round3`: Stage 1 (OpenSSL, liboqs), TLS; Pico (liboqs main; MAYO-1 on both boards, MAYO-2 on the Pico 2 W only, MAYO-3/5 too big) |
-| SNOVA I / III / V × K / B / S | multivariate | round 3 [32] | 9 | 376 – 2716 | 272 – 896 | `round3`: Stage 1, TLS; Pico (liboqs main, memory-optimised) |
+| SNOVA I / III / V × K / B / S | multivariate | round 3 [32] | 9 | 376 – 2716 | 272 – 896 | `round3`: Stage 1, TLS; Pico (liboqs main, memory-optimised), Pico W TLS / mTLS (wolfSSL + liboqs main) |
 | MQOM v3, cat 1 / 3 / 5, GF(16) fast / short, GF(2) shorter, constant time | MPC-in-the-head | round 3 [34] | 9 (of 18) | 52 – 128 | 2492 – 13540 | `round3`: Stage 1 (OpenSSL: the 3 GF(16) fast sets); Pico (cat 1, memory-optimised) |
-| UOV Is / Ip / III / V (+ pkc, pkc-skc) | multivariate | round 3 | 12 | 46591 – 3.2 M | 96 – 275 | `round3`: Stage 1 (liboqs); Pico: pkc on RP2350 (liboqs main), Ip classic (round 2 code, baked keys) |
+| UOV Is / Ip / III / V (+ pkc, pkc-skc) | multivariate | round 3 | 12 | 46591 – 3.2 M | 96 – 275 | `round3`: Stage 1 (liboqs); Pico: pkc on RP2350 (liboqs main), Ip classic (liboqs main, keys made on the host, in flash) |
 | HAWK-512 / 1024 | lattice | withdrawn (2026) | 2 | 1024 / 2440 | 555 / 1221 | Stage 1 (reference), Pico |
-| SDitH, FAEST | MPC-in-the-head / VOLE-in-the-head | round 3; Pico: FAEST 3.0 (RP2350, 128 sets), SDitH v3 too big (335 KB); host stage: older code | many | 32 – 244 | 3540 – 45676 | Stage 1 (reference), Pico |
-| QR-UOV, SQIsign | multivariate / isogeny | round 3; Pico: round 3 code (both); host stage: round 2 | many | 11041 – 173676 / 83 – 169 | 157 – 662 | Stage 1 (reference), Pico (both) |
+| SDitH, FAEST | MPC-in-the-head / VOLE-in-the-head | round 3; Pico: FAEST 3.0 (RP2350, 128 sets), SDitH v3 too big (335 KB); host stage: round 3 code | many | 32 – 244 | 3540 – 45676 | Stage 1 (reference), Pico |
+| QR-UOV, SQIsign | multivariate / isogeny | round 3; Pico and host stage: round 3 code | many | 11041 – 173676 / 83 – 169 | 157 – 662 | Stage 1 (reference), Pico (both) |
 
 Round 3 of NIST's additional signatures (May 2026) kept FAEST, MAYO, MQOM, QR-UOV, SDitH, SNOVA, SQIsign, UOV and
 HAWK, and the HAWK team has since withdrawn it. Bracketed numbers are the [sources in docs/findings.md](docs/findings.md#sources);
@@ -426,8 +443,9 @@ client (mqtt_tls_timer)                          Mosquitto                      
  timed: seal µs · round trip through the broker · open µs · bytes each way, per message
 ```
 
-`--modes plain,tls,mtls` gives the three transports, and `--aeads` gives the payload schemes, `none`
-included as the reference. Every payload scheme protects the same LoRaWAN data frame, so the numbers
+`--modes plain,tls,mtls` gives the three transports, and `--aeads` the payload schemes. The default is LoRaWAN 1.1,
+as the standard (`lorawan11`, AES-128) and with 256-bit keys in the same construction (`lorawan11_256`); `--aeads`
+adds `none`, `lorawan10`, `aes256ctr`, the GCM / CCM pairs and `ascon` (the Pico: `-DMT_ALL_SCHEMES`). Every payload scheme protects the same LoRaWAN data frame, so the numbers
 compare like for like. Each scheme runs as uplink frames (MHDR 0x40) and as downlink frames (MHDR 0x60,
 Dir = 1), on the host and on the Pico W (`lora_aead.h`, the same bytes):
 
@@ -632,14 +650,14 @@ algorithm's own NIST submission C reference against a generic timing harness
 ```bash
 cd signatures/reference
 
-# 1. Download submission packages (script tries canonical URLs)
-./clone_algos.sh
+# 1. The round 3 code, fetched and built once per machine (~/.cache/iot-pqc/ref-r3); HAWK: clone_algos.sh
+./setup_round3.sh SDitH QR-UOV FAEST SQIsign
 
 # 2. Build + probe (1-iter run per variant to capture pk/sig/sk sizes)
 python run_reference_benchmarks.py --probe-only
 
 # 3. Real benchmarks (--iterations, default 200; run_all.sh passes SIG_N)
-python run_reference_benchmarks.py --algos SDitH FAEST QR-UOV
+python run_reference_benchmarks.py --algos SDitH FAEST SQIsign QR-UOV
 ```
 
 Full workflow + per-algorithm gotchas in `signatures/reference/README.md`.
@@ -669,7 +687,15 @@ chmod +x gen_certs.sh
 # use a real OpenSSL 3.5 (NOT Apple's /usr/bin/openssl = LibreSSL):
 OSSL=/opt/homebrew/opt/openssl@3/bin/openssl ./scripts/gen_certs.sh
 ls certs/   # MLDSA44/ … FALCON512/ … RSA3072/ ECDSAP256/ ED25519/ … round3/ (MAYO1/ … SNOVA1K/ …, the round3 stage's)
+# the deployment checks' set, for the broker machine's address (the clients check it in the certificate):
+OSSL=/opt/homebrew/opt/openssl@3/bin/openssl ./scripts/gen_certs.sh --deploy 192.168.50.132
 ```
+
+`certs/DEPLOY` (ML-DSA-44) adds `CA.crl` (revokes `revoked.crt`), `revoked.crt` and `expired.crt` (server certificates
+the clients must refuse), `update.key` / `update.pub` (the trust-anchor update key) and `ta_update.bin` (the CA as a
+signed update: `PQTA` | length | CA DER | ML-DSA-44 signature). `mqtt_bench.py --role broker` serves it whenever it
+exists: mTLS / TLS with `server.crt`, a revoked and an expired listener, the update retained on `pqc/ta/update`, and
+a second KEM responder inside mTLS. Copy `certs/` to both machines after generating it.
 
 `gen_certs.sh` auto-detects/loads oqs-provider and generates a CA + SAN server
 cert per algorithm. Coverage:
@@ -685,7 +711,8 @@ cert per algorithm. Coverage:
 | SLH-DSA | SLHDSA128F / 128S / 192F | native (3.5+) | **NO** — cert generates, but the OpenSSL 3.5 TLS layer rejects it (`ssl_set_cert: unknown certificate type`). Stays in the signature benchmarks only. |
 
 So the four "classical + lattice" cert types **RSA, ECDSA, EdDSA, ML-DSA** are all
-wired in, plus Falcon (and round 3 MAYO / SNOVA) via oqs-provider. Excluded from TLS: **SLH-DSA**
+wired in, plus Falcon (and round 3 MAYO / SNOVA) via oqs-provider. The Pico W's wolfSSL client takes the same
+certificates except MAYO (its verify needs 225 KB of stack) and SLH-DSA; SNOVA through `wb_snova.c`. Excluded from TLS: **SLH-DSA**
 (OpenSSL TLS limitation above), **UOV** (public keys 412 KB–3.2 MB, too large for a
 cert), **MQOM** (Stage 1 only: no MQOM certificates are made), and **HAWK / SQIsign / FAEST**
 (reference-only, not in oqs-provider).
@@ -803,7 +830,8 @@ Findings from these benches are in [docs/findings.md](docs/findings.md).
 |---|---|---|
 | ML-DSA-44/65/87 (`mldsa_bench`) | mldsa-native `ref` (the code liboqs ships) | No: portable C, large stack arrays |
 | Falcon, SLH-DSA (12 sets) (`falcon_bench`, `slhdsa_bench`) | PQClean `clean` | No: portable reference C |
-| HAWK, UOV-Ip; QR-UOV, FAEST, SQIsign (round 3, checked against their KATs) | NIST submission reference code | No |
+| HAWK; QR-UOV, FAEST, SQIsign (round 3, checked against their KATs) | NIST submission reference code | No |
+| UOV-Ip round 3 (`uov_bench`) | liboqs main (pqov ref); the key pair made on the host (`make_uov_keys.sh`), read from flash | No |
 | RSA, ECDSA | BearSSL (bundled in arduino-pico) | Partly: constant-time C written for 32-bit MCUs |
 | Ed25519 / Ed448 | rweather Crypto / OpenSSL Goldilocks port | Portable C |
 | **wolfssl_bench** (new) | wolfSSL 5.9.4: small-mem ML-DSA/SLH-DSA, Cortex-M assembly for ECDSA/RSA (`sp_armthumb.c` M0+, `sp_cortexm.c` M33) | Yes: library built for MCUs; SHA-3/AES still C on Arduino (its Thumb-2 asm isn't in the Arduino package) |

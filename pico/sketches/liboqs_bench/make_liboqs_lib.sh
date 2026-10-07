@@ -18,7 +18,7 @@ if [ "${LIBOQS_ROUND:-}" = 3 ]; then
     SRC="$CACHE/liboqs-r3-src" LIB="$CACHE/arduino-libs-r3/liboqs" EXTRA=-DOQS_MEMOPT_BUILD=ON LIBOQS_KECCAK=""
     { [ -d "$SRC" ] || git clone -q https://github.com/open-quantum-safe/liboqs.git "$SRC"; } \
         && git -C "$SRC" checkout -q "${R3_LIBOQS:-b196b57a}"   # = run_all.sh's R3_LIBOQS
-    ALGS="SIG_mayo_1;SIG_mayo_2;SIG_uov_ov_Is_pkc;SIG_uov_ov_Ip_pkc"
+    ALGS="SIG_mayo_1;SIG_mayo_2;SIG_uov_ov_Is_pkc;SIG_uov_ov_Ip_pkc;SIG_uov_ov_Ip"   # ov_Ip: uov_bench (keys in flash)
     ALGS="$ALGS;$(printf 'SIG_snova_SNOVA_%s;' I_K I_B I_S III_K III_B III_S V_K V_B V_S)"
     ALGS="$ALGS;$(printf 'SIG_mqom_mqom3_cat1_%s;' gf16_fast_ct gf16_short_ct gf2_shorter_ct)"
     ALGS="${ALGS%;}"
@@ -28,6 +28,7 @@ else
         https://github.com/open-quantum-safe/liboqs.git "$SRC"
     ALGS="SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87;SIG_falcon_512;SIG_falcon_1024"
     ALGS="$ALGS;SIG_slh_dsa_pure_sha2_128f;SIG_slh_dsa_pure_sha2_128s;SIG_slh_dsa_pure_shake_128f;SIG_slh_dsa_pure_shake_128s"
+    ALGS="$ALGS;KEM_hqc_1"   # mqtt_tls_bench's KEM exchange (wolfSSL has no HQC)
 fi
 GCC=""   # arduino-pico's bundled toolchain (macOS, Linux, Windows paths)
 for d in "$HOME"/Library/Arduino15/packages/rp2040/tools/pqt-gcc/*/bin \

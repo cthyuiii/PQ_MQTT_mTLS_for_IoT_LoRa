@@ -37,9 +37,11 @@ iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B,hs_write
 #lib wolfSSL 5.9.4
 iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B,hs_writes,hs_reads,writes,reads
 msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B
+whole,iter,first_ms,all_ms,msgs
 0,4.0,300.0,3.0,307.0,6000,6500,45,300,4,9,5,12
 msg,0,0,3,9000,2,101,101
 msg,0,1,3,11000,2,101,101
+whole,0,325.5,337.0,2
 #heap 62000
 #end
 #block pipeline TLS ascon down
@@ -109,6 +111,8 @@ with tempfile.TemporaryDirectory() as d:
     assert s["TLS"]["status"].startswith("tls handshake failed") and s["plain"]["Signature"] == "(plain MQTT reference)"
     p = {x["Mode"]: x for x in csv.DictReader(open(d / "results/pipeline_summary_pico_rp2040.csv"))}
     assert p["mTLS"]["rtt_mean_ms"] == "10.0" and p["mTLS"]["msg_tx_B"] == "101"
+    assert p["mTLS"]["whole_first_median_ms"] == "325.5" and p["mTLS"]["whole_all_median_ms"] == "337.0"  # one number
+    assert not p["TLS"].get("whole_first_median_ms")  # a block cut off before the end has none
     assert (p["mTLS"]["AEAD"], p["mTLS"]["Direction"], p["TLS"]["AEAD"], p["TLS"]["Direction"]) == \
         ("lorawan11", "uplink", "ascon", "downlink")
     assert p["TLS"]["status"] == "PARTIAL: hung during PUBLISH / echo after 1 recorded connections (watchdog reset)"

@@ -2,6 +2,7 @@
 // side as network/mqtt_tls_timer.c does it (liboqs encapsulation, OpenSSL X25519): every KEM must agree on
 // the shared secret, and its sizes must be the responder's.
 #include <wolfssl/options.h>
+#define KW_LIBOQS  // + HQC-1 through liboqs, as the KEM-exchange firmware
 #include "kem_wolf.h"
 #include <oqs/oqs.h>
 #include <openssl/evp.h>
@@ -18,7 +19,8 @@ static int x25519(uint8_t pub[32], uint8_t ss[32], const uint8_t peer[32]) {  //
 }
 
 int main() {
-  static const size_t want[KW_N][3] = {{800, 768, 32}, {1184, 1088, 32}, {1568, 1568, 32}, {32, 32, 32}, {1216, 1120, 64}};
+  static const size_t want[KW_N][3] = {{800, 768, 32}, {1184, 1088, 32}, {1568, 1568, 32}, {32, 32, 32}, {1216, 1120, 64},
+                                       {2241, 4433, 32}};
   WC_RNG rng;
   int bad = wc_InitRng(&rng) != 0;
   for (int i = 0; i < KW_N; i++) {
@@ -27,8 +29,8 @@ int main() {
     int ok = kw_init(&s, i, &rng) == 0 && s.pk == want[i][0] && s.ct == want[i][1] && s.ss == want[i][2];
     for (int t = 0; ok && t < 20; t++) {  // fresh keys each time, as the Pico's exchanges
       ok = kw_keypair(&s, pk) == 0;
-      if (ok && s.k->mlkem >= 0) {
-        OQS_KEM *q = OQS_KEM_new(s.k->x25519 ? "ML-KEM-768" : s.k->name);
+      if (ok && (s.k->mlkem >= 0 || s.k->oqs)) {
+        OQS_KEM *q = OQS_KEM_new(s.k->oqs ? s.k->oqs : s.k->x25519 ? "ML-KEM-768" : s.k->name);
         ok = q && OQS_KEM_encaps(q, ct, resp, pk) == OQS_SUCCESS;
         OQS_KEM_free(q);
       }
