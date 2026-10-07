@@ -1287,21 +1287,33 @@ All links checked on 28 Sep 2026.
 43. Classic McEliece team, *ISO* (ISO/IEC 18033-2 amendment, 2026). <https://classic.mceliece.org/iso.html>
 44. NIST, *NIST Selects HQC as Fifth Algorithm for Post-Quantum Encryption* (11 Mar 2025: a draft in about a year, the final standard in 2027). <https://www.nist.gov/news-events/news/2025/03/nist-selects-hqc-fifth-algorithm-post-quantum-encryption>
 
-## In progress (built 7 Oct, waiting for the board run)
+## In progress (built, waiting for the board run)
 
-What a real deployment adds on top of the benchmark: finding 97 and how_it_works.md, `deploy`. Each leaves this list
-once it has run on the Pico W and between the Pi and the broker.
+What a real deployment adds on top of the benchmark: finding 97 and how_it_works.md, `deploy`. All four are
+implemented (7 Oct) and tested on the Mac; none has run on the Pico W or between the Pi and the broker. Each leaves
+this list once it has.
 
-- **Trust-anchor updates through signed firmware**: a signed CA update (`ta_update.bin`, ML-DSA-44), retained on the
-  broker, verified on the Pico with the update key in firmware, kept in LittleFS. A whole signed firmware image
-  (arduino-pico's `PicoOTA` / `Updater`) is not done.
-- **Hostname checks, a CRL and NTP on the Pico**: the broker's IP in its certificate, the CA's CRL, dates on NTP time;
-  the host OpenSSL client has the same checks (`CHECK_HOST`, `CHECK_CRL`). The host wolfSSL client has the name check
-  only (its build has no CRL support).
-- **Keep FCnt across Pico reboots**: keys, DevAddr and an FCnt reservation in LittleFS, checked across a deliberate
+- **Signed trust-anchor updates.** A CA update (`ta_update.bin`) signed with ML-DSA-44, retained on the broker,
+  verified on the Pico with the update key in its firmware, kept in LittleFS.
+  - Tested on the Mac: `deploy_host_test` (the Pico's verify code): the update verifies, and a changed byte in the
+    length, the CA or the signature is refused. `mqtt_bench.py --deploy`: the retained update reaches a subscriber
+    intact (6,429 B). Passed.
+  - Not tested: the flash write and the reconnect under the new root (board only).
+  - Not built: a whole signed firmware image (arduino-pico's `PicoOTA` / `Updater`).
+- **Hostname checks, a CRL and NTP on the Pico.** The broker's IP in its certificate, the CA's CRL, certificate dates
+  on NTP time; the host OpenSSL client has the same checks (`CHECK_HOST`, `CHECK_CRL`).
+  - Tested on the Mac: `deploy_host_test` (the Pico's wolfSSL settings): the right IP accepted, a wrong one refused;
+    `revoked.crt` refused with the CRL; `expired.crt` refused. Host OpenSSL client end to end: the wrong IP, the
+    revoked and the expired certificate refused. Passed.
+  - Not tested: NTP (board only). Not built: a CRL in the host wolfSSL client (name check only).
+- **Keep FCnt across Pico reboots.** Keys, DevAddr and an FCnt reservation in LittleFS, checked across a deliberate
   reboot.
-- **KEM exchange inside mTLS**: over the mTLS listener, and signed (ML-DSA-44 on both messages), on the Pico and the
+  - Tested: compiles (the deployment firmware, 672,488 B). Not tested: everything else (flash and reboot: board only).
+- **KEM exchange inside mTLS.** Over the mTLS listener, and signed (ML-DSA-44 on both messages), on the Pico and the
   host.
+  - Tested on the Mac: host end to end, plain / over mTLS / signed, all OK. `deploy_host_test`: the Pico's ML-DSA-44
+    signatures verify in OpenSSL and the other way round. Passed.
+  - Not tested: the Pico's side over Wi-Fi (board only).
 
 ## Future implementations (KIV)
 
