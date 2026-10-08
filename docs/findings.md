@@ -1385,6 +1385,29 @@ Pico W's pipeline; no run of the new form yet)
        verify times: Falcon-512 7 ms, RSA-2048 26 ms, ML-DSA-44 27 ms, Ed25519 66 ms, ML-DSA-87 74 ms, ECDSA-P256 96 ms.
        Not run on the board yet.
 
+113. [Pico, Pi] **The CRL checks for each certificate type on the Pico W (8 Oct, Pi broker): 8 of 9 sets.** Falcon-512
+     didn't start: the board got no time from `pool.ntp.org` within 30 s (`#fatal NTP`), so it runs again. In every
+     other set the checked connections succeed and the wrong IP, the revoked and the expired certificate are refused.
+     - **The CRL costs one signature check in the CA's algorithm, once per load.** `crl_load_us` (median of the three
+       refuse blocks) against the board's own verify time for that algorithm (Stage 1, wolfSSL):
+
+       | CA | CRL | Load + verify | Verify alone |
+       |---|---|---|---|
+       | Falcon-1024 | 1,419 B | 15.5 ms | 14.4 ms |
+       | RSA-2048 | 411 B | 27.1 ms | 25.7 ms |
+       | ML-DSA-44 | 2,562 B | 29.5 ms | 27.1 ms |
+       | ML-DSA-65 | 3,459 B | 46.2 ms | 44.8 ms |
+       | RSA-3072 | 539 B | 59.3 ms | - |
+       | ML-DSA-87 | 4,777 B | 75.6 ms | 74.1 ms |
+       | Ed25519 | 199 B | 76.2 ms | 65.5 ms |
+       | ECDSA-P256 | 218 B | 98.4 ms | 95.7 ms |
+
+       Parsing adds 1-3 ms (10 ms for Ed25519); the size hardly matters. The classical CAs are the slowest to check
+       here: the Pico verifies ECDSA-P256 and Ed25519 slower than ML-DSA or Falcon.
+     - **Per handshake the checks cost nothing on the Pico, for any type**: TLS with vs without them -4.4 to +2.9 ms in
+       7 sets, with identical verify times; RSA-3072 +21 ms with identical verify times too (run to run).
+     - Not run yet: Falcon-512 again, and the Pi 4's host side (both clients) against the Mac broker.
+
 ### Sources
 
 All links checked on 28 Sep 2026.
@@ -1450,8 +1473,8 @@ All links checked on 28 Sep 2026.
 The four deployment items (trust-anchor updates, hostname / CRL / NTP checks, FCnt across reboots, the KEM exchange
 inside mTLS) passed on the Mac (finding 97), the Pico W (finding 109) and the Pi (finding 111) on 8 Oct.
 
-- **The deployment checks for every certificate type** (finding 112): built and tested on the Mac (both host clients,
-  all 9 sets). Waiting for: the sets made on the broker machine, the Pi's host run, the Pico's 8 checks-only firmware.
+- **The deployment checks for every certificate type** (findings 112, 113): tested on the Mac (both host clients, all 9
+  sets) and on the Pico W for 8 of 9 (Falcon-512 lost its NTP sync). Waiting for: Falcon-512 again, the Pi's host run.
 - **The host wolfSSL client's CRL** (finding 112): built and tested on the Mac. Waiting for the Pi's rebuild and run.
 
 ## Future implementations (KIV)
@@ -1479,6 +1502,7 @@ side-channel protection, hedged ML-DSA). Not implemented yet unless the status s
 | Randomness | `pico_rand` (128-bit software PRNG, ring oscillator + timer entropy) used directly as wolfSSL's RNG (`CUSTOM_RAND_GENERATE_BLOCK`); liboqs the same | ML-KEM / X25519 keys, TLS randoms and the ML-DSA hedge rest on it; no health tests | wolfSSL's Hash_DRBG (SP 800-90A) seeded from the hardware (`CUSTOM_RAND_GENERATE_SEED`, SP 800-90B seed tests); RP2350 TRNG; liboqs through the same DRBG | not started |
 | Constant-time code | wolfSSL ECC / RSA timing resistance on; BearSSL `br_aes_ct` for LoRaWAN AES; the Pico's MIC check uses `memcmp` (`lora_aead.h`), the host `CRYPTO_memcmp` | Timing of a MIC check leaks how many bytes matched (a forgery aid for frames from the air) | Constant-time compare on the Pico; check with a timing test (dudect-style) | not started |
 | Signing (side channels, faults) | ML-DSA hedged (wolfSSL draws 32 random bytes per signature); Falcon (float emulation) and SNOVA (memory-optimised) sign on the device in their runs | Falcon signing has published power / EM attacks; the SNOVA code is unprotected; a glitched lattice signature can leak the key | ML-DSA (hedged) for device signing, Falcon verify-only; verify-after-sign (+27 ms per ML-DSA-44 signature); masked code or a secure element where physical attacks matter | hedging in place; rest not started |
+| Power / EM side channels | No masking or shuffling in any device code (wolfSSL, liboqs, BearSSL); ephemeral key exchange keys (one per handshake) | The long-term signing key (mTLS, signed KEM exchange) can be targeted with many traces; SNOVA and Falcon signing most of all | Masked implementations or a secure element for the signing key; fewer signatures (resumption); Falcon verify-only | not started |
 | Long-term key use | Full handshake on every connection (`NO_SESSION_CACHE`, no tickets) | Each connection signs with the device key: more exposure, and 3-12 s per SNOVA mTLS handshake | TLS 1.3 resumption with a fresh key exchange (`psk_dhe_ke`); protect the tickets | not started |
 | Trust anchor at rest | Signed update verified when it arrives (finding 109), then the certificate is kept | A flash edit could swap the root on a device that boots from it | Keep the signed bundle; re-check its ML-DSA-44 signature at each boot (33 ms) | not started |
 | Revocation | Device: the broker's certificate against its CA's CRL, for every certificate type (deployment runs: host OpenSSL + wolfSSL, the Pico); broker: no CRL for device certificates | A revoked device certificate is still accepted by the broker | Mosquitto `crlfile` for ClientCA; short-lived device certificates (renewed through the CSR path) | device side built (finding 112, Mac-tested); broker side not started |
