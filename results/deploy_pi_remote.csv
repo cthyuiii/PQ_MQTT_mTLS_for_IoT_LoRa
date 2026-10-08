@@ -1,0 +1,4 @@
+Board,block,status,reason,refused
+pi4,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
