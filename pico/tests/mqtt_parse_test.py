@@ -143,6 +143,14 @@ with tempfile.TemporaryDirectory() as d:
     assert any(x["platform"] == "rp2040" and x["stage"] == "KEM exchange (MQTT)" and x["algorithm"] == "X25519MLKEM768"
                and x["operation"] == "decapsulate (client)" and x["metric"] == "median" and x["value"] == "855000.0"
                for x in rows)
+    # deployment rows: each certificate set's firmware replaces its own rows, the other sets' stay
+    ref = lambda case, us: {"stage": "refuse", "mode": "TLS", "aead": case, "err": None, "reason": "x",
+                            "deploy": f"refused=1 case={case} crl_load_us={us}"}
+    r.save_deploy([ref("revoked", 27000)], d / "results", "t", "rp2040")                     # DEPLOY (ML-DSA-44)
+    r.save_deploy([ref("revoked", 96000)], d / "results", "t", "rp2040", "DEPLOY_ECDSAP256")
+    r.save_deploy([ref("revoked", 95000)], d / "results", "t", "rp2040", "DEPLOY_ECDSAP256")  # its rerun
+    dep = {x["Signature"]: x["crl_load_us"] for x in csv.DictReader(open(d / "results/deploy_t.csv"))}
+    assert dep == {"DEPLOY": "27000", "DEPLOY_ECDSAP256": "95000"}, dep
     # a round 3 certificate's set is in certs/round3 (the SNOVA firmware)
     import mqtt_bench
     r.save_mqtt(blocks[:2], TXT, "rp2040", "SNOVA1K", "rp2040:rp2040:rpipicow")

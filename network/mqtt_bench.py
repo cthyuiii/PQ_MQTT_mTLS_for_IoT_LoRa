@@ -66,7 +66,10 @@ SIGS = ["RSA2048", "RSA3072", "ECDSAP256", "ED25519",
 SIGS_R3 = ["MAYO1", "MAYO2", "MAYO3", "MAYO5"] + [f"SNOVA{lvl}{v}" for lvl in "135" for v in "BKS"]
 # gen_certs.sh --deploy: the deployment checks' set (ML-DSA-44), served whenever certs/DEPLOY exists: mTLS / TLS with
 # server.crt, and two TLS listeners every client must refuse (revoked.crt, expired.crt). --deploy runs the host side.
-SIGS_DEPLOY = ["DEPLOY"]
+# the deployment checks' sets (gen_certs.sh --deploy): DEPLOY (ML-DSA-44, + the trust-anchor update and the signed KEM
+# exchange) and, with DEPLOY_SIGS=all, the same checks for the other certificate types (appended: ports stay)
+SIGS_DEPLOY = ["DEPLOY"] + [f"DEPLOY_{s}" for s in ("RSA2048", "RSA3072", "ECDSAP256", "ED25519", "MLDSA65", "MLDSA87",
+                                                    "FALCON512", "FALCON1024")]
 PORT_OFFSET = {"mTLS": 0, "TLS": 100, "revoked": 200, "expired": 300}
 DEPLOY_KEMS = ["ML-KEM-768", "X25519MLKEM768"]
 WRONG_NAME = "192.0.2.1"  # TEST-NET-1: never the broker
@@ -241,19 +244,21 @@ def start_brokers(args, tmp: Path, bind: str):
             "allow_anonymous true", "require_certificate false", *tls])
         if err:
             failed[sig] = err
-    d = args.certs / "DEPLOY"
-    if (d / "ta_update.bin").exists():  # the deployment checks' listeners, and the signed trust-anchor update
-        t = tmp / "DEPLOY"
+    for ds in SIGS_DEPLOY:  # the deployment checks' listeners per set present, and DEPLOY's signed trust-anchor update
+        d = args.certs / ds
+        if not (d / "CA.crl").exists():
+            continue
+        t = tmp / ds
         shutil.copytree(d, t, dirs_exist_ok=True)
-        tls = lambda c: ["tls_version tlsv1.3", f"cafile {t}/ClientCA.crt", f"certfile {t}/{c}.crt", f"keyfile {t}/{c}.key"]
-        listener = lambda m, c: [f"listener {port_of(args.base_port, 'DEPLOY', m)} {bind}".rstrip(), "allow_anonymous true",
-                                 "require_certificate false", *tls(c)]
-        err = launch("DEPLOY", port_of(args.base_port, "DEPLOY"), [
+        tls = lambda c, t=t: ["tls_version tlsv1.3", f"cafile {t}/ClientCA.crt", f"certfile {t}/{c}.crt", f"keyfile {t}/{c}.key"]
+        listener = lambda m, c, ds=ds, tls=tls: [f"listener {port_of(args.base_port, ds, m)} {bind}".rstrip(),
+                                                 "allow_anonymous true", "require_certificate false", *tls(c)]
+        err = launch(ds, port_of(args.base_port, ds), [
             "allow_anonymous false", "require_certificate true", "use_identity_as_username true", *tls("server"),
             *listener("TLS", "server"), *listener("revoked", "revoked"), *listener("expired", "expired")])
         if err:
-            failed["DEPLOY"] = err
-        else:  # retained: a device that subscribes gets it at once
+            failed[ds] = err
+        elif (d / "ta_update.bin").exists():  # retained: a device that subscribes gets it at once
             publish_retained(args.base_port, "pqc/ta/update", (d / "ta_update.bin").read_bytes())
     return procs, failed
 
@@ -493,47 +498,62 @@ def kex_once(args, board, kem, label, argv, extra_env):
 
 
 def run_deploy(args):
-    """--deploy: the deployment checks against the broker's DEPLOY listeners (gen_certs.sh --deploy <broker IP>), with
-    the OpenSSL client -> (connect summary, connect raw, refused rows, kex summary, kex raw):
+    """--deploy: the deployment checks against the broker's deployment listeners (gen_certs.sh --deploy <broker IP>), per
+    set present (DEPLOY and any DEPLOY_<SIG>) and per client (OpenSSL, and wolfSSL when built; --clients picks)
+    -> (connect summary, connect raw, refused rows, kex summary, kex raw):
       connect TLS / mTLS, and each -checked: CHECK_HOST = the broker's address (--host), CHECK_CRL = the CA's CRL;
-      refuse  a wrong broker name, revoked.crt, expired.crt: each connection must fail (dates: OpenSSL always checks);
-      kex     ML-KEM-768 and X25519MLKEM768 over plain MQTT, over mTLS and signed (ML-DSA-44 on both messages)."""
-    d, board, exe = args.certs / "DEPLOY", args.board or board_name(), HERE / "mqtt_tls_timer"
-    if not (d / "ta_update.bin").exists():
-        raise SystemExit(f"no {d}: run scripts/gen_certs.sh --deploy <broker IP>, then copy certs/ to both machines")
-    if not exe.exists() or not KEX_TIMER.exists():
-        raise SystemExit("build network/mqtt_tls_timer and mqtt_kem_timer first (build_timer.sh openssl, liboqs installed)")
-    certs = (der_bytes(d / "server.crt"), der_bytes(d / "client.crt"))
-    ca, mtls_files = str(d / "CA.crt"), [str(d / "client.crt"), str(d / "client.key")]
-    checks = dict(CHECK_HOST=args.host, CHECK_CRL=str(d / "CA.crl"))
+      refuse  a wrong broker name, revoked.crt, expired.crt: each connection must fail (dates: both clients check);
+      kex     DEPLOY only (OpenSSL + liboqs): ML-KEM-768 and X25519MLKEM768 over plain MQTT, over mTLS and signed
+              (ML-DSA-44 on both messages)."""
+    board = args.board or board_name()
+    sets = [ds for ds in SIGS_DEPLOY if (args.certs / ds / "CA.crl").exists()]
+    if not sets:
+        raise SystemExit(f"no deployment sets in {args.certs}: run scripts/gen_certs.sh --deploy <broker IP> "
+                         "(DEPLOY_SIGS=all for every certificate type), then copy certs/ to both machines")
+    timers = [(name, exe) for name, exe in TIMERS if exe.exists()
+              and (not args.clients or any(c.strip().lower() in name.lower() for c in args.clients.split(",")))]
+    if not timers:
+        raise SystemExit("build network/mqtt_tls_timer first (build_timer.sh openssl; wolfssl for the wolfSSL client)")
     summary, raw, refused = [], [], []
-    for mode in ("TLS", "mTLS"):
-        for checked in (False, True):
-            m = mode + ("-checked" if checked else "")
-            argv = [args.host, str(port_of(args.base_port, "DEPLOY", mode)), str(args.iterations), str(args.warmup), ca]
-            res = run_timer(exe, argv + (mtls_files if mode == "mTLS" else []), args, "none", checks if checked else None)
-            common = dict(Board=board, Library="OpenSSL", Signature="DEPLOY", Group=args.group, Mode=m, AEAD="",
-                          Direction="", TLS_suite=res.get("suite", ""), status=res["err"] or "OK", server_cert_B=certs[0],
-                          client_cert_B=certs[1] if mode == "mTLS" else None, library_version=res.get("lib"))
-            summary.append(summarize(common, res["rows"], []) if res["rows"] and not res["err"] else dict(common, n=0))
-            raw += [dict(Board=board, Library="OpenSSL", Signature="DEPLOY", Mode=m, **r) for r in res["rows"]]
-            s = summary[-1]
-            print(f"  OpenSSL  DEPLOY {m:<13} " + (f"TLS p50 {s['tls_median_ms']:7.2f} ms" if s["n"] else f"-> {s['status']}"))
-    for case, port, env in (("wrong-name", "TLS", dict(CHECK_HOST=WRONG_NAME)), ("revoked", "revoked", checks),
-                            ("expired", "expired", {})):
-        res = run_timer(exe, [args.host, str(port_of(args.base_port, "DEPLOY", port)), "1", "0", ca], args, "none", env)
-        refused.append(dict(Board=board, block=f"refuse TLS {case}", status="OK" if res["err"] else
-                            "accepted: it should have been refused", reason=res["err"] or "", refused=int(bool(res["err"]))))
-        print(f"  refuse {case:<11} {refused[-1]['status']}  ({refused[-1]['reason'][:70]})")
+    for ds in sets:
+        d = args.certs / ds
+        certs = (der_bytes(d / "server.crt"), der_bytes(d / "client.crt"))
+        ca, mtls_files = str(d / "CA.crt"), [str(d / "client.crt"), str(d / "client.key")]
+        checks = dict(CHECK_HOST=args.host, CHECK_CRL=str(d / "CA.crl"))
+        for lib, exe in timers:
+            for mode in ("TLS", "mTLS"):
+                for checked in (False, True):
+                    m = mode + ("-checked" if checked else "")
+                    argv = [args.host, str(port_of(args.base_port, ds, mode)), str(args.iterations), str(args.warmup), ca]
+                    res = run_timer(exe, argv + (mtls_files if mode == "mTLS" else []), args, "none", checks if checked else None)
+                    common = dict(Board=board, Library=lib, Signature=ds, Group=args.group, Mode=m, AEAD="",
+                                  Direction="", TLS_suite=res.get("suite", ""), status=res["err"] or "OK", server_cert_B=certs[0],
+                                  client_cert_B=certs[1] if mode == "mTLS" else None, library_version=res.get("lib"))
+                    summary.append(summarize(common, res["rows"], []) if res["rows"] and not res["err"] else dict(common, n=0))
+                    raw += [dict(Board=board, Library=lib, Signature=ds, Mode=m, **r) for r in res["rows"]]
+                    s = summary[-1]
+                    print(f"  {lib:<8} {ds:<18} {m:<13} " + (f"TLS p50 {s['tls_median_ms']:7.2f} ms" if s["n"] else f"-> {s['status']}"))
+            for case, port, env in (("wrong-name", "TLS", dict(CHECK_HOST=WRONG_NAME)), ("revoked", "revoked", checks),
+                                    ("expired", "expired", {})):
+                res = run_timer(exe, [args.host, str(port_of(args.base_port, ds, port)), "1", "0", ca], args, "none", env)
+                refused.append(dict(Board=board, Library=lib, Signature=ds, block=f"refuse TLS {case}",
+                                    status="OK" if res["err"] else "accepted: it should have been refused",
+                                    reason=res["err"] or "", refused=int(bool(res["err"]))))
+                print(f"  {lib:<8} {ds:<18} refuse {case:<11} {refused[-1]['status']}  ({refused[-1]['reason'][:60]})")
     kex, kraw = [], []
-    signed = dict(KEM_SIGN_KEY=str(d / "client.key"), KEM_PEER_CERT=str(d / "server.crt"), KEM_PEER_CA=ca)
-    for kem in DEPLOY_KEMS:
-        for mode, argv, env in (("plain", [args.host, str(args.base_port), "1", "0"], {}),
-                                ("mTLS", [args.host, str(port_of(args.base_port, "DEPLOY")), "1", "0", ca, *mtls_files], {}),
-                                ("signed", [args.host, str(args.base_port), "1", "0"], signed)):
-            base, rows = kex_once(args, board, kem, f"{kem} {mode}", argv, env)
-            kex.append(base)
-            kraw += rows
+    d = args.certs / "DEPLOY"
+    if (d / "ta_update.bin").exists() and KEX_TIMER.exists():
+        ca, mtls_files = str(d / "CA.crt"), [str(d / "client.crt"), str(d / "client.key")]
+        signed = dict(KEM_SIGN_KEY=str(d / "client.key"), KEM_PEER_CERT=str(d / "server.crt"), KEM_PEER_CA=ca)
+        for kem in DEPLOY_KEMS:
+            for mode, argv, env in (("plain", [args.host, str(args.base_port), "1", "0"], {}),
+                                    ("mTLS", [args.host, str(port_of(args.base_port, "DEPLOY")), "1", "0", ca, *mtls_files], {}),
+                                    ("signed", [args.host, str(args.base_port), "1", "0"], signed)):
+                base, rows = kex_once(args, board, kem, f"{kem} {mode}", argv, env)
+                kex.append(base)
+                kraw += rows
+    elif (d / "ta_update.bin").exists():
+        print("  [!] no mqtt_kem_timer: the KEM exchange is skipped (build_timer.sh, liboqs installed)")
     return summary, raw, refused, kex, kraw
 
 
@@ -644,7 +664,7 @@ def main():
             procs += start_watchers(args, broker_failed)
         out, tag = args.results_dir, f"_{args.tag}" if args.tag else ""
         if args.deploy:
-            print(f"[deploy] the deployment checks against {args.host} (certs/DEPLOY)")
+            print(f"[deploy] the deployment checks against {args.host} ({args.certs}/DEPLOY*)")
             summary, raw, refused, kex, kraw = run_deploy(args)
             out.mkdir(parents=True, exist_ok=True)
             for name, rows in ((f"mqtt_mtls_summary{tag}_deploy.csv", summary), (f"mqtt_mtls_raw{tag}_deploy.csv", raw),

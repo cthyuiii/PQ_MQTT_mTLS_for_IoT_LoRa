@@ -88,26 +88,32 @@ gen() {
   rm -f ./*.csr; cd "$CERTS"
 }
 
-# --- --deploy <broker IP>...: only certs/DEPLOY, the deployment-checks set (ML-DSA-44) ---------------------------
+# --- --deploy <broker IP>...: the deployment-checks sets -----------------------------------------------------------
 # For mqtt_bench.py's DEPLOY listeners and the Pico's -DMT_DEPLOY firmware. The server certificate names the broker's
-# IPs (the clients check the name), and the set adds what a deployed device checks or receives:
-#   CA.crl       the CA's revocation list (revokes revoked.crt; valid a year)
+# IPs (the clients check the name), and each set adds what a deployed device checks:
+#   CA.crl       the CA's revocation list (revokes revoked.crt; valid a year), signed with the CA's own algorithm
 #   revoked.crt  expired.crt   server certificates the clients must refuse (revoked; expired 2 Jan 2025)
+# DEPLOY (ML-DSA-44) also carries the trust-anchor update:
 #   update.key   update.pub    the trust-anchor update key (ML-DSA-44); update.pub = its raw public key, in firmware
 #   ta_update.bin              this CA as a signed trust-anchor update: "PQTA" | CA length (2 B, big endian) | CA DER |
 #                              ML-DSA-44 signature over everything before it
-gen_deploy() {
-  local san="subjectAltName=DNS:localhost,IP:127.0.0.1" ip A="-algorithm ML-DSA-44"
-  for ip in "$@"; do san="$san,IP:$ip"; done
-  echo "[+] DEPLOY (ML-DSA-44; server certificate for: ${san#subjectAltName=})"
-  mkdir -p DEPLOY && cd DEPLOY || return 1
+# DEPLOY_SIGS picks the sets: DEPLOY (the default), DEPLOY_<SIG> for another certificate type, or "all" (DEPLOY and
+# the other 8: the same checks, each under its own CA and CRL):
+#   DEPLOY_SIGS=all ./scripts/gen_certs.sh --deploy <broker IP>...
+DEPLOY_ALL="DEPLOY DEPLOY_RSA2048 DEPLOY_RSA3072 DEPLOY_ECDSAP256 DEPLOY_ED25519 DEPLOY_MLDSA65 DEPLOY_MLDSA87
+            DEPLOY_FALCON512 DEPLOY_FALCON1024"
+gen_deploy() {  # gen_deploy <set> <provider flags> <genpkey args...>; DEPLOY_SAN = the server certificate's names
+  local L=$1 P=$2; shift 2
+  local ALG=("$@")
+  echo "[+] $L (${ALG[*]}; server certificate for: ${DEPLOY_SAN#subjectAltName=})"
+  mkdir -p "$L" && cd "$L" || return 1
   for C in CA ClientCA; do
-    "$OSSL" genpkey $A -out $C.key                                                         || return 1
-    "$OSSL" req -x509 -new -key $C.key -out $C.crt -days 365 -subj "/CN=PQC Test ${C/ClientCA/client CA} (DEPLOY)" || return 1
+    "$OSSL" genpkey $P "${ALG[@]}" -out $C.key                                             || return 1
+    "$OSSL" req $P -x509 -new -key $C.key -out $C.crt -days 365 -subj "/CN=PQC Test ${C/ClientCA/client CA} ($L)" || return 1
   done
   issue() {  # issue <name> <CA> <CN> <x509 args...>
-    "$OSSL" genpkey $A -out "$1.key" && "$OSSL" req -new -key "$1.key" -out "$1.csr" -subj "/CN=$3" &&
-      "$OSSL" x509 -req -in "$1.csr" -CA "$2.crt" -CAkey "$2.key" -out "$1.crt" -extfile <(printf "%s" "$san") "${@:4}"
+    "$OSSL" genpkey $P "${ALG[@]}" -out "$1.key" && "$OSSL" req $P -new -key "$1.key" -out "$1.csr" -subj "/CN=$3" &&
+      "$OSSL" x509 $P -req -in "$1.csr" -CA "$2.crt" -CAkey "$2.key" -out "$1.crt" -extfile <(printf "%s" "$DEPLOY_SAN") "${@:4}"
   }
   issue server CA localhost -CAcreateserial -days 365                                      || return 1
   issue client ClientCA pqc-client -CAcreateserial -days 365                               || return 1
@@ -116,24 +122,46 @@ gen_deploy() {
   printf 'R\t271231000000Z\t%s\t5EED\tunknown\t/CN=localhost\n' "$(date -u +%y%m%d%H%M%SZ)" > index.txt
   echo 01 > crlnumber
   printf '[ca]\ndefault_ca=c\n[c]\ndatabase=index.txt\ncrlnumber=crlnumber\ndefault_md=default\ndefault_crl_days=365\n' > ca.cnf
-  "$OSSL" ca -gencrl -config ca.cnf -keyfile CA.key -cert CA.crt -out CA.crl 2>/dev/null      || return 1
-  "$OSSL" genpkey $A -out update.key && "$OSSL" pkey -in update.key -pubout -outform DER | tail -c 1312 > update.pub
-  "$OSSL" x509 -in CA.crt -outform DER -out CA.der
-  local n; n=$(wc -c < CA.der | tr -d ' ')
-  { printf 'PQTA'; printf "\\$(printf %03o $((n >> 8)))\\$(printf %03o $((n & 255)))"; cat CA.der; } > ta_update.tbs
-  "$OSSL" pkeyutl -sign -rawin -inkey update.key -in ta_update.tbs -out ta_update.sig      || return 1
-  cat ta_update.tbs ta_update.sig > ta_update.bin
+  "$OSSL" ca $P -gencrl -config ca.cnf -keyfile CA.key -cert CA.crt -out CA.crl 2>/dev/null  || return 1
+  if [ "$L" = DEPLOY ]; then  # the trust-anchor update: always ML-DSA-44, whatever the certificates are
+    "$OSSL" genpkey -algorithm ML-DSA-44 -out update.key && "$OSSL" pkey -in update.key -pubout -outform DER | tail -c 1312 > update.pub
+    "$OSSL" x509 -in CA.crt -outform DER -out CA.der
+    local n; n=$(wc -c < CA.der | tr -d ' ')
+    { printf 'PQTA'; printf "\\$(printf %03o $((n >> 8)))\\$(printf %03o $((n & 255)))"; cat CA.der; } > ta_update.tbs
+    "$OSSL" pkeyutl -sign -rawin -inkey update.key -in ta_update.tbs -out ta_update.sig    || return 1
+    cat ta_update.tbs ta_update.sig > ta_update.bin
+  fi
   rm -f ./*.csr ./*.tbs ./*.sig index.txt* crlnumber* ca.cnf CA.der
-  "$OSSL" verify -crl_check -CAfile CA.crt -CRLfile CA.crl revoked.crt 2>&1 | grep -q "certificate revoked" &&
-    "$OSSL" verify -crl_check -CAfile CA.crt -CRLfile CA.crl server.crt >/dev/null ||
-    { echo "[!] DEPLOY: the CRL does not separate server.crt from revoked.crt"; return 1; }
+  "$OSSL" verify $P -crl_check -CAfile CA.crt -CRLfile CA.crl revoked.crt 2>&1 | grep -q "certificate revoked" &&
+    "$OSSL" verify $P -crl_check -CAfile CA.crt -CRLfile CA.crl server.crt >/dev/null ||
+    { echo "[!] $L: the CRL does not separate server.crt from revoked.crt"; return 1; }
   cd "$CERTS"
 }
 if [ "${1:-}" = --deploy ]; then
   shift
-  [ $# -gt 0 ] || { echo "usage: $0 --deploy <broker IP>... (the address the Pico and the host clients connect to)"; exit 1; }
-  gen_deploy "$@" || { echo "[!] DEPLOY failed (needs OpenSSL 3.5+)"; exit 1; }
-  echo "[+] Done: $CERTS/DEPLOY"; exit 0
+  [ $# -gt 0 ] || { echo "usage: [DEPLOY_SIGS=all|<sets>] $0 --deploy <broker IP>... (the address the clients connect to)"; exit 1; }
+  DEPLOY_SAN="subjectAltName=DNS:localhost,IP:127.0.0.1"
+  for ip in "$@"; do DEPLOY_SAN="$DEPLOY_SAN,IP:$ip"; done
+  SETS=${DEPLOY_SIGS:-DEPLOY}; [ "$SETS" = all ] && SETS=$DEPLOY_ALL
+  for L in $SETS; do
+    P=""
+    case $L in
+      DEPLOY)            A="-algorithm ML-DSA-44" ;;
+      DEPLOY_MLDSA65)    A="-algorithm ML-DSA-65" ;;
+      DEPLOY_MLDSA87)    A="-algorithm ML-DSA-87" ;;
+      DEPLOY_RSA2048)    A="-algorithm RSA -pkeyopt rsa_keygen_bits:2048" ;;
+      DEPLOY_RSA3072)    A="-algorithm RSA -pkeyopt rsa_keygen_bits:3072" ;;
+      DEPLOY_ECDSAP256)  A="-algorithm EC -pkeyopt ec_paramgen_curve:P-256" ;;
+      DEPLOY_ED25519)    A="-algorithm ED25519" ;;
+      DEPLOY_FALCON512)  A="-algorithm falcon512";  P=$OQS_PROV ;;
+      DEPLOY_FALCON1024) A="-algorithm falcon1024"; P=$OQS_PROV ;;
+      *) echo "[!] unknown deployment set $L (one of: $DEPLOY_ALL)"; exit 1 ;;
+    esac
+    case $L in *FALCON*) [ -n "$P" ] || { echo "[!] $L skipped: needs oqs-provider"; continue; } ;; esac
+    gen_deploy "$L" "$P" $A || { echo "[!] $L failed (needs OpenSSL 3.5+)"; exit 1; }
+    echo "[+] Done: $CERTS/$L"
+  done
+  exit 0
 fi
 
 # --- native sigs (default provider) ---------------------------------------

@@ -93,7 +93,7 @@ Host = the Mac and the Pi (the same C sources; the Pi uses its system OpenSSL, t
 | ML-KEM, HQC, Classic McEliece key pair / encapsulation / decapsulation | liboqs `OQS_KEM_keypair` / `_encaps` / `_decaps` (`mqtt_kem_timer`, the responder too) | ML-KEM: wolfCrypt `wc_MlKemKey_*` (`kem_wolf.h`); HQC-1: liboqs `OQS_KEM_*` (the KEM firmware) |
 | X25519 part of X25519MLKEM768; key confirmation | OpenSSL `EVP_PKEY_derive`, `EVP_Digest` (SHA-256) | wolfCrypt `wc_curve25519_*`, `wc_Sha256Hash` |
 | signed exchange (ML-DSA-44) | OpenSSL `EVP_DigestSign` / `EVP_DigestVerify` | wolfCrypt `wc_MlDsaKey_SignCtx` / `_VerifyCtx` (`deploy_wolf.h`) |
-| broker name, CRL, dates | OpenSSL `SSL_set1_host`, `X509_STORE_add_crl` + `X509_V_FLAG_CRL_CHECK`; dates always | wolfSSL `wolfSSL_check_ip_address`, `wolfSSL_CTX_LoadCRLBuffer`; dates on NTP time (arduino-pico `NTP`, lwIP SNTP) |
+| broker name, CRL, dates | OpenSSL `SSL_set1_host`, `X509_STORE_add_crl` + `X509_V_FLAG_CRL_CHECK` (the CRL's signature checked in every handshake); wolfSSL host client `wolfSSL_check_ip_address`, `wolfSSL_CTX_LoadCRLFile` (checked once, at load); dates always | wolfSSL `wolfSSL_check_ip_address`, `wolfSSL_CTX_LoadCRLBuffer` (checked once per context, timed: `crl_load_us`), for every certificate type (`-DMT_DEPLOY_CHECKS`); dates on NTP time (arduino-pico `NTP`, lwIP SNTP) |
 | trust-anchor update | the update signed with OpenSSL (`pkeyutl`, `gen_certs.sh --deploy`), published retained by `mqtt_bench.py` | verified with wolfCrypt (`dp_ta_verify`), kept in LittleFS (arduino-pico) |
 | LoRaWAN keys and FCnt across reboots | — | LittleFS file `/lora.bin` |
 
@@ -620,12 +620,26 @@ delivers to it:
 1. **Certificates**: `gen_certs.sh --deploy <broker IP>` makes an ML-DSA-44 set whose server certificate names the
    broker's IPs, the CA's CRL (revoking `revoked.crt`), an expired server certificate, the trust-anchor update key and
    `ta_update.bin` (the CA, signed by that key). Generated once on one machine, then copied, like every `certs/` set.
-2. **Broker** (`mqtt_bench.py --role broker`, when `certs/DEPLOY` exists): one more Mosquitto with four listeners
-   (`port_of(..., "DEPLOY", mode)`: mTLS, TLS, `revoked`, `expired`), the update retained on `pqc/ta/update` of the plain
+   `DEPLOY_SIGS=all` adds `certs/DEPLOY_<SIG>` for the other 8 certificate types (RSA-2048 / 3072, ECDSA-P256, Ed25519,
+   ML-DSA-65 / 87, Falcon-512 / 1024): the same CA, ClientCA, server, client, revoked, expired and CRL, each under its own
+   CA and signed with its own algorithm (no trust-anchor update: that stays DEPLOY's).
+   - **What goes on the CRL:** certificates, not CAs. Each deployment set's CA issues one CRL, and it lists exactly one
+     serial: `revoked.crt` (0x5EED), a server certificate made only to be revoked (reason `unknown`). `server.crt` is
+     not on it, `expired.crt` is refused by its dates instead, and ClientCA (the device certificates) has no CRL. The
+     CRL is written with `openssl ca -gencrl` from a one-line index, valid 365 days, and checked before use: OpenSSL
+     must refuse `revoked.crt` and accept `server.crt` with it. There are no intermediate CAs, so no CA can be revoked
+     (a revoked root is replaced through the trust-anchor update instead). The benchmark certificate sets have no CRL.
+   - **When it is missing or out of date** both clients refuse: wolfSSL `CRL_MISSING` / `CRL_CERT_DATE_ERR`, OpenSSL
+     `unable to get certificate CRL` / `CRL has expired`.
+2. **Broker** (`mqtt_bench.py --role broker`): per deployment set present one more Mosquitto with four listeners
+   (`port_of(..., "<set>", mode)`: mTLS, TLS, `revoked`, `expired`); for DEPLOY the update retained on `pqc/ta/update` of the plain
    listener, and the KEM responders: the plain one also answers signed requests (`pqc/kem/<id>/spk/<KEM>`: it checks
    the device's signature with `client.crt` and signs its reply with `server.key`), a second one sits inside mTLS.
-3. **Host client** (`--deploy`, run_all's `deploy` stage): `mqtt_tls_timer` with `CHECK_HOST` / `CHECK_CRL` (OpenSSL
-   `SSL_set1_host`, `X509_V_FLAG_CRL_CHECK`; OpenSSL always checks dates); the three connections that must fail;
+3. **Host client** (`--deploy`, run_all's `deploy` stage), per deployment set and per client: `mqtt_tls_timer` (OpenSSL
+   `SSL_set1_host`, `X509_V_FLAG_CRL_CHECK`: the CRL's signature checked in every handshake) and `mqtt_tls_timer_wolfssl`
+   (`wolfSSL_check_ip_address` / `_check_domain_name`, `wolfSSL_CTX_EnableCRL` + `_LoadCRLFile`: the CRL's signature
+   checked once, at load; the host build has `--enable-crl --enable-ip-alt-name`) with `CHECK_HOST` / `CHECK_CRL`; both
+   always check dates; the three connections that must fail; DEPLOY only:
    `mqtt_kem_timer` plain, over mTLS (CA / cert / key arguments) and signed (`KEM_SIGN_KEY` = `client.key`,
    `KEM_PEER_CERT` = `server.crt`, `KEM_PEER_CA` = `CA.crt`).
 4. **Pico** (`MQTT deployment checks (wolfSSL)`: `-DWB_TLS -DWB_MLDSA44 -DWB_CHECKS -DMT_DEPLOY`, a 64 KB LittleFS
@@ -642,7 +656,13 @@ delivers to it:
    - `/lora.bin` keeps DevAddr, the keys and an FCnt reservation (`FCNT_GAP` = 64 frames ahead). The fcnt block reboots
      the board on purpose (watchdog scratch `REBOOT_MAGIC`); the next block checks FCnt resumed past the last frame.
    - `run_benchmarks.py` writes the connect rows (modes `TLS`, `TLS-checked`, `mTLS`, `mTLS-checked`) and the kex rows
-     (`<KEM> plain | mTLS | signed`) to the usual files, and `results/deploy_<tag>.csv` (refuse / ta / fcnt).
+     (`<KEM> plain | mTLS | signed`) to the usual files, and `results/deploy_<tag>.csv` (refuse / ta / fcnt, a row per
+     certificate set: each firmware replaces only its own).
+   - **Per certificate type** (`MQTT deployment checks <type> (wolfSSL)`: `-DWB_<ALG> -DWB_CHECKS -DMT_DEPLOY
+     -DMT_DEPLOY_CHECKS -DMT_SIG=DEPLOY_<SIG>`): the connect and refuse blocks only (7), on that set; the trust-anchor
+     update, the signed KEM exchange and FCnt stay in the ML-DSA-44 firmware (`MT_DEPLOY_FULL`). Every refuse line also
+     gives `crl_load_us` and `crl_B`: the time `wolfSSL_CTX_LoadCRLBuffer` takes (it parses the CRL and verifies its
+     signature with the CA, once per block's context) and the CRL's size.
 
 ### `pico`: `pico/run_benchmarks.py` + the sketches
 

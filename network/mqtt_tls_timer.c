@@ -53,7 +53,7 @@
  *   sends pk | its ML-DSA signature on pqc/kem/<pid>/spk/<KEM>, the responder checks it with the device's cert and
  *   signs its reply (ct | hash | time) together with pk. Signed rows add sign_us,verify_us (the device's side).
  * Deployment checks (any TLS connection): CHECK_HOST=<name or IP> the broker's certificate must name it;
- *   CHECK_CRL=<PEM CRL> the CA's revocation list (OpenSSL build; wolfSSL's host build has no CRL support).
+ *   CHECK_CRL=<PEM CRL> the CA's revocation list (OpenSSL: verified in each handshake; wolfSSL: verified once, at load).
  *   This is how Classic McEliece gets measured through the broker: its 261 KB - 1.36 MB public keys do not fit a
  *   TLS 1.3 key share (at most 65,535 B).
  */
@@ -166,7 +166,14 @@ static void tls_init(const char *ca, const char *cert, const char *key, const ch
     wolfSSL_CTX_SetIORecv(ctx, cb_recv);
     wolfSSL_CTX_SetIOSend(ctx, cb_send);
     if (suite && wolfSSL_CTX_set_cipher_list(ctx, suite) != WOLFSSL_SUCCESS) die("unsupported suite", suite);
-    if (getenv("CHECK_CRL")) die("CHECK_CRL", "this wolfSSL build has no CRL support (the OpenSSL client has)");
+    const char *crl = getenv("CHECK_CRL");  /* the CA's revocation list, checked for the server's certificate */
+#ifdef HAVE_CRL
+    if (crl && (wolfSSL_CTX_EnableCRL(ctx, WOLFSSL_CRL_CHECKALL) != WOLFSSL_SUCCESS ||
+                wolfSSL_CTX_LoadCRLFile(ctx, crl, WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS))
+        die("cannot load CHECK_CRL", crl);  /* loading verifies the CRL's signature with the CA (once, here) */
+#else
+    if (crl) die("CHECK_CRL", "this wolfSSL build has no CRL support (build_wolfssl.sh: --enable-crl)");
+#endif
 }
 static const char *tls_cipher(conn_t *c) { return wolfSSL_get_cipher_name(c->tls); }
 static const char *tls_err(conn_t *c, int r) {
@@ -207,7 +214,8 @@ static void tls_init(const char *ca, const char *cert, const char *key, const ch
     if (cert && SSL_CTX_use_PrivateKey_file(ctx, key, SSL_FILETYPE_PEM) != 1)
         die("cannot load client key", load_why(key, ERR_reason_error_string(ERR_peek_last_error())));
     if (suite && SSL_CTX_set_ciphersuites(ctx, suite) != 1) die("unsupported suite", suite);
-    const char *crl = getenv("CHECK_CRL");  /* the CA's revocation list: every certificate in the chain is checked */
+    const char *crl = getenv("CHECK_CRL");  /* the CA's revocation list, checked for the server's certificate (its
+                                              * signature is verified with the CA in every handshake's chain check) */
     if (crl) {
         FILE *f = fopen(crl, "r");
         X509_CRL *x = f ? PEM_read_X509_CRL(f, NULL, NULL, NULL) : NULL;

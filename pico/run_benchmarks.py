@@ -156,6 +156,14 @@ SKETCHES = [
     # trust-anchor update, the KEM exchange over mTLS and signed, FCnt across a reboot (built with a LittleFS partition)
     S("mqtt_tls_bench", "MQTT deployment checks (wolfSSL)", 600, BOTH, 0,
       flags="-DWB_TLS -DWB_MLDSA44 -DWB_CHECKS -DMT_DEPLOY -DMT_SIG=DEPLOY"),
+    # the same checks (connect plain / -checked, CRL, name, dates, the refused certificates; the CRL's load time) for the
+    # other certificate types, each under its own CA and CRL (DEPLOY_SIGS=all gen_certs.sh --deploy <broker IP>)
+    *[S("mqtt_tls_bench", f"MQTT deployment checks {name} (wolfSSL)", 600, BOTH, 0,
+        flags=f"-DWB_TLS -DWB_{wb} -DWB_CHECKS -DMT_DEPLOY -DMT_DEPLOY_CHECKS -DMT_SIG=DEPLOY_{sig}")
+      for name, wb, sig in (("RSA-2048", "RSA2048", "RSA2048"), ("RSA-3072", "RSA3072", "RSA3072"),
+                            ("ECDSA-P256", "ECDSA_P256", "ECDSAP256"), ("Ed25519", "ED25519", "ED25519"),
+                            ("ML-DSA-65", "MLDSA65", "MLDSA65"), ("ML-DSA-87", "MLDSA87", "MLDSA87"),
+                            ("Falcon-512", "FALCON512", "FALCON512"), ("Falcon-1024", "FALCON1024", "FALCON1024"))],
     # --- liboqs 0.16 bare-metal (portable C): the same code the Pi/Mac run via oqs-provider and the host liboqs stage.
     #     One algorithm per firmware (-DLB_ALG=<liboqs id>); reports peak stack per op (painted big stack,
     #     -DLB_STACK_KB, default 160 KB RP2040 / 400 KB RP2350).
@@ -281,14 +289,18 @@ def mqtt_secrets(sig, gen):
     out += [f"#define PORT_PLAIN {MQTT_BASE_PORT}", f"#define PORT_TLS {port_of(base, sig, 'TLS')}",
             f"#define PORT_MTLS {port_of(base, sig, 'mTLS')}"]
     blobs = [("CA_DER", der("CA.crt")), ("CRT_DER", der("client.crt")), ("KEY_DER", der("client.key"))]
-    if sig == "DEPLOY":  # the deployment firmware: its CRL, the broker's certificate, the update key, the old root
-        old = os.path.join("..", "ECDSAP256", "CA.crt")
-        if not all(os.path.exists(os.path.join(d, f)) for f in ("CA.crl", "server.crt", "update.pub", old)):
-            return f"NO_CERTS: {d} (gen_certs.sh --deploy <broker IP>) and certs/ECDSAP256 (the old root)"
+    if sig.startswith("DEPLOY"):  # a deployment firmware: its CRL, the refused certificates' ports, NTP
+        if not os.path.exists(os.path.join(d, "CA.crl")):
+            return f"NO_CERTS: {d}/CA.crl (DEPLOY_SIGS=all gen_certs.sh --deploy <broker IP>, then copy certs/)"
         out += [f"#define PORT_REVOKED {port_of(MQTT_BASE_PORT, sig, 'revoked')}",
                 f"#define PORT_EXPIRED {port_of(MQTT_BASE_PORT, sig, 'expired')}",
                 f"#define NTP_SERVER {json.dumps(os.environ.get('NTP_SERVER', 'pool.ntp.org'))}"]
-        blobs += [("CRL_DER", der("CA.crl")), ("SRV_DER", der("server.crt")), ("OLD_CA_DER", der(old)),
+        blobs += [("CRL_DER", der("CA.crl"))]
+    if sig == "DEPLOY":  # + the broker's certificate, the update key, the old root (the full firmware)
+        old = os.path.join("..", "ECDSAP256", "CA.crt")
+        if not all(os.path.exists(os.path.join(d, f)) for f in ("server.crt", "update.pub", old)):
+            return f"NO_CERTS: {d} (gen_certs.sh --deploy <broker IP>) and certs/ECDSAP256 (the old root)"
+        blobs += [("SRV_DER", der("server.crt")), ("OLD_CA_DER", der(old)),
                   ("UPD_PUB", open(os.path.join(d, "update.pub"), "rb").read())]
     for name, b in blobs:
         out.append(f"static const unsigned char {name}[] = {{{','.join(map(str, b))}}};")
@@ -391,7 +403,7 @@ def save_mqtt(blocks, txt, family, sig, fqbn):
         (res / f"{stem}_meta_{tag}.json").write_text(json.dumps(meta, indent=2))
     save_sweep([b for b in blocks if b["stage"] == "sweep"], res, tag, sig, family, fqbn, cfg)
     save_kex([b for b in blocks if b["stage"] == "kex"], res, tag, family, fqbn, cfg, modes=sig == "DEPLOY")
-    save_deploy([b for b in blocks if b["stage"] in ("refuse", "ta", "fcnt")], res, tag, family)
+    save_deploy([b for b in blocks if b["stage"] in ("refuse", "ta", "fcnt")], res, tag, family, sig)
     lib = next((b["lib"] for b in blocks if b["lib"].startswith("wolfSSL")), "")
     if lib:  # the KEM-exchange firmware prints no #lib line: keep the version the other sketches recorded
         (res / f"versions_{tag}.json").write_text(json.dumps(dict(board=family, fqbn=fqbn, wolfssl=lib[8:]), indent=2))
@@ -432,21 +444,24 @@ def save_sweep(blocks, res, tag, sig, family, fqbn, cfg):
         warmup=int(cfg.get("sweep_warmup", 0)), started=time.strftime("%Y-%m-%dT%H:%M:%S%z")), indent=2))
     print(f"    sweep rows: {name}")
 
-def save_deploy(blocks, res, tag, family):
-    """the deployment firmware's refuse / ta / fcnt blocks -> results/deploy_<tag>.csv: one row per block, its
-    '#deploy k=v' fields, the reason a refused connection gave, and whether FCnt resumed past the reboot"""
+def save_deploy(blocks, res, tag, family, sig="DEPLOY"):
+    """a deployment firmware's refuse / ta / fcnt blocks -> results/deploy_<tag>.csv: one row per block, its
+    '#deploy k=v' fields, the reason a refused connection gave, and whether FCnt resumed past the reboot. This
+    certificate set's rows replace earlier ones; other sets' stay (rows without Signature are DEPLOY's)."""
     if not blocks:
         return
     import mqtt_bench as bmm
-    rows = [dict(Board=family, block=" ".join(x for x in (b["stage"], b["mode"], b["aead"]) if x),
+    rows = [dict(Board=family, Signature=sig, block=" ".join(x for x in (b["stage"], b["mode"], b["aead"]) if x),
                  status="OK" if not b["err"] and b.get("deploy") else b["err"] or "no #deploy line",
                  reason=b.get("reason", ""), **dict(re.findall(r"(\w+)=(\S+)", b.get("deploy", ""))))
             for b in blocks]
     save, resume = (next((r for r in rows if r["block"] == f"fcnt plain {k}"), None) for k in ("save", "resume"))
     if save and resume:  # the same keys after the reboot, and FCnt past every frame sent before it
         resume["same_devaddr"] = int(save.get("devaddr") == resume.get("devaddr"))
-    bmm.write_csv(res / f"deploy_{tag}.csv", rows)
-    print(f"    deployment checks: {res}/deploy_{tag}.csv")
+    f = res / f"deploy_{tag}.csv"
+    old = [r for r in csv.DictReader(open(f)) if (r.get("Signature") or "DEPLOY") != sig] if f.exists() else []
+    bmm.write_csv(f, old + rows)
+    print(f"    deployment checks: {f}")
 
 def save_kex(blocks, res, tag, family, fqbn, cfg, modes=False):
     """the kex blocks -> results/kem_exchange_{summary,raw}_<tag>.csv + meta, as the host's --kex writes them (its

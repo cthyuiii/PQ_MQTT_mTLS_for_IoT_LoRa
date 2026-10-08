@@ -46,6 +46,10 @@
 //     fcnt    the LoRaWAN keys, DevAddr and FCnt kept in flash: FCnt reserved FCNT_GAP frames ahead, the board
 //             reboots itself, and the next block checks that FCnt went on from the reservation.
 //   Each of these prints one '#deploy k=v ...' line (run_benchmarks.py: results/deploy_<tag>.csv).
+//   -DMT_DEPLOY_CHECKS (with -DMT_DEPLOY, certs/DEPLOY_<SIG> from DEPLOY_SIGS=all gen_certs.sh --deploy): the connect
+//   and refuse blocks only, for any certificate type (-DWB_<ALG>): the trust-anchor update, the signed KEM exchange
+//   and FCnt in flash stay in the ML-DSA-44 firmware. The refuse lines also give the CRL's load time (crl_load_us:
+//   wolfSSL verifies the CRL's signature with the CA when it is loaded, once per block's context) and its size.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -61,6 +65,9 @@
 #include "kem_wolf.h"
 #include "hs_timing.h"  // the client's crypto inside each handshake (hs_timing.c, linked with --wrap)
 #ifdef MT_DEPLOY
+#ifndef MT_DEPLOY_CHECKS
+#define MT_DEPLOY_FULL  // + the trust-anchor update, the signed KEM exchange, FCnt in flash (ML-DSA-44, certs/DEPLOY)
+#endif
 #include <LittleFS.h>
 #include "deploy_wolf.h"
 #endif
@@ -145,6 +152,8 @@ static const int PIPE[] = {2, 4};  // lorawan11, lorawan11_256
 enum { NP = sizeof PIPE / sizeof *PIPE };
 #ifdef MT_KEX_ONLY
 enum { N_BLOCKS = KW_N };  // one kex block per KEM
+#elif defined(MT_DEPLOY_CHECKS)
+enum { N_BLOCKS = 7 };     // DPLAN: connect and refuse
 #elif defined(MT_DEPLOY)
 enum { N_BLOCKS = 16 };    // DPLAN
 #elif defined(MT_NO_SWEEP)
@@ -248,6 +257,7 @@ static bool cur_checked;                    // this block's connections check th
 static const char *cur_name = BROKER;       // the name they expect (the broker's address, or WRONG_NAME)
 static uint32_t last_tls_us;                // the last connection's handshake
 static const char *(*conn_hook)(Conn *);    // runs on the connection after CONNACK (the trust-anchor fetch)
+static uint32_t crl_load_us;                // the last context's CRL load (wolfSSL verifies its signature there)
 #endif
 static bool kat_ok;  // lora_aead.h's known-answer checks passed: the pipeline's schemes can be trusted
 
@@ -256,10 +266,14 @@ static const Block DPLAN[] = {
   {"connect", "TLS", 20, 2, 0, -1, 0, G_STAGE2}, {"connect", "TLS-checked", 20, 2, 0, -1, 0, G_STAGE2},
   {"connect", "mTLS", 20, 2, 0, -1, 0, G_STAGE2}, {"connect", "mTLS-checked", 20, 2, 0, -1, 0, G_STAGE2},
   {"refuse", "TLS", 1, 0, 0, -1, 0, R_NAME}, {"refuse", "TLS", 1, 0, 0, -1, 0, R_REVOKED},
-  {"refuse", "TLS", 1, 0, 0, -1, 0, R_EXPIRED}, {"ta", "TLS", 1, 0, 0, -1, 0, G_STAGE2},
+  {"refuse", "TLS", 1, 0, 0, -1, 0, R_EXPIRED},
+#ifdef MT_DEPLOY_FULL
+  {"ta", "TLS", 1, 0, 0, -1, 0, G_STAGE2},
   {"kex", "plain", 1, 0, 0, -1, 0, K_768}, {"kex", "mTLS", 1, 0, 0, -1, 0, K_768}, {"kex", "signed", 1, 0, 0, -1, 0, K_768},
   {"kex", "plain", 1, 0, 0, -1, 0, K_HYB}, {"kex", "mTLS", 1, 0, 0, -1, 0, K_HYB}, {"kex", "signed", 1, 0, 0, -1, 0, K_HYB},
-  {"fcnt", "plain", 1, 0, MT_FCNT_MSGS, A_LW11, 0, 0}, {"fcnt", "plain", 1, 0, 50, A_LW11, 0, 1}};
+  {"fcnt", "plain", 1, 0, MT_FCNT_MSGS, A_LW11, 0, 0}, {"fcnt", "plain", 1, 0, 50, A_LW11, 0, 1},
+#endif
+};
 static_assert(sizeof DPLAN / sizeof *DPLAN == N_BLOCKS, "N_BLOCKS = the deployment plan");
 #endif
 static Block plan(int i) {  // connect; per mode every scheme, uplink then downlink; per mode every group
@@ -360,7 +374,7 @@ static bool subscribe(Conn *c, const char *filter) {  // QoS 0, packet id 1, wai
   return io_write(c, pkt, n) == n && read_packet(c, &type, body, sizeof body) >= 0 && type == 0x90;
 }
 
-#ifdef MT_DEPLOY
+#ifdef MT_DEPLOY_FULL
 // the LoRaWAN state in flash (/lora.bin): DevAddr, keys and an FCnt reservation. Frames below the reservation may
 // have been sent; the board saves a new one FCNT_GAP frames ahead before it reaches it, so after any reboot or crash
 // FCnt resumes at the saved value and never repeats under these keys (one flash write per FCNT_GAP frames).
@@ -407,7 +421,7 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     int sl = snprintf(s, sizeof s, "{\"seq\":%lu,\"temp_c\":21.5,\"rh\":48}", (unsigned long)(fcnt + 1));
     memset(pt, ' ', MT_PAYLOAD);
     memcpy(pt, s, sl < MT_PAYLOAD ? sl : MT_PAYLOAD);
-#ifdef MT_DEPLOY
+#ifdef MT_DEPLOY_FULL
     if (fcnt_persist && fcnt + 1 >= fcnt_reserved) {  // reserve the next FCNT_GAP frames before sending this one
       STEP(S_FLASH);
       uint32_t s0 = micros();
@@ -451,7 +465,7 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
 // encapsulation time (4 B LE, us); decapsulate and compare the hashes (key confirmation). Rows as the host's:
 //   kex,iter,idx,keygen_us,rtt_us,decaps_us,encaps_us,tx_B,rx_B    (rtt: PUBLISH of the key -> ciphertext back)
 static int cur_kem = -1;
-#if defined(MT_KEX_ONLY) || defined(MT_DEPLOY)  // only in those firmwares: the TLS ones stay as they were measured
+#if defined(MT_KEX_ONLY) || defined(MT_DEPLOY_FULL)  // only in those firmwares: the TLS ones stay as they were measured
 #ifdef MT_DEPLOY
 // signed (mode "signed"): the public key goes to pqc/kem/<id>/spk/<KEM> as pk | ML-DSA-44 signature by the client
 // key; the reply is ct | hash | encaps time | the responder's signature over those bytes and pk (server.crt's key)
@@ -606,7 +620,7 @@ static const char *one_connection(WOLFSSL_CTX *ctx, uint16_t port, int iter, int
                     (unsigned long)(c.tx - hs_tx), (unsigned long)(c.rx - hs_rx), (unsigned long)hs_w,
                     (unsigned long)hs_r, (unsigned long)c.io[0], (unsigned long)c.io[1], free_heap, HS_ARGS(hs));
     if (msgs > 0) e = pipeline(&c, iter, msgs, iter >= 0, t0);
-#if defined(MT_KEX_ONLY) || defined(MT_DEPLOY)
+#if defined(MT_KEX_ONLY) || defined(MT_DEPLOY_FULL)
     if (!e && cur_kem >= 0 && iter >= 0) e = kem_exchange(&c);
 #endif
 #ifdef MT_DEPLOY
@@ -633,7 +647,11 @@ static WOLFSSL_CTX *new_ctx(const uint8_t *ca, size_t ca_n, bool mtls, bool crl,
                     wolfSSL_CTX_use_PrivateKey_buffer(ctx, KEY_DER, sizeof KEY_DER, WOLFSSL_FILETYPE_ASN1) != WOLFSSL_SUCCESS))
     *e = "cannot load client cert/key: signature algorithm unsupported by this TLS library build?";
 #ifdef MT_DEPLOY
-  else if (crl && dp_checks_ctx(ctx, CRL_DER, sizeof CRL_DER)) *e = "cannot load the CA's CRL";
+  else if (crl) {
+    uint32_t c0 = micros();
+    if (dp_checks_ctx(ctx, CRL_DER, sizeof CRL_DER)) *e = "cannot load the CA's CRL";
+    crl_load_us = micros() - c0;  // parsing + the CRL's signature checked with the CA: once per context
+  }
 #else
   (void)crl;
 #endif
@@ -648,9 +666,13 @@ static WOLFSSL_CTX *new_ctx(const uint8_t *ca, size_t ca_n, bool mtls, bool crl,
 static const char *refuse_block(WOLFSSL_CTX *ctx, uint16_t port, const char *what) {
   const char *r = one_connection(ctx, port, -1, 0, G_STAGE2);
   if (!r) return "accepted: it should have been refused";
-  Serial.printf("#reason %s\n#deploy refused=1 case=%s\n", r, what);
+  Serial.printf("#reason %s\n#deploy refused=1 case=%s crl_load_us=%lu crl_B=%u\n", r, what, (unsigned long)crl_load_us,
+                (unsigned)sizeof CRL_DER);
   return nullptr;
 }
+#endif
+
+#ifdef MT_DEPLOY_FULL
 
 // the trust-anchor update (see the header); the retained update arrives right after the SUBACK
 static uint8_t ta_buf[8192];
@@ -746,10 +768,12 @@ static void bench_block(const Block &b) {
   bool refuse = !strcmp(b.stage, "refuse"), ta = !strcmp(b.stage, "ta"), fc = !strcmp(b.stage, "fcnt");
   crl = cur_checked = strstr(mode, "-checked") || refuse || ta;
   cur_name = refuse && b.group == R_NAME ? WRONG_NAME : BROKER;
+#ifdef MT_DEPLOY_FULL
   cur_signed = !strcmp(mode, "signed");
   fcnt_persist = fc;
   nsaves = 0;
   uint32_t fcnt_start = fcnt;
+#endif
   if (refuse && b.group == R_REVOKED) port = PORT_REVOKED;
   if (refuse && b.group == R_EXPIRED) port = PORT_EXPIRED;
   if (ta) tls = false;  // ta_block makes its own contexts
@@ -768,18 +792,22 @@ static void bench_block(const Block &b) {
   Serial.println("iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B,hs_writes,hs_reads,writes,reads,"
                  "free_heap_B," HS_COLS);
   if (msgs > 0) Serial.println("msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B\nwhole,iter,first_ms,all_ms,msgs");
-#ifdef MT_DEPLOY
+#ifdef MT_DEPLOY_FULL
   if (cur_signed && !e && (dp_key_private(&dev_key, KEY_DER, sizeof KEY_DER) ||
                            dp_key_cert(&srv_key, SRV_DER, sizeof SRV_DER, CA_DER, sizeof CA_DER)))
     e = "cannot load the signing keys (client.key, server.crt against CA.crt)";
   if (fc && b.group) fcnt_report(b, fcnt_start);
+#endif
+#ifdef MT_DEPLOY
   if (e) ;
   else if (refuse) e = refuse_block(ctx, port, REFUSE[b.group]);
+#ifdef MT_DEPLOY_FULL
   else if (ta) e = ta_block();
+#endif
   else
 #endif
   for (int i = 0; i < warm + iters && !e; i++) e = one_connection(ctx, port, i - warm, msgs, b.group);
-#ifdef MT_DEPLOY
+#ifdef MT_DEPLOY_FULL
   if (fc && !b.group && !e) fcnt_report(b, fcnt_start);
   if (cur_signed) { dp_key_free(&dev_key); dp_key_free(&srv_key); }
   fcnt_persist = false;
@@ -839,7 +867,7 @@ void setup() {
                   step < sizeof STEPS / sizeof *STEPS ? STEPS[step] : "?", (long)(int32_t)watchdog_hw->scratch[3]);
   } else if (watchdog_hw->scratch[1] == REBOOT_MAGIC && watchdog_hw->scratch[0] < N_BLOCKS) {
     first = watchdog_hw->scratch[0] + 1;
-#ifdef MT_DEPLOY
+#ifdef MT_DEPLOY_FULL
     last_before_reboot = watchdog_hw->scratch[3];
 #endif
     Serial.printf("#rebooted on purpose after %s; continuing with the next block\n", label(plan(first - 1)));
@@ -851,7 +879,7 @@ void setup() {
                 (int)N_GROUPS, MT_KEX_ITERS, MT_KEX_WARMUP, (int)N_BLOCKS);
   kat_ok = la_kat();  // before the session keys: the vectors bring their own
   Serial.printf("#kat LoRaWAN / AES-CMAC / Ascon known-answer checks: %s\n", kat_ok ? "OK" : "FAIL");
-#ifdef MT_DEPLOY  // keys, DevAddr and FCnt from flash; new ones (saved) on the first boot
+#ifdef MT_DEPLOY_FULL  // keys, DevAddr and FCnt from flash; new ones (saved) on the first boot
   bool fs = LittleFS.begin(), restored = fs && lora_load();
   if (!restored) {
     for (int i = 0; i < 32; i++) k_app[i] = rp2040.hwrand32();
@@ -880,7 +908,7 @@ void setup() {
   else {
     Serial.printf("#wifi rssi=%ld dBm channel=%d ip=%s broker=%s\n", (long)WiFi.RSSI(),
                   WiFi.channel(), WiFi.localIP().toString().c_str(), broker.toString().c_str());
-#ifndef MT_DEPLOY
+#ifndef MT_DEPLOY_FULL
     for (int i = 0; i < 4; i++) devaddr[i] = rp2040.hwrand32();
 #endif
     rp2040.wdt_begin(8000);  // the RP2040's longest; reset per connection and inside every socket wait

@@ -3,6 +3,7 @@
 # and the classical baselines, for:
 #   * mqtt_tls_timer_wolfssl  (wolfSSL as the mTLS MQTT client, Stage 2)
 #   * wolfcrypt/benchmark     (wolfCrypt primitive + AES/Ascon speeds, Stage 1)
+#   with the deployment checks: CRLs (--enable-crl) and IP addresses in certificate names (--enable-ip-alt-name)
 #
 #   bash network/build_wolfssl.sh
 #   WOLFSSL_EXTRA="..." bash ...   # extra ./configure flags
@@ -34,7 +35,7 @@ fi
 # Falcon's TLS codepoint (0xFED7 for Falcon-512) is oqs-provider's, so the wolfSSL client can use its certificates.
 CONF="--prefix=$PREFIX --enable-static --enable-experimental $ASM --enable-tls13 --enable-mlkem --enable-mldsa
     --enable-slhdsa=yes,sha2 $FALCON --enable-ascon --enable-curve25519 --enable-ed25519 --enable-ecc --enable-keygen
-    --enable-sha3 --enable-shake256 ${WOLFSSL_EXTRA:-}"
+    --enable-sha3 --enable-shake256 --enable-crl --enable-ip-alt-name ${WOLFSSL_EXTRA:-}"
 STAMP="$PREFIX/.iot-pqc-build"   # skip the rebuild when tag + configure flags are unchanged
 if [ "$(cat "$STAMP" 2>/dev/null)" != "$TAG $CONF" ]; then
     ./configure -q $CONF

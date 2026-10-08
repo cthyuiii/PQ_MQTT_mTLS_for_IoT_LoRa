@@ -19,7 +19,8 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   └── pico_build_notes.md        ← how each Pico sketch was ported / what failed and why
 ├── scripts/
 │   ├── gen_certs.sh               ← CA + server + client certificate per signature → certs/<SIG>/; --deploy <IP>:
-│   │                                certs/DEPLOY (CRL, revoked / expired certs, the signed trust-anchor update)
+│   │                                certs/DEPLOY (CRL, revoked / expired certs, the signed trust-anchor update);
+│   │                                DEPLOY_SIGS=all: + certs/DEPLOY_<SIG>, the same checks for the other 8 types
 │   └── collate_results.py         ← every result file → results/all_results.csv
 ├── signatures/                    ← Stage 1: keygen / sign / verify
 │   ├── sig_speed.c                ← one C bench for OpenSSL, liboqs (-DSIG_LIBOQS) and wolfSSL (-DSIG_WOLFSSL)
@@ -367,6 +368,7 @@ BROKER=<ip> python3 pico/run_benchmarks.py --test mqtt       # Pico W: MQTT / TL
                                                                  # Ascon pipeline, up + down (WIFI_SSID, WIFI_PASS exported)
 BROKER=<ip> python3 pico/run_benchmarks.py --test mqtt --match deployment   # the deployment firmware (certs/DEPLOY;
                                                                  # NTP_SERVER=<host> if the board can't reach pool.ntp.org)
+                                                                 # + the checks-only firmware per certs/DEPLOY_<SIG>
 BROKER=<ip> python3 pico/run_benchmarks.py --test mqtt --match snova   # round 3 SNOVA certificates (the round 3
                                                                  # broker; wolfSSL + liboqs main, no sweep)
 python3 pico/run_benchmarks.py --lib wolfssl,liboqs --match falcon,slh-dsa-sha2-128f
@@ -394,7 +396,7 @@ bash pico/tests/qemu_liboqs/run.sh             # no board: Keccak swap checked +
 | `tls` | mqtt | the key-exchange sweep: TLS 1.3 and mTLS handshake inside a full MQTT connection, every cert × 17 groups (`mqtt_bench.SWEEP_GROUPS`: ML-KEM-512/768/1024, the ML-KEM hybrids, X25519, P-256, HQC-1/3/5, FrodoKEM-640-AES), 200 connections each: mean / median / std / min / max / p90 / p99, handshakes/s; bytes up / down / total; socket writes / reads; TCP segments; on-wire estimate | `mqtt_tls_timer` (OpenSSL) against the broker machine's Mosquitto TLS / mTLS listeners; a failed combination is a row with its reason | two machines: `--serve-broker` + `--broker IP` | `tls_handshake_{pure,meta}_<tag>` |
 | `kex` | mqtt | the KEM exchange as MQTT messages, for KEMs that can't (or can't only) run in TLS: Classic McEliece 348864 / 460896 / 6688128 / 6960119 / 8192128, HQC-1/3/5, ML-KEM-768 as the reference. Per exchange: key pair on the client, public key PUBLISHed, the broker's responder encapsulates and replies with ciphertext + SHA-256 of the secret + its encapsulation time, the client decapsulates and checks. keygen / encaps / decaps µs, broker round trip and exchange total ms (mean / median / std / min / max / p90), bytes up / down | `mqtt_kem_timer` (the timer's source built with liboqs 0.16: `KEM=` client, `KEM_RESPOND=1` responder started by `--serve-broker`), plain MQTT on :18830 | two machines: `--serve-broker` + `--broker IP` | `kem_exchange_{summary,raw,meta}_<tag>` |
 | `mtls` | mqtt | Stage 2: TCP, handshake, MQTT CONNECT→CONNACK, total: mean / median / std / min / max; bytes up / down for the handshake, MQTT and the whole connect, and totals; socket writes / reads; TCP segments; on-wire estimate; cert sizes; failures as rows | Mosquitto + `mqtt_tls_timer` on OpenSSL or wolfSSL; X25519MLKEM768 | two machines: `--serve-broker` + `--broker IP` | `mqtt_mtls_{summary,raw,meta}_<tag>` |
-| `deploy` | mqtt | the deployment checks (certs/DEPLOY): connect TLS / mTLS without and with the checks (`CHECK_HOST` = the broker's IP, `CHECK_CRL` = the CA's CRL); the wrong-name, revoked and expired connections, which must fail; the KEM exchange (ML-KEM-768, X25519MLKEM768) over plain MQTT, over mTLS and signed (ML-DSA-44 on both messages: `KEM_SIGN_KEY` / `KEM_PEER_CERT` / `KEM_PEER_CA`) | `mqtt_tls_timer` + `mqtt_kem_timer` (OpenSSL) against the broker machine's DEPLOY listeners | two machines: `--serve-broker` + `--broker IP` | `{mqtt_mtls,kem_exchange}_{summary,raw}_<tag>_deploy`, `deploy_<tag>` |
+| `deploy` | mqtt | the deployment checks (certs/DEPLOY, and every certs/DEPLOY_<SIG> present): connect TLS / mTLS without and with the checks (`CHECK_HOST` = the broker's IP, `CHECK_CRL` = the CA's CRL); the wrong-name, revoked and expired connections, which must fail; the KEM exchange (ML-KEM-768, X25519MLKEM768) over plain MQTT, over mTLS and signed (ML-DSA-44 on both messages: `KEM_SIGN_KEY` / `KEM_PEER_CERT` / `KEM_PEER_CA`) | `mqtt_tls_timer` (OpenSSL) and `mqtt_tls_timer_wolfssl` (CRL since 8 Oct) + `mqtt_kem_timer` (OpenSSL) against the broker machine's deployment listeners | two machines: `--serve-broker` + `--broker IP` | `{mqtt_mtls,kem_exchange}_{summary,raw}_<tag>_deploy`, `deploy_<tag>` |
 | `pipeline` | pipeline | the only LoRaWAN / AES / Ascon measurement, on every TLS certificate (as the Pico; SLH-DSA skipped): per message, uplink and downlink frames: seal, open (the integrity check), broker round trip, end-to-end, each mean / median / std / min / max (+ p90), bytes per message; per connection the pipeline as a whole, `whole_first` (TCP connect to the first reading verified: the single number) and `whole_all` (to the last reading); plus the Stage 2 columns | as `mtls` + `app_aead.c` (LoRaWAN 1.0.x / 1.1, AES-GCM, Ascon) | two machines, as `mtls` | `pipeline_{summary,msgs_raw,meta}_<tag>` |
 | `pico` | pqc, mqtt | keygen / sign / verify, peak stack, flash / RAM; Pico W only (`mqtt_tls_bench`, needs `--broker` and `WIFI_SSID` / `WIFI_PASS`): the `mtls` and `pipeline` columns over Wi-Fi (10 payload schemes × up / down; no TCP segment counts) + wolfSSL's peak heap and peak stack | see the Pico table in section 4; wolfSSL 5.9.4 TLS 1.3 client, X25519MLKEM768, the 9 certificates; `lora_aead.h` (BearSSL, ascon-c) | Pico W, Pico 2 W | `pico/logs/`, `results/*_pico_<board>.*` |
 | (every run) | — | OS, board, compiler, library versions, ascon-c commit | `provenance.py` | — | `versions_<tag>.json` |
@@ -689,6 +691,8 @@ OSSL=/opt/homebrew/opt/openssl@3/bin/openssl ./scripts/gen_certs.sh
 ls certs/   # MLDSA44/ … FALCON512/ … RSA3072/ ECDSAP256/ ED25519/ … round3/ (MAYO1/ … SNOVA1K/ …, the round3 stage's)
 # the deployment checks' set, for the broker machine's address (the clients check it in the certificate):
 OSSL=/opt/homebrew/opt/openssl@3/bin/openssl ./scripts/gen_certs.sh --deploy 192.168.50.132
+# ... and the same checks for every other certificate type (certs/DEPLOY_<SIG>, each with its own CA and CRL):
+DEPLOY_SIGS=all OSSL=/opt/homebrew/opt/openssl@3/bin/openssl ./scripts/gen_certs.sh --deploy 192.168.50.132 192.168.50.131
 ```
 
 `certs/DEPLOY` (ML-DSA-44) adds `CA.crl` (revokes `revoked.crt`), `revoked.crt` and `expired.crt` (server certificates

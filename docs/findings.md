@@ -1295,7 +1295,10 @@ Pico W's pipeline; no run of the new form yet)
 109. [Pico, Pi] **The four deployment items on the Pico W (8 Oct, Pi broker): all passed, the first board run.**
      - **Hostname, CRL, dates (NTP):** the wrong broker IP refused (`peer ip address mismatch`), `revoked.crt` refused
        (`CRL Cert revoked`), `expired.crt` refused (`ASN date error`, against NTP time). 20 connections each: TLS
-       282 ms with or without the checks, so they cost nothing measurable. mTLS 494 ms unchecked against 403 ms
+       282 ms with or without the checks. wolfSSL verifies the CRL's own ML-DSA-44 signature once, when the firmware
+       loads it into the block's TLS context (`wolfSSL_CTX_LoadCRLBuffer`, before the connections); a handshake then
+       only looks the server certificate's serial up (`CheckCertCRL`). That one verify (~27 ms, wolfSSL's ML-DSA-44 on
+       this board) is in no timed number. mTLS 494 ms unchecked against 403 ms
        checked: the difference is ML-DSA-44's signing (148 vs 52 ms median, rejection sampling, finding 88), not the
        checks.
      - **Signed trust-anchor update:** the old (ECDSA-P256) root couldn't reach the broker (`ASN no signer`); the
@@ -1306,7 +1309,7 @@ Pico W's pipeline; no run of the new form yet)
        same DevAddr: no FCnt reused.
      - **KEM exchange plain / over mTLS / signed (ML-DSA-44 both ways), 50 each:** ML-KEM-768 31 / 38 / 51 ms,
        X25519MLKEM768 152 / 159 / 164 ms. mTLS adds 7 ms, signing both messages 13-20 ms more.
-     - Not run yet: the host side on the Pi (`./run_all.sh --only deploy`); it ran on the Mac (finding 97).
+     - The host side on the Pi: finding 111.
 110. [Pico, Pi] **The 9 certificates again, with their first whole-pipeline numbers, and the KEM firmware (8 Oct, Pi
      broker).**
      - TLS reproduces 3 Oct within 0-3 % for all 9 (229-413 ms). mTLS too, except ML-DSA (signing by rejection
@@ -1334,6 +1337,53 @@ Pico W's pipeline; no run of the new form yet)
        the 80 KB), the whole exchange 2.09 s with a 2,241 B public key and a 4,433 B ciphertext; ML-KEM-768 takes
        31.9 ms. The X25519 A/B repeats 1 Oct: wolfSSL's small Curve25519 code 424 ms per operation, its normal code
        57 ms.
+111. [Pi, Mac] **The deployment checks from the Pi 4, against the Mac broker over the LAN (8 Oct): all passed.**
+     The Pi as the OpenSSL client (`./run_all.sh --only deploy --broker <Mac>`), 50 connections or exchanges each.
+     - **Refused, as they must be:** the wrong broker IP (`IP address mismatch`), `revoked.crt` (`certificate
+       revoked`), `expired.crt` (`certificate has expired`).
+     - **The checks are nearly free:** TLS 13.4 ms, 14.1 ms with the name and CRL checks (+0.76 ms). The client's
+       verify time grows from 1,072 to 1,556 us with the same 2 calls: OpenSSL checks the CRL's own ML-DSA-44 signature
+       inside `X509_verify_cert`, in every checked handshake (+0.48 ms, one ML-DSA-44 verify on the Pi 4). mTLS 21.0 ms
+       unchecked against 17.3 ms checked is not the checks: the unchecked block ran slower in all its crypto (key share
+       666 vs 394 us, completion 903 vs 513 us, signing 3.5 vs 2.2 ms), so the Pi 4 was busier during it, on top of
+       ML-DSA-44's signing spread (0.9-7.1 ms, rejection sampling). Handshake bytes: 1,568 up / 7,823 down (TLS),
+       8,076 / 8,032 (mTLS).
+     - **KEM exchange plain / over mTLS / signed:** ML-KEM-768 6.3 / 7.6 / 9.5 ms, X25519MLKEM768 8.2 / 8.2 / 10.2 ms.
+       The Pi's own crypto is small: ML-KEM-768 key pair 62 us, decapsulation 81 us; X25519MLKEM768 207 / 482 us;
+       ML-DSA-44 signing 1.3-2.1 ms median, verifying 0.48 ms. The round trip through the broker and its responder
+       (6-9 ms) is most of each exchange. The Pico W's ML-KEM-768 exchange is 31 ms (finding 109): its key pair and
+       decapsulation (11 + 14 ms) take most of it.
+     - With finding 109 (the Pico W) and finding 97 (the Mac) every part of the four deployment items has run where it
+       applies: the trust-anchor update and FCnt are the device's (the broker only publishes the update).
+
+112. [Mac, Pico] **Both CRL checks built (8 Oct): the host wolfSSL client, and every certificate type.**
+     - **The host wolfSSL client checks the CRL now.** Its build gains `--enable-crl` and `--enable-ip-alt-name`; the
+       second was missing too, so it could not match an IP address in a certificate's names (a checked connection by
+       IP failed: `peer ip address mismatch`). `CHECK_CRL` → `wolfSSL_CTX_EnableCRL` + `wolfSSL_CTX_LoadCRLFile`: the
+       CRL's signature is checked once, at load (OpenSSL checks it in every handshake).
+     - The Mac's `mqtt_tls_timer_wolfssl` dated from 28 Sep, before `CHECK_HOST`: `build_wolfssl.sh` rebuilds the
+       library, `build_timer.sh wolfssl` relinks the client. Rebuilt; the Pi builds its own.
+     - **Every certificate type gets the deployment checks.** `DEPLOY_SIGS=all gen_certs.sh --deploy <IP>...` makes
+       `certs/DEPLOY_<SIG>` for the other 8 types next to DEPLOY (ML-DSA-44), each with its own CA, ClientCA, CRL and
+       revoked / expired certificates; the broker serves each set present on four listeners. Each CRL is signed with
+       its CA's algorithm, so its size is mostly that signature:
+
+       | CA | CRL | CA | CRL | CA | CRL |
+       |---|---|---|---|---|---|
+       | Ed25519 | 199 B | RSA-3072 | 539 B | ML-DSA-44 | 2,562 B |
+       | ECDSA-P256 | 218 B | Falcon-512 | 799 B | ML-DSA-65 | 3,459 B |
+       | RSA-2048 | 411 B | Falcon-1024 | 1,418 B | ML-DSA-87 | 4,777 B |
+
+     - **Tested on the Mac** (`mqtt_bench.py --role both --deploy`, a local broker, 5 connections per mode, both
+       clients): in all 9 sets the checked connections succeed and both clients refuse the wrong IP, the revoked and
+       the expired certificate (OpenSSL: `IP address mismatch`, `certificate revoked`, `certificate has expired`;
+       wolfSSL: `peer ip address mismatch`, `CRL Cert revoked`, `ASN date error`): 72 connect blocks OK, 54 of 54
+       refused.
+     - **Pico:** `-DMT_DEPLOY_CHECKS` builds the connect and refuse blocks (7) for any certificate type; all 8 compile
+       (601-659 KB flash, 92 KB RAM; the full ML-DSA-44 firmware 672,592 B). Each refuse line now carries
+       `crl_load_us`, the time wolfSSL takes to load and verify the CRL, and `crl_B`. Expected from the board's own
+       verify times: Falcon-512 7 ms, RSA-2048 26 ms, ML-DSA-44 27 ms, Ed25519 66 ms, ML-DSA-87 74 ms, ECDSA-P256 96 ms.
+       Not run on the board yet.
 
 ### Sources
 
@@ -1395,19 +1445,14 @@ All links checked on 28 Sep 2026.
 43. Classic McEliece team, *ISO* (ISO/IEC 18033-2 amendment, 2026). <https://classic.mceliece.org/iso.html>
 44. NIST, *NIST Selects HQC as Fifth Algorithm for Post-Quantum Encryption* (11 Mar 2025: a draft in about a year, the final standard in 2027). <https://www.nist.gov/news-events/news/2025/03/nist-selects-hqc-fifth-algorithm-post-quantum-encryption>
 
-## In progress (built; on the Pico W, waiting for the Pi's host run)
+## In progress (built, waiting for the board run)
 
-What a real deployment adds on top of the benchmark: finding 97 and how_it_works.md, `deploy`. All four are
-implemented (7 Oct), tested on the Mac (finding 97) and passed on the Pico W against the Pi broker (8 Oct, finding
-109). Each leaves this list once the host side has run on the Pi too (`./run_all.sh --only deploy`).
+The four deployment items (trust-anchor updates, hostname / CRL / NTP checks, FCnt across reboots, the KEM exchange
+inside mTLS) passed on the Mac (finding 97), the Pico W (finding 109) and the Pi (finding 111) on 8 Oct.
 
-- **Signed trust-anchor updates.** Mac: verify and tamper checks. Pico W: refused before, fetched, verified, tamper
-  refused, written to flash, broker reached under the new root. Not built: a whole signed firmware image
-  (arduino-pico's `PicoOTA` / `Updater`).
-- **Hostname checks, a CRL and NTP on the Pico.** Mac: wrong IP, revoked and expired refused. Pico W: the same three
-  refused on NTP time. Not built: a CRL in the host wolfSSL client (name check only).
-- **Keep FCnt across Pico reboots.** Pico W: FCnt resumed from its reservation after a reboot, same DevAddr.
-- **KEM exchange inside mTLS.** Mac and Pico W: plain, over mTLS and signed, all OK.
+- **The deployment checks for every certificate type** (finding 112): built and tested on the Mac (both host clients,
+  all 9 sets). Waiting for: the sets made on the broker machine, the Pi's host run, the Pico's 8 checks-only firmware.
+- **The host wolfSSL client's CRL** (finding 112): built and tested on the Mac. Waiting for the Pi's rebuild and run.
 
 ## Future implementations (KIV)
 
@@ -1417,7 +1462,26 @@ implemented (7 Oct), tested on the Mac (finding 97) and passed on the Pico W aga
   - PQ TLS on its own MQTT links, which is untested.
 
   It needs a gateway, or a simulated one. None of the numbers above depends on it.
-- **SLH-DSA in TLS.** A patched oqs-provider with the draft codepoints [36] (findings 12 and 51).
-- **LoRaWAN OTAA join through the broker.** The join (Join-Request / Join-Accept) was timed only locally, so it
+- **LoRaWAN OTAA join through the broker (KIV).** The join (Join-Request / Join-Accept) was timed only locally, so it
   was removed (finding 76). Measuring it now means sending the join messages through the MQTT broker.
-- **Fix the Pico W Wi-Fi stall** (finding 75), after the 133 MHz check.
+- **Pico 2 W (RP2350) runs**, pending the board.
+
+## Hardening (tracked)
+
+From the security review of 8 Oct (the constrained-device key-management guidance: seeds kept like private keys,
+side-channel protection, hedged ML-DSA). Not implemented yet unless the status says so.
+
+| Area | Our setup now | Risk | Solution | Status |
+|---|---|---|---|---|
+| Device identity | One client key per certificate set, compiled into every firmware built with it (`mt_secrets.h`) | Every board shares the key; it travels in each image | On-device key generation + CSR to the CA, one identity per device (ML-DSA-44 keygen 25 ms on the Pico) | not started |
+| Key / seed storage | Private key (PKCS#8) and the Wi-Fi password in flash, unencrypted; LoRaWAN keys, FCnt, trust anchor in LittleFS, plain | RP2040 flash is readable over USB BOOTSEL / SWD; no OTP, secure boot or flash encryption | Keep 32 / 64 B seeds (ML-DSA / ML-KEM) and re-derive at boot; seeds in RP2350 OTP or a secure element; LittleFS encrypted under an OTP-derived key | not started |
+| Boot and debug | RP2040: no secure boot, SWD always on | A changed image or a debugger reads / alters keys | RP2350 secure boot (signed images, boot key in OTP), debug locked via OTP; it raises the cost (the RP2350 hacking challenge was won by fault injection), a secure element for high-value keys | not started (pending Pico 2 W) |
+| Randomness | `pico_rand` (128-bit software PRNG, ring oscillator + timer entropy) used directly as wolfSSL's RNG (`CUSTOM_RAND_GENERATE_BLOCK`); liboqs the same | ML-KEM / X25519 keys, TLS randoms and the ML-DSA hedge rest on it; no health tests | wolfSSL's Hash_DRBG (SP 800-90A) seeded from the hardware (`CUSTOM_RAND_GENERATE_SEED`, SP 800-90B seed tests); RP2350 TRNG; liboqs through the same DRBG | not started |
+| Constant-time code | wolfSSL ECC / RSA timing resistance on; BearSSL `br_aes_ct` for LoRaWAN AES; the Pico's MIC check uses `memcmp` (`lora_aead.h`), the host `CRYPTO_memcmp` | Timing of a MIC check leaks how many bytes matched (a forgery aid for frames from the air) | Constant-time compare on the Pico; check with a timing test (dudect-style) | not started |
+| Signing (side channels, faults) | ML-DSA hedged (wolfSSL draws 32 random bytes per signature); Falcon (float emulation) and SNOVA (memory-optimised) sign on the device in their runs | Falcon signing has published power / EM attacks; the SNOVA code is unprotected; a glitched lattice signature can leak the key | ML-DSA (hedged) for device signing, Falcon verify-only; verify-after-sign (+27 ms per ML-DSA-44 signature); masked code or a secure element where physical attacks matter | hedging in place; rest not started |
+| Long-term key use | Full handshake on every connection (`NO_SESSION_CACHE`, no tickets) | Each connection signs with the device key: more exposure, and 3-12 s per SNOVA mTLS handshake | TLS 1.3 resumption with a fresh key exchange (`psk_dhe_ke`); protect the tickets | not started |
+| Trust anchor at rest | Signed update verified when it arrives (finding 109), then the certificate is kept | A flash edit could swap the root on a device that boots from it | Keep the signed bundle; re-check its ML-DSA-44 signature at each boot (33 ms) | not started |
+| Revocation | Device: the broker's certificate against its CA's CRL, for every certificate type (deployment runs: host OpenSSL + wolfSSL, the Pico); broker: no CRL for device certificates | A revoked device certificate is still accepted by the broker | Mosquitto `crlfile` for ClientCA; short-lived device certificates (renewed through the CSR path) | device side built (finding 112, Mac-tested); broker side not started |
+| Trust-anchor update format | `PQTA` \| CA length \| CA \| ML-DSA-44 signature: no version, no expiry | An old signed update can be replayed: a rollback to an earlier (perhaps compromised) root | A version and an expiry inside the signed bytes; keep the highest version seen in flash / OTP and refuse lower ones | not started |
+| Update key | `certs/DEPLOY/update.key` made next to the CA, on the broker machine | Whoever holds it can install any root on every device | Keep it offline (HSM or an air-gapped machine), apart from the CA; a second key in firmware for recovery | not started |
+

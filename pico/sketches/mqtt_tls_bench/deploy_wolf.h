@@ -12,7 +12,6 @@
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/ssl.h>
 #include <wolfssl/wolfcrypt/asn.h>
-#include <wolfssl/wolfcrypt/dilithium.h>
 #include <wolfssl/wolfcrypt/random.h>
 
 // the CRL and, per connection, the expected broker name; 0 = OK
@@ -25,6 +24,8 @@ static int dp_checks_ssl(WOLFSSL *ssl, const char *name) {  // an IP literal nee
   return (ip ? wolfSSL_check_ip_address(ssl, name) : wolfSSL_check_domain_name(ssl, name)) == WOLFSSL_SUCCESS ? 0 : -1;
 }
 
+#ifndef MT_DEPLOY_CHECKS  // the full deployment firmware (ML-DSA-44, certs/DEPLOY): not the checks-only one
+#include <wolfssl/wolfcrypt/dilithium.h>
 typedef struct { wc_MlDsaKey k; int ready; } dp_key;
 static void dp_key_free(dp_key *d) { if (d->ready) wc_MlDsaKey_Free(&d->k); d->ready = 0; }
 static int dp_key_raw(dp_key *d, const uint8_t *pub, size_t n) {  // a raw ML-DSA-44 public key (the update key)
@@ -74,3 +75,4 @@ static int dp_ta_verify(const uint8_t *b, size_t len, const uint8_t *upd_pub, si
   if (r > 0) *ca_n = n;
   return r;
 }
+#endif  // !MT_DEPLOY_CHECKS
