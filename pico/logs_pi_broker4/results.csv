@@ -1,0 +1,4 @@
+Board,Algorithm,pk,sk,sigMax,sig,keygen_mean_us,keygen_median_us,keygen_std_us,keygen_mean_cyc,keygen_median_cyc,keygen_ops_s,sign_mean_us,sign_median_us,sign_std_us,sign_mean_cyc,sign_median_cyc,sign_ops_s,verify_mean_us,verify_median_us,verify_std_us,verify_mean_cyc,verify_median_cyc,verify_ops_s,status,Library
+rp2040,MQTT/TLS SNOVA_V_K round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+rp2040,MQTT/TLS SNOVA_V_B round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+rp2040,MQTT/TLS SNOVA_V_S round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
