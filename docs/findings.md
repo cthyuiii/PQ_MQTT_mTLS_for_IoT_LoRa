@@ -1223,7 +1223,7 @@ Pico W's pipeline; no run of the new form yet)
        For comparison, Falcon-512 mTLS took 2.0 s.
      - The firmware fed its 8 s watchdog only while waiting for data. When the server's flight had already
        arrived, level V's two verifies (7.1 s) ran without a feed. It now feeds on every read.
-     - **On the board**: SNOVA_I_K, finding 107; all 9 sets, finding 108 (level V mTLS to run again). There is no sweep in these firmware (`-DMT_NO_SWEEP`): the key-exchange groups
+     - **On the board**: SNOVA_I_K, finding 107; all 9 sets, finding 108. There is no sweep in these firmware (`-DMT_NO_SWEEP`): the key-exchange groups
        don't depend on the certificate and were swept with the others.
 107. [Pico, Pi] **SNOVA_I_K certificates on the Pico W (8 Oct, broker on the Pi, `pi_broker4`): TLS, mTLS and the
      LoRaWAN 1.1 pipeline all work.** All 15 blocks completed with no errors or watchdog resets; 50 connections per
@@ -1266,28 +1266,32 @@ Pico W's pipeline; no run of the new form yet)
      | III_K | 4,904 | 8,032 | 4,665 / 3,113 | 4,998 / 8,135 | 3,907 / 4,015 | 22.5 / 25.4 | 13.3 / 60.5 |
      | III_B | 4,758 | 7,684 | 4,521 / 2,921 | 4,845 / 7,786 | 4,099 / 4,207 | 23.0 / 26.8 | 11.2 / 52.1 |
      | III_S | 4,794 | 7,697 | 4,555 / 2,910 | 4,902 / 7,824 | 4,563 / 4,671 | 23.6 / 28.6 | 10.2 / 50.4 |
-     | V_K | 7,476 | (0 of 50) | 7,225 / - | 7,574 / 12,572 | 4,627 / - | 22.8 / - | 19.2 / - |
-     | V_B | 7,052 | 11,647 (21 of 50) | 6,839 / 4,559 | 7,180 / 11,817 | 4,892 / 5,000 | 23.5 / - | 15.7 / - |
-     | V_S | 7,072 | (0 of 50) | 6,857 / - | 7,189 / 11,746 | 5,517 / - | 24.3 / - | 14.3 / - |
+     | V_K | 7,479 | 12,418 | 7,221 / 4,949 | 7,557 / 12,584 | 4,627 / 4,735 | 22.8 / 26.6 | 19.2 / 93.5 |
+     | V_B | 7,082 | 11,645 | 6,852 / 4,561 | 7,190 / 11,787 | 4,892 / 5,000 | 23.5 / 28.4 | 15.9 / 80.4 |
+     | V_S | 7,078 | 11,608 | 6,855 / 4,520 | 7,182 / 11,729 | 5,517 / 5,625 | 24.3 / 30.7 | 14.1 / 77.6 |
+
+     Level V is the second run, with the watchdog fed during signing (below); levels I and III the first.
 
      - **Every set works in TLS, mTLS and the pipeline.** The handshake is SNOVA's maths: verifying is 90-97 % of a
        TLS handshake, and each verify / signature is within 1-3 % of the bare times on this board (2 Oct), so the
        wolfSSL glue costs nothing measurable. Level I's S set is the fastest SNOVA (TLS 1.85 s, mTLS 2.88 s: 6.5x and
        5.9x ML-DSA-44's 286 / 484 ms on the same day); level III roughly 2.5x level I, level V roughly 4x.
      - **Even level V puts fewer bytes on the wire than ML-DSA-44** (TLS, down: 4.6-5.5 KB against 7.8 KB). The heap
-       stays at 22-29 KB at every level (ML-DSA-44 28 / 39 KB, Falcon-512 22 / 76 KB). The stack is the cost:
-       27-61 KB in mTLS at levels I and III, each SNOVA's QEMU peak + 1.2-1.3 KB, inside the stack each firmware got
-       (36-68 KB).
-     - **4.7 % of signatures retry** (14 of 300 at levels I and III), each taking exactly twice as long: SNOVA starts
-       over when its linear system has no solution.
-     - **Level V mTLS lost its connect blocks to the watchdog.** One level V signature is 4.4-4.9 s; a retry makes it
+       stays at 22-31 KB at every level (ML-DSA-44 28 / 39 KB, Falcon-512 22 / 76 KB). The stack is the cost:
+       27-94 KB in mTLS, each set's QEMU signing peak + 1.2-1.3 KB, inside the stack each firmware got (36-104 KB;
+       V_K 93.5 of 104 KB).
+     - **6 % of signatures retry** (27 of 450: 14 of 300 at levels I and III, 13 of 150 at level V). SNOVA starts over
+       when its linear system has no solution, so each retry adds exactly one more signature's time; one V_K signature
+       retried twice (14.8 s). This is where mTLS's spread comes from (TLS: 7-27 ms standard deviation).
+     - **Level V mTLS first lost its connect blocks to the watchdog.** One level V signature is 4.4-4.9 s; a retry makes it
        9-10 s, and the firmware's 8 s watchdog (the RP2040's longest) cannot be fed inside the liboqs call. V_K and
        V_S hung during their warm-up connections, V_B after 21; the pipeline blocks (4 connections each) mostly got
        through, so level V's `whole_first` mTLS numbers stand. Fixed: `wb_snova.c` now calls `wb_snova_sign_begin()` /
        `_end()` around each signature (weak, empty on a host), and `mqtt_tls_bench` fills them with a timer that feeds
        the watchdog every 2 s during the signature, at most 10 times (20 s), so a real hang still resets the board.
-       Tested: compiles (V_K: the sketch's hooks, not the empty defaults, are linked), and the host test still passes
-       (SNOVA5K TLS / mTLS). Not tested: the board; the level V sets need running again.
+       Tested: compiles (V_K: the sketch's hooks, not the empty defaults, are linked), the host test still passes
+       (SNOVA5K TLS / mTLS), and on the board (second level V run, 8 Oct): 50 of 50 mTLS connections per set, no
+       watchdog reset, through signatures of up to 14.8 s.
 109. [Pico, Pi] **The four deployment items on the Pico W (8 Oct, Pi broker): all passed, the first board run.**
      - **Hostname, CRL, dates (NTP):** the wrong broker IP refused (`peer ip address mismatch`), `revoked.crt` refused
        (`CRL Cert revoked`), `expired.crt` refused (`ASN date error`, against NTP time). 20 connections each: TLS
