@@ -1223,9 +1223,113 @@ Pico W's pipeline; no run of the new form yet)
        For comparison, Falcon-512 mTLS took 2.0 s.
      - The firmware fed its 8 s watchdog only while waiting for data. When the server's flight had already
        arrived, level V's two verifies (7.1 s) ran without a feed. It now feeds on every read.
-     - **Not yet run on the board**: `run_benchmarks.py --test mqtt --match snova`, with the round 3 broker
-       running. There is no sweep in these firmware (`-DMT_NO_SWEEP`): the key-exchange groups don't depend on the
-       certificate and were swept with the others.
+     - **On the board**: SNOVA_I_K, finding 107; all 9 sets, finding 108 (level V mTLS to run again). There is no sweep in these firmware (`-DMT_NO_SWEEP`): the key-exchange groups
+       don't depend on the certificate and were swept with the others.
+107. [Pico, Pi] **SNOVA_I_K certificates on the Pico W (8 Oct, broker on the Pi, `pi_broker4`): TLS, mTLS and the
+     LoRaWAN 1.1 pipeline all work.** All 15 blocks completed with no errors or watchdog resets; 50 connections per
+     mode. Compared with the 2-3 Oct runs on the same Pico W and the same Pi broker (`pi_broker`, `pi_broker2`),
+     medians:
+
+     | Certificate | TLS handshake | mTLS handshake | handshake down (TLS) / up (mTLS) | wolfSSL peak heap TLS / mTLS |
+     |---|---|---|---|---|
+     | SNOVA_I_K | 2,250 ms | 3,622 ms | 3,051 / 3,159 B | 22.0 / 23.7 KB |
+     | ML-DSA-44 | 283 ms | 511 ms | 7,780 / 7,890 B | 28.1 / 39.0 KB |
+     | Falcon-512 | 233 ms | 1,245 ms | 3,822 / 3,934 B | 22.2 / 76.0 KB |
+     | ECDSA-P256 | 395 ms | 460 ms | 1,838 / 1,942 B | 21.4 / 22.0 KB |
+     | RSA-3072 | 361 ms | 3,632 ms | 2,800 / 2,916 B | 22.0 / 26.4 KB |
+
+     - **SNOVA's maths is the handshake.** In TLS the two verifies (the chain and CertificateVerify) take 2,028 ms,
+       1,014 ms each (90 % of the handshake); the ML-KEM / X25519 key share 66 + 70 ms. mTLS adds the signature,
+       1,355 ms. Both are within 2 % of the bare sign / verify on this board (2 Oct: 1,334 / 991 ms), so the wolfSSL
+       glue (`wb_snova.c`) costs next to nothing.
+     - **TLS is steady (standard deviation 14 ms), mTLS less so (321 ms).** 47 of 50 signatures took 1,352-1,365 ms; the other 3
+       took 2,694-2,702 ms, twice as long: SNOVA draws new values and solves again when its linear system has no
+       solution.
+     - **Smallest post-quantum handshake on the wire, lowest post-quantum heap.** SNOVA_I_K's 376 B public key and
+       528 B signature make its certificates 1,167 / 1,175 B, so a TLS handshake receives 3,051 B (ML-DSA-44 7,780 B).
+       Its heap stays at 22-24 KB, where Falcon-512 signing needs 76 KB. The cost is the stack: 40.5 KB in mTLS,
+       12.2 KB in TLS (QEMU: 39.4 and 10.0 KB for SNOVA alone), in a 48 KB stack. The free heap stayed flat
+       across all 50 connections (no leak).
+     - **Server-auth TLS is about 8x ML-DSA-44's; mTLS matches RSA-3072's** (3.6 s, which is RSA-3072's signing).
+     - **The pipeline as a whole:** from the TCP connect to the first LoRaWAN 1.1 reading verified (`whole_first`),
+       2.28 s over TLS and 3.68 s over mTLS, against 25-42 ms over plain MQTT. After that, a reading takes the same
+       as with any certificate: seal 0.43-0.95 ms, open 0.60-1.09 ms (AES-128 / AES-256, uplink / downlink), broker
+       round trip 6.3-6.6 ms (4.3-4.7 ms plain), 112 B per message (90 B plain).
+108. [Pico, Pi] **All 9 SNOVA sets on the Pico W (8 Oct, Pi broker, `pi_broker4`).** 50 connections per mode and 4
+     pipeline connections per block, LoRaWAN 1.1. Medians (ms; bytes; KB = 1,000 B for the heap, 1,024 for the stack):
+
+     | Set | TLS | mTLS | verify x2 / sign | `whole_first` TLS / mTLS | down (TLS) / up (mTLS) | heap TLS / mTLS | stack TLS / mTLS |
+     |---|---|---|---|---|---|---|---|
+     | I_K | 2,250 | 3,622 | 2,028 / 1,355 | 2,281 / 3,680 | 3,051 / 3,159 | 22.0 / 23.7 | 12.2 / 40.5 |
+     | I_B | 1,965 | 3,133 | 1,750 / 1,156 | 2,008 / 3,192 | 3,051 / 3,159 | 22.2 / 24.4 | 10.1 / 36.2 |
+     | I_S | 1,846 | 2,876 | 1,635 / 1,015 | 1,900 / 2,935 | 3,179 / 3,287 | 22.6 / 25.3 | 8.5 / 27.3 |
+     | III_K | 4,904 | 8,032 | 4,665 / 3,113 | 4,998 / 8,135 | 3,907 / 4,015 | 22.5 / 25.4 | 13.3 / 60.5 |
+     | III_B | 4,758 | 7,684 | 4,521 / 2,921 | 4,845 / 7,786 | 4,099 / 4,207 | 23.0 / 26.8 | 11.2 / 52.1 |
+     | III_S | 4,794 | 7,697 | 4,555 / 2,910 | 4,902 / 7,824 | 4,563 / 4,671 | 23.6 / 28.6 | 10.2 / 50.4 |
+     | V_K | 7,476 | (0 of 50) | 7,225 / - | 7,574 / 12,572 | 4,627 / - | 22.8 / - | 19.2 / - |
+     | V_B | 7,052 | 11,647 (21 of 50) | 6,839 / 4,559 | 7,180 / 11,817 | 4,892 / 5,000 | 23.5 / - | 15.7 / - |
+     | V_S | 7,072 | (0 of 50) | 6,857 / - | 7,189 / 11,746 | 5,517 / - | 24.3 / - | 14.3 / - |
+
+     - **Every set works in TLS, mTLS and the pipeline.** The handshake is SNOVA's maths: verifying is 90-97 % of a
+       TLS handshake, and each verify / signature is within 1-3 % of the bare times on this board (2 Oct), so the
+       wolfSSL glue costs nothing measurable. Level I's S set is the fastest SNOVA (TLS 1.85 s, mTLS 2.88 s: 6.5x and
+       5.9x ML-DSA-44's 286 / 484 ms on the same day); level III roughly 2.5x level I, level V roughly 4x.
+     - **Even level V puts fewer bytes on the wire than ML-DSA-44** (TLS, down: 4.6-5.5 KB against 7.8 KB). The heap
+       stays at 22-29 KB at every level (ML-DSA-44 28 / 39 KB, Falcon-512 22 / 76 KB). The stack is the cost:
+       27-61 KB in mTLS at levels I and III, each SNOVA's QEMU peak + 1.2-1.3 KB, inside the stack each firmware got
+       (36-68 KB).
+     - **4.7 % of signatures retry** (14 of 300 at levels I and III), each taking exactly twice as long: SNOVA starts
+       over when its linear system has no solution.
+     - **Level V mTLS lost its connect blocks to the watchdog.** One level V signature is 4.4-4.9 s; a retry makes it
+       9-10 s, and the firmware's 8 s watchdog (the RP2040's longest) cannot be fed inside the liboqs call. V_K and
+       V_S hung during their warm-up connections, V_B after 21; the pipeline blocks (4 connections each) mostly got
+       through, so level V's `whole_first` mTLS numbers stand. Fixed: `wb_snova.c` now calls `wb_snova_sign_begin()` /
+       `_end()` around each signature (weak, empty on a host), and `mqtt_tls_bench` fills them with a timer that feeds
+       the watchdog every 2 s during the signature, at most 10 times (20 s), so a real hang still resets the board.
+       Tested: compiles (V_K: the sketch's hooks, not the empty defaults, are linked), and the host test still passes
+       (SNOVA5K TLS / mTLS). Not tested: the board; the level V sets need running again.
+109. [Pico, Pi] **The four deployment items on the Pico W (8 Oct, Pi broker): all passed, the first board run.**
+     - **Hostname, CRL, dates (NTP):** the wrong broker IP refused (`peer ip address mismatch`), `revoked.crt` refused
+       (`CRL Cert revoked`), `expired.crt` refused (`ASN date error`, against NTP time). 20 connections each: TLS
+       282 ms with or without the checks, so they cost nothing measurable. mTLS 494 ms unchecked against 403 ms
+       checked: the difference is ML-DSA-44's signing (148 vs 52 ms median, rejection sampling, finding 88), not the
+       checks.
+     - **Signed trust-anchor update:** the old (ECDSA-P256) root couldn't reach the broker (`ASN no signer`); the
+       6,429 B update came off the broker in 35 ms, verified (ML-DSA-44) in 33 ms, a changed byte was refused, flash
+       write 48 ms, read back 1.2 ms; then the broker was reached under the new root (TLS 290 ms).
+     - **FCnt across a reboot:** 200 frames with FCnt reserved 64 ahead: 3 flash saves, 4.1 ms median (37 ms the
+       first, which creates the file). After the board's own reboot it went on from the reservation (256 after 200),
+       same DevAddr: no FCnt reused.
+     - **KEM exchange plain / over mTLS / signed (ML-DSA-44 both ways), 50 each:** ML-KEM-768 31 / 38 / 51 ms,
+       X25519MLKEM768 152 / 159 / 164 ms. mTLS adds 7 ms, signing both messages 13-20 ms more.
+     - Not run yet: the host side on the Pi (`./run_all.sh --only deploy`); it ran on the Mac (finding 97).
+110. [Pico, Pi] **The 9 certificates again, with their first whole-pipeline numbers, and the KEM firmware (8 Oct, Pi
+     broker).**
+     - TLS reproduces 3 Oct within 0-3 % for all 9 (229-413 ms). mTLS too, except ML-DSA (signing by rejection
+       sampling: ML-DSA-65 633 vs 772 ms, ML-DSA-87 879 vs 791 ms). RSA-3072's mTLS connect block stopped after 25
+       connections: the board hung in TCP connect (the Wi-Fi stall, finding 75).
+     - **`whole_first` on the Pico W** (TCP connect to the first LoRaWAN 1.1 reading verified, medians of 4 blocks):
+
+       | Certificate | TLS | mTLS |
+       |---|---|---|
+       | Falcon-512 | 269 ms | 1,304 ms |
+       | Falcon-1024 | 301 ms | 2,583 ms |
+       | RSA-2048 | 313 ms | 1,317 ms |
+       | ML-DSA-44 | 325 ms | 523 ms |
+       | ML-DSA-65 | 378 ms | 715 ms |
+       | Ed25519 | 390 ms | 450 ms |
+       | RSA-3072 | 396 ms | 3,762 ms |
+       | ECDSA-P256 | 441 ms | 497 ms |
+       | ML-DSA-87 | 449 ms | 1,029 ms |
+
+       Plain MQTT: 32-39 ms. The handshake is 85-97 % of it; over TLS the rest (TCP connect, MQTT CONNECT, SUBSCRIBE,
+       the reading's trip through the broker) is 39-44 ms, the same work as plain MQTT's.
+     - The sweep lost the same blocks as on 3 Oct: the two ML-KEM-512 hybrids (codepoints, finding 85) and
+       `p384_mlkem768` right after them (finding 88). Not in the current focus.
+     - **HQC-1 on the board (the KEM firmware):** key pair 505 ms, decapsulation 1,543 ms (64.8 KB of stack, inside
+       the 80 KB), the whole exchange 2.09 s with a 2,241 B public key and a 4,433 B ciphertext; ML-KEM-768 takes
+       31.9 ms. The X25519 A/B repeats 1 Oct: wolfSSL's small Curve25519 code 424 ms per operation, its normal code
+       57 ms.
 
 ### Sources
 
@@ -1287,33 +1391,19 @@ All links checked on 28 Sep 2026.
 43. Classic McEliece team, *ISO* (ISO/IEC 18033-2 amendment, 2026). <https://classic.mceliece.org/iso.html>
 44. NIST, *NIST Selects HQC as Fifth Algorithm for Post-Quantum Encryption* (11 Mar 2025: a draft in about a year, the final standard in 2027). <https://www.nist.gov/news-events/news/2025/03/nist-selects-hqc-fifth-algorithm-post-quantum-encryption>
 
-## In progress (built, waiting for the board run)
+## In progress (built; on the Pico W, waiting for the Pi's host run)
 
 What a real deployment adds on top of the benchmark: finding 97 and how_it_works.md, `deploy`. All four are
-implemented (7 Oct) and tested on the Mac; none has run on the Pico W or between the Pi and the broker. Each leaves
-this list once it has.
+implemented (7 Oct), tested on the Mac (finding 97) and passed on the Pico W against the Pi broker (8 Oct, finding
+109). Each leaves this list once the host side has run on the Pi too (`./run_all.sh --only deploy`).
 
-- **Signed trust-anchor updates.** A CA update (`ta_update.bin`) signed with ML-DSA-44, retained on the broker,
-  verified on the Pico with the update key in its firmware, kept in LittleFS.
-  - Tested on the Mac: `deploy_host_test` (the Pico's verify code): the update verifies, and a changed byte in the
-    length, the CA or the signature is refused. `mqtt_bench.py --deploy`: the retained update reaches a subscriber
-    intact (6,429 B). Passed.
-  - Not tested: the flash write and the reconnect under the new root (board only).
-  - Not built: a whole signed firmware image (arduino-pico's `PicoOTA` / `Updater`).
-- **Hostname checks, a CRL and NTP on the Pico.** The broker's IP in its certificate, the CA's CRL, certificate dates
-  on NTP time; the host OpenSSL client has the same checks (`CHECK_HOST`, `CHECK_CRL`).
-  - Tested on the Mac: `deploy_host_test` (the Pico's wolfSSL settings): the right IP accepted, a wrong one refused;
-    `revoked.crt` refused with the CRL; `expired.crt` refused. Host OpenSSL client end to end: the wrong IP, the
-    revoked and the expired certificate refused. Passed.
-  - Not tested: NTP (board only). Not built: a CRL in the host wolfSSL client (name check only).
-- **Keep FCnt across Pico reboots.** Keys, DevAddr and an FCnt reservation in LittleFS, checked across a deliberate
-  reboot.
-  - Tested: compiles (the deployment firmware, 672,488 B). Not tested: everything else (flash and reboot: board only).
-- **KEM exchange inside mTLS.** Over the mTLS listener, and signed (ML-DSA-44 on both messages), on the Pico and the
-  host.
-  - Tested on the Mac: host end to end, plain / over mTLS / signed, all OK. `deploy_host_test`: the Pico's ML-DSA-44
-    signatures verify in OpenSSL and the other way round. Passed.
-  - Not tested: the Pico's side over Wi-Fi (board only).
+- **Signed trust-anchor updates.** Mac: verify and tamper checks. Pico W: refused before, fetched, verified, tamper
+  refused, written to flash, broker reached under the new root. Not built: a whole signed firmware image
+  (arduino-pico's `PicoOTA` / `Updater`).
+- **Hostname checks, a CRL and NTP on the Pico.** Mac: wrong IP, revoked and expired refused. Pico W: the same three
+  refused on NTP time. Not built: a CRL in the host wolfSSL client (name check only).
+- **Keep FCnt across Pico reboots.** Pico W: FCnt resumed from its reservation after a reboot, same DevAddr.
+- **KEM exchange inside mTLS.** Mac and Pico W: plain, over mTLS and signed, all OK.
 
 ## Future implementations (KIV)
 

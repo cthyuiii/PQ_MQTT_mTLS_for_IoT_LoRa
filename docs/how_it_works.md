@@ -73,6 +73,7 @@ Host = the Mac and the Pi (the same C sources; the Pi uses its system OpenSSL, t
 | certificates | OpenSSL's command line (`scripts/gen_certs.sh`: `genpkey`, `req`, `x509`, `ca`, `pkeyutl`), read as PEM | the same certificates as DER arrays, written into `mt_secrets.h` by `run_benchmarks.py` |
 | round 3 SNOVA certificates (sign / verify inside the handshake) | OpenSSL libssl + oqs-provider `36cafae` on liboqs main (the round 3 broker from :20830, its clients) | wolfSSL `wolfSSL_connect`, SNOVA in Falcon-512's place: wolfSSL's own Falcon certificate and TLS 1.3 code calls `wc_falcon_sign_msg` / `wc_falcon_verify_msg`, which `wolfssl_bench/wb_snova.c` answers with liboqs main `OQS_SIG_snova_SNOVA_<set>_sign` / `_verify` (`-DWB_SNOVA<set>`) |
 | broker | Mosquitto 2.0.21 (Pi) / 2.1.2 (Mac) on that machine's OpenSSL; `OPENSSL_CONF` loads oqs-provider and the group list (`mqtt_bench.py`) | — |
+| hang detection | — | the RP2040's 8 s hardware watchdog (`rp2040.wdt_begin` / `wdt_reset`, fed in every socket call); during a SNOVA signature a Pico SDK timer feeds it (`add_repeating_timer_ms`, `wb_snova_sign_begin` / `_end`) |
 | handshake crypto breakdown | wolfSSL client: `hs_timing.c` (`-Wl,--wrap` of wolfCrypt's `wc_*`); OpenSSL client: `hs_timing_openssl.c` (the executable's own `EVP_*` in front of libcrypto's, Linux) | `hs_timing.c` (`--wrap`) |
 | the broker's side of each handshake | `broker_hs_timing.c`, preloaded into Mosquitto (`LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`): `SSL_read` / `SSL_write` / `SSL_accept` while handshaking, and the `EVP_*` inside | — |
 
@@ -661,6 +662,8 @@ delivers to it:
      `falcon.c` for `wb_snova.c`. wolfSSL's certificate parsing and TLS 1.3 code for Falcon then carry SNOVA
      unchanged. The build links wolfSSL with the round 3 liboqs (`--libraries ~/.cache/iot-pqc/arduino-libs-wolfssl-r3`,
      links to both) and runs on a stack big enough for SNOVA's signing (`-DMT_STACK_KB`, 36 - 104 KB).
+     A timer feeds the 8 s watchdog during each SNOVA signature (`wb_snova_sign_begin` / `_end`, at most 20 s): a
+     level V signature that retries takes ~10 s in one liboqs call.
 3. **Flash**: byte-copy the `.uf2` onto the BOOTSEL drive.
 4. **Capture**: pyserial reads the serial port until the sketch prints `=== done`, or the entry's
    timeout expires.

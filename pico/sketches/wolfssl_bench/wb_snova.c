@@ -29,6 +29,11 @@ typedef char sn_pk_size[SN_LEN(WB_SNOVA_SET, _length_public_key) == WB_SNOVA_PK 
 typedef char sn_sk_size[SN_LEN(WB_SNOVA_SET, _length_secret_key) == WB_SNOVA_SK ? 1 : -1];
 typedef char sn_sig_size[SN_LEN(WB_SNOVA_SET, _length_signature) == WB_SNOVA_SIG ? 1 : -1];
 
+/* around each signature: the firmware's hooks (mqtt_tls_bench feeds its 8 s watchdog meanwhile: one call signs, and a
+ * SNOVA retry doubles a level V signature to ~9.8 s on the RP2040); nothing on a host */
+__attribute__((weak)) void wb_snova_sign_begin(void) {}
+__attribute__((weak)) void wb_snova_sign_end(void) {}
+
 static WC_RNG *sn_rng;  /* single-threaded: the RNG of the signature in progress */
 static void sn_randombytes(uint8_t *out, size_t n) {
     if (wc_RNG_GenerateBlock(sn_rng, out, (word32)n) != 0) XMEMSET(out, 0, n);  /* then sign fails below */
@@ -97,12 +102,16 @@ int wc_falcon_check_key(falcon_key *key) {  /* ponytail: presence only; liboqs h
 
 int wc_falcon_sign_msg(const byte *in, word32 inLen, byte *out, word32 *outLen, falcon_key *key, WC_RNG *rng) {
     size_t len = 0;
+    int ret;
     if ((in == NULL && inLen) || out == NULL || outLen == NULL || key == NULL || rng == NULL || !key->prvKeySet)
         return BAD_FUNC_ARG;
     if (*outLen < FALCON_LEVEL1_SIG_SIZE) return BUFFER_E;
     sn_rng = rng;
     OQS_randombytes_custom_algorithm(sn_randombytes);
-    if (SN_SIGN(out, &len, in, inLen, key->k) != OQS_SUCCESS) return BAD_STATE_E;
+    wb_snova_sign_begin();
+    ret = SN_SIGN(out, &len, in, inLen, key->k);
+    wb_snova_sign_end();
+    if (ret != OQS_SUCCESS) return BAD_STATE_E;
     *outLen = (word32)len;
     return 0;
 }

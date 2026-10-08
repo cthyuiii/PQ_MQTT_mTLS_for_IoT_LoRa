@@ -160,6 +160,13 @@ static const char *const STEPS[] = {"setup", "TCP connect", "TLS handshake", "MQ
                                     "decapsulation", "flash"};
 enum { S_SETUP, S_TCP, S_TLS, S_MQTT, S_SUB, S_PUB, S_TLSCLOSE, S_TCPCLOSE, S_SERIAL, S_KEYGEN, S_DECAPS, S_FLASH };
 #define STEP(x) (watchdog_hw->scratch[2] = (x))
+// SNOVA signs in one liboqs call (wolfssl_bench/wb_snova.c): 4.4-4.9 s at level V, twice that when it retries, past the
+// 8 s watchdog. A timer feeds the watchdog during the signature, at most 10 times (20 s), so a real hang still resets.
+static repeating_timer_t sn_timer;
+static volatile int sn_feeds;
+static bool sn_feed(repeating_timer_t *) { if (sn_feeds > 0) { sn_feeds--; rp2040.wdt_reset(); } return true; }
+extern "C" void wb_snova_sign_begin(void) { sn_feeds = 10; add_repeating_timer_ms(2000, sn_feed, nullptr, &sn_timer); }
+extern "C" void wb_snova_sign_end(void) { cancel_repeating_timer(&sn_timer); rp2040.wdt_reset(); }
 
 // ---- big painted stack + stack-pointer switch, as liboqs_bench (validated on both boards) ----
 #ifndef MT_STACK_KB  // -DMT_STACK_KB: SNOVA's signing needs 26-92 KB (run_benchmarks.py)
