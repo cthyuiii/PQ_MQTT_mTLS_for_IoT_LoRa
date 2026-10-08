@@ -63,17 +63,6 @@ rp2040,"MQTT KEM exchange, default X25519 (wolfSSL)",,,,,,,,,,,,,,,,,,,,,,,OK (5
 rp2040,Ed25519 (wolfSSL),32,32,64,64,24790,24749,182,4958000,4949800,40.3388,26721,26710,27,5344200,5342000,37.4237,65339,65509,529,13067800,13101800,15.3048,OK,wolfssl
 rp2040,Falcon-512 (wolfSSL),897,1281,666,650,2989542,2972475,573992,597908400,594495000,0.3345,991018,991685,1626,198203600,198337000,1.0091,6938,7001,78,1387600,1400200,144.1338,OK,wolfssl
 rp2040,Falcon-1024 (wolfSSL),1793,2305,1280,1272,7406018,7589549,604262,1481203600,1517909800,0.135,2163584,2163140,3735,432716800,432628000,0.4622,14389,14416,56,2877800,2883200,69.4975,OK,wolfssl
-rp2040,MQTT/TLS RSA-2048 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,16/83 blocks failed: hung during TCP connect after 24 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS RSA-3072 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,17/83 blocks failed: hung during TCP connect after 0 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS ECDSA-P256 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,10/83 blocks failed: hung during TCP connect after 5 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS Ed25519 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,14/83 blocks failed: hung during TCP connect after 4 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS ML-DSA-65 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,16/83 blocks failed: hung during TCP connect after 25 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS ML-DSA-87 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,15/83 blocks failed: hung during TCP connect after 10 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS Falcon-512 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,18/83 blocks failed: hung during TCP connect after 16 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS Falcon-1024 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,13/83 blocks failed: hung during TCP connect after 20 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
-rp2040,MQTT KEM exchange (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (5 MQTT blocks),wolfssl+bearssl+ascon-c
-rp2040,"MQTT KEM exchange, small X25519 (wolfSSL)",,,,,,,,,,,,,,,,,,,,,,,OK (5 MQTT blocks),wolfssl+bearssl+ascon-c
-rp2040,MQTT/TLS ML-DSA-44 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,16/83 blocks failed: hung during TCP connect after 32 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
 rp2040,SNOVA_I_K round 3 (liboqs),376,96,528,528,769513,769418,303,153902600,153883600,1.2995,1465685,1333565,396420,293137000,266713000,0.6823,991181,991174,142,198236200,198234800,1.0089,OK,liboqs-r3
 rp2040,SNOVA_I_B round 3 (liboqs),656,96,388,388,738450,738360,277,147690000,147672000,1.3542,1140362,1140376,113,228072400,228075200,0.8769,854352,854395,124,170870400,170879000,1.1705,OK,liboqs-r3
 rp2040,SNOVA_I_S round 3 (liboqs),1016,96,272,272,807492,807410,321,161498400,161482000,1.2384,1194018,997186,393793,238803600,199437200,0.8375,792713,792719,114,158542600,158543800,1.2615,OK,liboqs-r3
@@ -96,3 +85,23 @@ rp2040,SQIsign-I round 3,83,270,200,200,14053104,13678487,1132041,2810620800,273
 rp2040,MAYO-1 round 3 (liboqs),1456,24,464,464,442178,442107,219,88435600,88421400,2.2615,841744,792844,146716,168348800,158568800,1.188,369454,369458,63,73890800,73891600,2.7067,OK,liboqs-r3
 rp2040,SQIsign-III round 3,129,417,306,306,56730751,60522476,5474807,11346150200,12104495200,0.0176,147221155,149076669,3975015,29444231000,29815333800,0.0068,22423457,22419984,12728,4484691400,4483996800,0.0446,OK,reference
 rp2040,SQIsign-V round 3,169,549,406,406,131391768,131449258,898790,26278353600,26289851600,0.0076,383926868,380166839,9926128,76785373600,76033367800,0.0026,58782451,58326236,771315,11756490200,11665247200,0.017,OK,reference
+rp2040,MQTT/TLS SNOVA_I_B round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+rp2040,MQTT/TLS SNOVA_I_S round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+rp2040,MQTT/TLS SNOVA_III_K round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+rp2040,MQTT/TLS SNOVA_III_B round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+rp2040,MQTT/TLS SNOVA_III_S round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+rp2040,MQTT/TLS SNOVA_V_K round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,2/15 blocks failed: hung during TLS handshake after 0 recorded connections (watchdog reset),liboqs-r3
+rp2040,MQTT/TLS SNOVA_V_B round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,1/15 blocks failed: hung during TLS handshake after 21 recorded connections (watchdog reset),liboqs-r3
+rp2040,MQTT/TLS SNOVA_V_S round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,1/15 blocks failed: hung during TLS handshake after 0 recorded connections (watchdog reset),liboqs-r3
+rp2040,MQTT deployment checks (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (16 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS RSA-2048 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/41 blocks failed: tls handshake failed: error state on socket,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS RSA-3072 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,7/41 blocks failed: hung during TCP connect after 25 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ECDSA-P256 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS Ed25519 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ML-DSA-44 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ML-DSA-65 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS ML-DSA-87 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS Falcon-512 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+rp2040,MQTT/TLS Falcon-1024 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,"5/41 blocks failed: tls handshake failed: Buffer error, output too small or input too big",wolfssl+bearssl+ascon-c
+rp2040,MQTT KEM exchange (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (6 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,"MQTT KEM exchange, small X25519 (wolfSSL)",,,,,,,,,,,,,,,,,,,,,,,OK (6 MQTT blocks),wolfssl+bearssl+ascon-c

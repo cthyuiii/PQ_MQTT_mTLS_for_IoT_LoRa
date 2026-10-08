@@ -1,0 +1,18 @@
+{
+  "board": "rp2040",
+  "fqbn": "rp2040:rp2040:rpipicow",
+  "role": "client",
+  "broker": "192.168.50.132:18830",
+  "broker_local": false,
+  "kems": [
+    "ML-KEM-512",
+    "ML-KEM-768",
+    "ML-KEM-1024",
+    "X25519",
+    "X25519MLKEM768",
+    "HQC-1"
+  ],
+  "exchanges": 50,
+  "warmup": 2,
+  "started": "2026-10-08T07:36:55+0800"
+}

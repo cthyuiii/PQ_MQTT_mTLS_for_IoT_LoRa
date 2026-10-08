@@ -1,0 +1,25 @@
+{
+  "board": "rp2040",
+  "fqbn": "rp2040:rp2040:rpipicow",
+  "role": "client",
+  "broker": "192.168.50.132:18830",
+  "broker_local": false,
+  "groups": [
+    "MLKEM512",
+    "MLKEM768",
+    "MLKEM1024",
+    "X25519MLKEM768",
+    "SecP256r1MLKEM768",
+    "SecP384r1MLKEM1024",
+    "SecP256r1MLKEM512",
+    "x25519_mlkem512",
+    "p384_mlkem768",
+    "p521_mlkem1024",
+    "x448_mlkem768",
+    "X25519",
+    "secp256r1"
+  ],
+  "iterations": 20,
+  "warmup": 2,
+  "started": "2026-10-08T07:22:39+0800"
+}
