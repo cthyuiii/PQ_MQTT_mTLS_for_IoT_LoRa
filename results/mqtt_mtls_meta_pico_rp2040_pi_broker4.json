@@ -1,6 +1,6 @@
 {
   "board": "rp2040",
-  "fqbn": "rp2040:rp2040:rpipicow",
+  "fqbn": "rp2040:rp2040:rpipicow:flash=2097152_65536",
   "role": "client",
   "broker": "192.168.50.132:18830",
   "broker_local": false,
@@ -9,7 +9,7 @@
   "messages": 0,
   "payload_B": 51,
   "wifi": {
-    "rssi": "-21",
+    "rssi": "-13",
     "channel": "10",
     "ip": "192.168.50.235",
     "broker": "192.168.50.132"
@@ -26,7 +26,7 @@
     "groups": "13",
     "kex_iterations": "50",
     "kex_warmup": "2",
-    "blocks": "15"
+    "blocks": "7"
   },
-  "started": "2026-10-08T11:18:19+0800"
+  "started": "2026-10-08T23:09:35+0800"
 }

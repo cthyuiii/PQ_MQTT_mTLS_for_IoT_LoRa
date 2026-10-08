@@ -1,5 +1,5 @@
 {
   "board": "rp2040",
-  "fqbn": "rp2040:rp2040:rpipicow",
+  "fqbn": "rp2040:rp2040:rpipicow:flash=2097152_65536",
   "wolfssl": "5.9.4"
 }

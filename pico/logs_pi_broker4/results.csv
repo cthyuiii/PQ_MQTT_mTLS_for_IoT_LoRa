@@ -2,3 +2,12 @@ Board,Algorithm,pk,sk,sigMax,sig,keygen_mean_us,keygen_median_us,keygen_std_us,k
 rp2040,MQTT/TLS SNOVA_V_K round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
 rp2040,MQTT/TLS SNOVA_V_B round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
 rp2040,MQTT/TLS SNOVA_V_S round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+rp2040,MQTT deployment checks (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (16 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,MQTT deployment checks RSA-2048 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,MQTT deployment checks RSA-3072 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,MQTT deployment checks ECDSA-P256 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,MQTT deployment checks Ed25519 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,MQTT deployment checks ML-DSA-65 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,MQTT deployment checks ML-DSA-87 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
+rp2040,MQTT deployment checks Falcon-512 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,NTP: no time from pool.ntp.org (the deployment checks need it; set NTP_SERVER),wolfssl+bearssl+ascon-c
+rp2040,MQTT deployment checks Falcon-1024 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
