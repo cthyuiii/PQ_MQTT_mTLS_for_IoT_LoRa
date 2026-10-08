@@ -26,3 +26,6 @@ rp2040,DEPLOY_MLDSA87,refuse TLS expired,OK,"tls handshake failed: ASN date erro
 rp2040,DEPLOY_FALCON1024,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1,wrong-name,16111,1419,,,,,,,,,,,,,,,,,,,,,,
 rp2040,DEPLOY_FALCON1024,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1,revoked,15464,1419,,,,,,,,,,,,,,,,,,,,,,
 rp2040,DEPLOY_FALCON1024,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1,expired,15464,1419,,,,,,,,,,,,,,,,,,,,,,
+rp2040,DEPLOY_FALCON512,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1,wrong-name,8538,798,,,,,,,,,,,,,,,,,,,,,,
+rp2040,DEPLOY_FALCON512,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1,revoked,7995,798,,,,,,,,,,,,,,,,,,,,,,
+rp2040,DEPLOY_FALCON512,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1,expired,8205,798,,,,,,,,,,,,,,,,,,,,,,

@@ -1,4 +1,55 @@
-Board,block,status,reason,refused
-pi4,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
-pi4,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
-pi4,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+Board,Library,Signature,block,status,reason,refused
+pi4,OpenSSL,DEPLOY,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
+pi4,OpenSSL,DEPLOY_RSA2048,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY_RSA2048,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY_RSA2048,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY_RSA2048,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY_RSA2048,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY_RSA2048,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
+pi4,OpenSSL,DEPLOY_RSA3072,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY_RSA3072,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY_RSA3072,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY_RSA3072,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY_RSA3072,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY_RSA3072,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
+pi4,OpenSSL,DEPLOY_ECDSAP256,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY_ECDSAP256,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY_ECDSAP256,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY_ECDSAP256,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY_ECDSAP256,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY_ECDSAP256,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
+pi4,OpenSSL,DEPLOY_ED25519,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY_ED25519,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY_ED25519,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY_ED25519,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY_ED25519,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY_ED25519,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
+pi4,OpenSSL,DEPLOY_MLDSA65,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY_MLDSA65,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY_MLDSA65,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY_MLDSA65,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY_MLDSA65,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY_MLDSA65,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
+pi4,OpenSSL,DEPLOY_MLDSA87,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY_MLDSA87,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY_MLDSA87,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY_MLDSA87,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY_MLDSA87,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY_MLDSA87,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
+pi4,OpenSSL,DEPLOY_FALCON512,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY_FALCON512,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY_FALCON512,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY_FALCON512,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY_FALCON512,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY_FALCON512,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
+pi4,OpenSSL,DEPLOY_FALCON1024,refuse TLS wrong-name,OK,tls handshake failed: IP address mismatch,1
+pi4,OpenSSL,DEPLOY_FALCON1024,refuse TLS revoked,OK,tls handshake failed: certificate revoked,1
+pi4,OpenSSL,DEPLOY_FALCON1024,refuse TLS expired,OK,tls handshake failed: certificate has expired,1
+pi4,wolfSSL,DEPLOY_FALCON1024,refuse TLS wrong-name,OK,tls handshake failed: peer ip address mismatch,1
+pi4,wolfSSL,DEPLOY_FALCON1024,refuse TLS revoked,OK,tls handshake failed: CRL Cert revoked,1
+pi4,wolfSSL,DEPLOY_FALCON1024,refuse TLS expired,OK,"tls handshake failed: ASN date error, current date is after expiration",1
