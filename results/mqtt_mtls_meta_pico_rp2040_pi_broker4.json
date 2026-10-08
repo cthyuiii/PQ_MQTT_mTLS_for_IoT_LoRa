@@ -1,0 +1,32 @@
+{
+  "board": "rp2040",
+  "fqbn": "rp2040:rp2040:rpipicow",
+  "role": "client",
+  "broker": "192.168.50.132:18830",
+  "broker_local": false,
+  "group": "X25519MLKEM768",
+  "modes": "plain,tls,mtls",
+  "messages": 0,
+  "payload_B": 51,
+  "wifi": {
+    "rssi": "-21",
+    "channel": "10",
+    "ip": "192.168.50.235",
+    "broker": "192.168.50.132"
+  },
+  "config": {
+    "iterations": "50",
+    "warmup": "5",
+    "pipe_iterations": "3",
+    "messages": "200",
+    "payload_B": "51",
+    "schemes": "2",
+    "sweep_iterations": "20",
+    "sweep_warmup": "2",
+    "groups": "13",
+    "kex_iterations": "50",
+    "kex_warmup": "2",
+    "blocks": "15"
+  },
+  "started": "2026-10-08T09:11:01+0800"
+}

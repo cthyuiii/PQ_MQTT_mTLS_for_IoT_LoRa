@@ -1,0 +1,5 @@
+{
+  "board": "rp2040",
+  "fqbn": "rp2040:rp2040:rpipicow",
+  "wolfssl": "5.9.4"
+}
