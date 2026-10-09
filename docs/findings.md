@@ -1408,6 +1408,33 @@ Pico W's pipeline; no run of the new form yet)
        7 sets, with identical verify times; RSA-3072 +21 ms with identical verify times too (run to run).
      - Not run yet: Falcon-512 again, and the Pi 4's host side (both clients) against the Mac broker.
 
+114. [Pi, Pico] **The CRL checks on every certificate type, done (9 Oct): Falcon-512 on the Pico W, and the Pi 4 against
+     the Mac broker with both clients.**
+     - **Pico W, Falcon-512** (after the NTP timeout): all three refused, CRL (798 B) loaded and verified in 8.2 ms, TLS
+       231 ms unchecked / 233 ms checked. With finding 113, all 9 types on the Pico: one CA-signature check per load,
+       8-98 ms, and nothing per handshake.
+     - **Pi 4: 54 of 54 bad connections refused** (OpenSSL and wolfSSL, 9 sets x wrong IP / revoked / expired); all 72
+       connect blocks OK.
+     - **What a checked handshake costs on the Pi 4**, as the client's verify time (more stable than the handshake over
+       the LAN, which moves by 1-3 ms between blocks):
+
+       | CA | OpenSSL: + per handshake | wolfSSL: + per handshake |
+       |---|---|---|
+       | RSA-2048 | +0.19 ms | +0.00 ms |
+       | Ed25519 | +0.31 ms | +0.00 ms |
+       | RSA-3072 | +0.32 ms | +0.03 ms |
+       | ECDSA-P256 | +0.34 ms | +0.01 ms |
+       | ML-DSA-44 | +0.53 ms (fastest connection; that block ran slower) | +0.02 ms |
+       | ML-DSA-65 | +0.71 ms | +0.01 ms (fastest; that block ran slower) |
+       | ML-DSA-87 | +1.09 ms | +0.01 ms |
+       | Falcon-512 | +1.13 ms | +0.00 ms |
+       | Falcon-1024 | +1.28 ms | +0.00 ms (fastest; that block ran slower) |
+
+       OpenSSL checks the CRL's signature in every handshake, wolfSSL once when it loads the CRL, so its handshakes
+       don't pay for it. Through oqs-provider, a Falcon CRL check costs OpenSSL more than an ML-DSA one.
+     - Three blocks ran slower in all their crypto (the key share 1.8-2x), so the Pi 4 itself was busy then; for those
+       the fastest connection is compared.
+
 ### Sources
 
 All links checked on 28 Sep 2026.
@@ -1468,14 +1495,11 @@ All links checked on 28 Sep 2026.
 43. Classic McEliece team, *ISO* (ISO/IEC 18033-2 amendment, 2026). <https://classic.mceliece.org/iso.html>
 44. NIST, *NIST Selects HQC as Fifth Algorithm for Post-Quantum Encryption* (11 Mar 2025: a draft in about a year, the final standard in 2027). <https://www.nist.gov/news-events/news/2025/03/nist-selects-hqc-fifth-algorithm-post-quantum-encryption>
 
-## In progress (built, waiting for the board run)
+## In progress
 
-The four deployment items (trust-anchor updates, hostname / CRL / NTP checks, FCnt across reboots, the KEM exchange
-inside mTLS) passed on the Mac (finding 97), the Pico W (finding 109) and the Pi (finding 111) on 8 Oct.
-
-- **The deployment checks for every certificate type** (findings 112, 113): tested on the Mac (both host clients, all 9
-  sets) and on the Pico W for 8 of 9 (Falcon-512 lost its NTP sync). Waiting for: Falcon-512 again, the Pi's host run.
-- **The host wolfSSL client's CRL** (finding 112): built and tested on the Mac. Waiting for the Pi's rebuild and run.
+None. The CRL checks for every certificate type and the host wolfSSL client's CRL passed on the Mac (finding 112), the
+Pico W (findings 113, 114) and the Pi 4 (finding 114) on 8-9 Oct, as the four deployment items did before them
+(findings 97, 109, 111).
 
 ## Future implementations (KIV)
 
@@ -1492,20 +1516,21 @@ inside mTLS) passed on the Mac (finding 97), the Pico W (finding 109) and the Pi
 ## Hardening (tracked)
 
 From the security review of 8 Oct (the constrained-device key-management guidance: seeds kept like private keys,
-side-channel protection, hedged ML-DSA). Not implemented yet unless the status says so.
+side-channel protection, hedged ML-DSA). Not implemented yet unless the status says so; *Done so far* lists
+what is already in place, measured or tested in each area.
 
-| Area | Our setup now | Risk | Solution | Status |
-|---|---|---|---|---|
-| Device identity | One client key per certificate set, compiled into every firmware built with it (`mt_secrets.h`) | Every board shares the key; it travels in each image | On-device key generation + CSR to the CA, one identity per device (ML-DSA-44 keygen 25 ms on the Pico) | not started |
-| Key / seed storage | Private key (PKCS#8) and the Wi-Fi password in flash, unencrypted; LoRaWAN keys, FCnt, trust anchor in LittleFS, plain | RP2040 flash is readable over USB BOOTSEL / SWD; no OTP, secure boot or flash encryption | Keep 32 / 64 B seeds (ML-DSA / ML-KEM) and re-derive at boot; seeds in RP2350 OTP or a secure element; LittleFS encrypted under an OTP-derived key | not started |
-| Boot and debug | RP2040: no secure boot, SWD always on | A changed image or a debugger reads / alters keys | RP2350 secure boot (signed images, boot key in OTP), debug locked via OTP; it raises the cost (the RP2350 hacking challenge was won by fault injection), a secure element for high-value keys | not started (pending Pico 2 W) |
-| Randomness | `pico_rand` (128-bit software PRNG, ring oscillator + timer entropy) used directly as wolfSSL's RNG (`CUSTOM_RAND_GENERATE_BLOCK`); liboqs the same | ML-KEM / X25519 keys, TLS randoms and the ML-DSA hedge rest on it; no health tests | wolfSSL's Hash_DRBG (SP 800-90A) seeded from the hardware (`CUSTOM_RAND_GENERATE_SEED`, SP 800-90B seed tests); RP2350 TRNG; liboqs through the same DRBG | not started |
-| Constant-time code | wolfSSL ECC / RSA timing resistance on; BearSSL `br_aes_ct` for LoRaWAN AES; the Pico's MIC check uses `memcmp` (`lora_aead.h`), the host `CRYPTO_memcmp` | Timing of a MIC check leaks how many bytes matched (a forgery aid for frames from the air) | Constant-time compare on the Pico; check with a timing test (dudect-style) | not started |
-| Signing (side channels, faults) | ML-DSA hedged (wolfSSL draws 32 random bytes per signature); Falcon (float emulation) and SNOVA (memory-optimised) sign on the device in their runs | Falcon signing has published power / EM attacks; the SNOVA code is unprotected; a glitched lattice signature can leak the key | ML-DSA (hedged) for device signing, Falcon verify-only; verify-after-sign (+27 ms per ML-DSA-44 signature); masked code or a secure element where physical attacks matter | hedging in place; rest not started |
-| Power / EM side channels | No masking or shuffling in any device code (wolfSSL, liboqs, BearSSL); ephemeral key exchange keys (one per handshake) | The long-term signing key (mTLS, signed KEM exchange) can be targeted with many traces; SNOVA and Falcon signing most of all | Masked implementations or a secure element for the signing key; fewer signatures (resumption); Falcon verify-only | not started |
-| Long-term key use | Full handshake on every connection (`NO_SESSION_CACHE`, no tickets) | Each connection signs with the device key: more exposure, and 3-12 s per SNOVA mTLS handshake | TLS 1.3 resumption with a fresh key exchange (`psk_dhe_ke`); protect the tickets | not started |
-| Trust anchor at rest | Signed update verified when it arrives (finding 109), then the certificate is kept | A flash edit could swap the root on a device that boots from it | Keep the signed bundle; re-check its ML-DSA-44 signature at each boot (33 ms) | not started |
-| Revocation | Device: the broker's certificate against its CA's CRL, for every certificate type (deployment runs: host OpenSSL + wolfSSL, the Pico); broker: no CRL for device certificates | A revoked device certificate is still accepted by the broker | Mosquitto `crlfile` for ClientCA; short-lived device certificates (renewed through the CSR path) | device side built (finding 112, Mac-tested); broker side not started |
-| Trust-anchor update format | `PQTA` \| CA length \| CA \| ML-DSA-44 signature: no version, no expiry | An old signed update can be replayed: a rollback to an earlier (perhaps compromised) root | A version and an expiry inside the signed bytes; keep the highest version seen in flash / OTP and refuse lower ones | not started |
-| Update key | `certs/DEPLOY/update.key` made next to the CA, on the broker machine | Whoever holds it can install any root on every device | Keep it offline (HSM or an air-gapped machine), apart from the CA; a second key in firmware for recovery | not started |
+| Area | Our setup now | Risk | Solution | Done so far | Status |
+|---|---|---|---|---|---|
+| Device identity | One client key per certificate set, compiled into every firmware built with it (`mt_secrets.h`) | Every board shares the key; it travels in each image | On-device key generation + CSR to the CA, one identity per device (ML-DSA-44 keygen 25 ms on the Pico) | mTLS device certificates for all 18 certificate types, 50 connections each on the Pico W; the key and certificate are written per build into `mt_secrets.h` in the build folder, never committed; on-device ML-DSA-44 keygen measured (25 ms) | not started |
+| Key / seed storage | Private key (PKCS#8) and the Wi-Fi password in flash, unencrypted; LoRaWAN keys, FCnt, trust anchor in LittleFS, plain | RP2040 flash is readable over USB BOOTSEL / SWD; no OTP, secure boot or flash encryption | Keep 32 / 64 B seeds (ML-DSA / ML-KEM) and re-derive at boot; seeds in RP2350 OTP or a secure element; LittleFS encrypted under an OTP-derived key | Wi-Fi password and keys only in the generated build header, committed files checked for `WIFI_PASS` / `WIFI_SSID` before pushes; FCnt reserved ahead in LittleFS, so a reboot never reuses a counter (finding 109) | not started |
+| Boot and debug | RP2040: no secure boot, SWD always on | A changed image or a debugger reads / alters keys | RP2350 secure boot (signed images, boot key in OTP), debug locked via OTP; it raises the cost (the RP2350 hacking challenge was won by fault injection), a secure element for high-value keys | Options identified: RP2350 secure boot + OTP debug lock; ESP32 Secure Boot v2 + flash encryption (planned port, 9 Oct) | not started (pending Pico 2 W) |
+| Randomness | `pico_rand` (128-bit software PRNG, ring oscillator + timer entropy) used directly as wolfSSL's RNG (`CUSTOM_RAND_GENERATE_BLOCK`); liboqs the same | ML-KEM / X25519 keys, TLS randoms and the ML-DSA hedge rest on it; no health tests | wolfSSL's Hash_DRBG (SP 800-90A) seeded from the hardware (`CUSTOM_RAND_GENERATE_SEED`, SP 800-90B seed tests); RP2350 TRNG; liboqs through the same DRBG | RNG path traced in the 8 Oct review; SNOVA's liboqs calls draw from wolfSSL's RNG (`wb_snova.c`), not a second source | not started |
+| Constant-time code | wolfSSL ECC / RSA timing resistance on; BearSSL `br_aes_ct` for LoRaWAN AES; the Pico's MIC check uses `memcmp` (`lora_aead.h`), the host `CRYPTO_memcmp` | Timing of a MIC check leaks how many bytes matched (a forgery aid for frames from the air) | Constant-time compare on the Pico; check with a timing test (dudect-style) | `TFM_TIMING_RESISTANT`, `ECC_TIMING_RESISTANT`, `WC_RSA_BLINDING` set (`wolfssl_user_settings.h`); constant-time AES (`br_aes_ct`) for LoRaWAN; host MIC check constant-time; the Pico's `memcmp` located (`lora_aead.h`) | not started |
+| Signing (side channels, faults) | ML-DSA hedged (wolfSSL draws 32 random bytes per signature); Falcon (float emulation) and SNOVA (memory-optimised) sign on the device in their runs | Falcon signing has published power / EM attacks; the SNOVA code is unprotected; a glitched lattice signature can leak the key | ML-DSA (hedged) for device signing, Falcon verify-only; verify-after-sign (+27 ms per ML-DSA-44 signature); masked code or a secure element where physical attacks matter | ML-DSA hedging confirmed in wolfSSL's code (8 Oct); the device's signing cost per mTLS handshake measured for every type (`hs_sign`: Falcon-512 1,001 ms, RSA-2048 973 ms, ML-DSA-44 139 ms) | hedging in place; rest not started |
+| Power / EM side channels | No masking or shuffling in any device code (wolfSSL, liboqs, BearSSL); ephemeral key exchange keys (one per handshake) | The long-term signing key (mTLS, signed KEM exchange) can be targeted with many traces; SNOVA and Falcon signing most of all | Masked implementations or a secure element for the signing key; fewer signatures (resumption); Falcon verify-only | Fresh key-exchange keys in every handshake (X25519MLKEM768); the long-term keys on the device listed (mTLS key, signed KEM exchange key) | not started |
+| Long-term key use | Full handshake on every connection (`NO_SESSION_CACHE`, no tickets) | Each connection signs with the device key: more exposure, and 3-12 s per SNOVA mTLS handshake | TLS 1.3 resumption with a fresh key exchange (`psk_dhe_ke`); protect the tickets | Signing cost per handshake measured for all 18 types, which sizes what resumption saves | not started |
+| Trust anchor at rest | Signed update verified when it arrives (finding 109), then the certificate is kept | A flash edit could swap the root on a device that boots from it | Keep the signed bundle; re-check its ML-DSA-44 signature at each boot (33 ms) | The update is verified (ML-DSA-44, 33 ms) before it is stored; refused under the old root, then reconnected under the new one (Pico W 109, Pi 4 111) | not started |
+| Revocation | Device: the broker's certificate against its CA's CRL, for every certificate type (deployment runs: host OpenSSL + wolfSSL, the Pico); broker: no CRL for device certificates | A revoked device certificate is still accepted by the broker | Mosquitto `crlfile` for ClientCA; short-lived device certificates (renewed through the CSR path) | A CRL per CA for all 9 types; revoked, expired and wrongly named broker certificates refused (Mac, Pico W, Pi 4: 54 / 54); CRL cost measured (Pico 8-98 ms per load; OpenSSL +0.19-1.28 ms per handshake) | device side done (findings 112-114: Mac, Pico W, Pi 4); broker side not started |
+| Trust-anchor update format | `PQTA` \| CA length \| CA \| ML-DSA-44 signature: no version, no expiry | An old signed update can be replayed: a rollback to an earlier (perhaps compromised) root | A version and an expiry inside the signed bytes; keep the highest version seen in flash / OTP and refuse lower ones | Signed format with a length field; a changed byte in the length, the CA or the signature is refused (`deploy_host_test`) | not started |
+| Update key | `certs/DEPLOY/update.key` made next to the CA, on the broker machine | Whoever holds it can install any root on every device | Keep it offline (HSM or an air-gapped machine), apart from the CA; a second key in firmware for recovery | A separate ML-DSA-44 update key, not the CA's; the device holds only its public half (`UPD_PUB`) | not started |
 
