@@ -144,9 +144,32 @@ Their TLS stacks are not OpenSSL + oqs-provider (checked 9 Oct in upstream `Carg
 
 ## Order
 
-1. Standard 128-bit `lorawan11` uplinks accepted by ChirpStack. Done when the device's events show the right 51-byte reading.
-2. Option B (`lorawan11_e2e`): the application decrypts the inner layer.
-3. TLS tests on ChirpStack's MQTT links (section 5).
-4. ChirpStack delay (section 7).
-5. Downlinks.
-6. OTAA join (KIV), with the derivation from section 6.
+Machines: **Mac** = ChirpStack, Postgres, Redis and ChirpStack's Mosquitto (on 1884: the Mac's own Mosquitto has 1883).
+**Pi 4** = our PQ broker (`--serve-broker`, as for the Pico), the virtual gateway and the Gateway Bridge (UDP 1700 stays
+inside the Pi, as on a real gateway). **Device** = a host client on the Mac first, then the Pico W.
+
+1. [ ] ChirpStack up on the Mac (README section 0.4), Gateway Bridge on the Pi (`scripts/setup_gateway_pi.sh`).
+   Built 9 Oct, not run yet.
+   Done when: the UI opens and the bridge's MQTT connection shows in ChirpStack's broker log.
+2. [ ] Virtual gateway `network/virtual_gateway.py` (stdlib): stdin frames → `PUSH_DATA` (channel 0, DR0), `PULL_DATA`
+   keep-alive, logs `PUSH_ACK` / `PULL_RESP`, prints the send time per FCnt; `--selftest` checks the packet layout.
+   Done when: the gateway shows online in ChirpStack. Built 9 Oct: `--selftest` passes, and a loopback run against a
+   stand-in bridge got the frame, stats, keep-alive and a downlink acknowledgement. Not yet run against the real bridge.
+3. [ ] Smoke test with a known-good frame: the published LoRaWAN 1.0 uplink from the `app_aead.c` self-test
+   (DevAddr 49BE7DF1, FCnt 2, payload "test", its keys) to a temporary LoRaWAN 1.0 ABP device.
+   Done when: the event shows "test". Proves gateway → bridge → ChirpStack before our 1.1 code is involved.
+4. [ ] Fixed device on the host client (`mqtt_tls_timer.c`): `DEV_ADDR` replaces the per-process DevAddr; with it set,
+   the FCnt is kept in a file and reserved ahead (as the Pico does in flash), so a restart never reuses a counter under
+   the same keys and ChirpStack never sees it go back. Check: two runs in a row continue the counter;
+   `aead_host_test` still byte-identical.
+5. [ ] Frames out of the PQ broker: `SUB=pqc/pipe/#` watch mode prints the raw frame (hex) per message with `RAW=1`,
+   piped into the virtual gateway. It reuses the client's PQ TLS and our certificates: no MQTT library in Python.
+6. [ ] LoRaWAN 1.1 end to end with the host client: a 1.1 ABP device with the section 3 key mapping.
+   Done when: the events show the 51-byte readings (`{"seq":n,...}`) in order, with no MIC or FCnt errors.
+7. [ ] The Pico W as the device: register its DevAddr and keys (kept in flash by the deployment firmware).
+8. [ ] Option B, `lorawan11_e2e`: `app_aead.c`, `lora_aead.h`, `aead_host_test`, plus the application side that
+   decrypts the event's `data` (OpenSSL, no new Python dependency).
+9. [ ] PQ TLS on Gateway Bridge → broker and ChirpStack → broker (section 5).
+10. [ ] ChirpStack delay (section 7): the virtual gateway's send time to the application's receive time, on the Pi's clock.
+11. [ ] Downlinks: `PULL_RESP` → `TX_ACK`, delivered to the device through the PQ broker.
+12. [ ] OTAA join (KIV), with the derivation from section 6.

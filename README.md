@@ -9,6 +9,11 @@ bench measures and with which code, section 0.3 describes the pipeline and LoRaW
 Pico, and how it is called: [section 0](docs/how_it_works.md#0-library-map-what-does-each-job-where-and-how-it-is-called)),
 the test plan per device, every stage's function calls in order, and how LoRaWAN, AES, Ascon, GCM and CMAC relate. What the benches found is in [docs/findings.md](docs/findings.md).
 
+**This branch: `LoRa_1.1_implementation`.** It carries `main`'s benchmark suite unchanged and adds the LoRaWAN 1.1
+network side: a ChirpStack network server fed by a virtual gateway (no radio), and an AES-256 layer inside the
+LoRaWAN payload that passes through ChirpStack and only the application decrypts. The steps, and which of them are
+built, are in [docs/pending.md](docs/pending.md). The benchmark suite on its own is on `main`.
+
 ```text
 PQ_MQTT_mTLS_for_IoT_LoRa/
 ├── run_all.sh                     ← ONE command for every bench (Mac / Pi; + Pico when plugged in)
@@ -21,7 +26,8 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   ├── gen_certs.sh               ← CA + server + client certificate per signature → certs/<SIG>/; --deploy <IP>:
 │   │                                certs/DEPLOY (CRL, revoked / expired certs, the signed trust-anchor update);
 │   │                                DEPLOY_SIGS=all: + certs/DEPLOY_<SIG>, the same checks for the other 8 types
-│   └── collate_results.py         ← every result file → results/all_results.csv
+│   ├── collate_results.py         ← every result file → results/all_results.csv
+│   └── setup_gateway_pi.sh        ← Pi: ChirpStack Gateway Bridge in Docker (UDP 127.0.0.1:1700 → ChirpStack's broker)
 ├── signatures/                    ← Stage 1: keygen / sign / verify
 │   ├── sig_speed.c                ← one C bench for OpenSSL, liboqs (-DSIG_LIBOQS) and wolfSSL (-DSIG_WOLFSSL)
 │   ├── to_customer_form.py        ← the customer's table (stage1_customer_form_<tag>.csv)
@@ -35,6 +41,7 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   ├── mqtt_bench.py              ← Stage 2 + pipeline + KEM exchange driver (one Mosquitto per certificate)
 │   ├── tls_sweep.sh               ← TLS / mTLS key-exchange sweep: MQTT connections to the broker's listeners
 │   ├── provenance.py              ← board name + versions record
+│   ├── virtual_gateway.py         ← virtual LoRa gateway: frames → Semtech UDP → Gateway Bridge (no radio)
 │   └── build_ascon.sh, build_timer.sh, build_wolfssl.sh
 ├── pico/                          ← Pico W (RP2040) / Pico 2 W (RP2350), flashed from the Mac
 │   ├── run_benchmarks.py          ← compile, flash, read serial, merge into logs/results.csv
@@ -102,7 +109,7 @@ Held back on purpose:
 **MacBook (Apple Silicon)**
 
 ```bash
-git clone https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git && cd PQ_MQTT_mTLS_for_IoT_LoRa
+git clone -b LoRa_1.1_implementation https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git && cd PQ_MQTT_mTLS_for_IoT_LoRa
 brew install python@3.14 openssl@3 cmake mosquitto autoconf automake libtool arduino-cli qemu
 # the venv lives in .venv.nosync: iCloud Drive skips *.nosync (it had corrupted a synced .venv); .venv links to it
 python3.14 -m venv .venv.nosync && ln -sfn .venv.nosync .venv && source .venv/bin/activate
@@ -124,7 +131,7 @@ sudo -E ./run_all.sh --no-deps --only openssl     # optional: real cycle counts 
 
 ```bash
 sudo apt update && sudo apt install -y git python3-venv build-essential cmake libssl-dev
-git clone https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git && cd PQ_MQTT_mTLS_for_IoT_LoRa
+git clone -b LoRa_1.1_implementation https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git && cd PQ_MQTT_mTLS_for_IoT_LoRa
 python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 C=~/.cache/iot-pqc && git clone -q --depth 1 --branch 0.16.0 https://github.com/open-quantum-safe/liboqs.git $C/liboqs-src
 cmake -S $C/liboqs-src -B $C/liboqs-build-host -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
@@ -473,6 +480,34 @@ The code is checked against a published LoRaWAN 1.0 uplink (`40F17DBE49…2B11FF
 sending, and refuse to send if one fails. The Pico's BearSSL / ascon-c version produces the same frames as the
 host's OpenSSL / ascon-c version, byte for byte, for every scheme in both directions
 (`pico/tests/aead_host_test`, 48 frames).
+
+## 0.4  Simulated LoRaWAN network: ChirpStack without a radio
+
+```text
+device ─ PQ mTLS ─► our Mosquitto ─► virtual_gateway.py ─ UDP ─► Gateway Bridge ─ MQTT ─► ChirpStack ─► application
+(Mac host / Pico W)  (Pi)             (Pi)                         (Pi, Docker)            (Mac, Docker)
+```
+
+The Mac runs ChirpStack from [chirpstack-docker](https://github.com/chirpstack/chirpstack-docker) (outside iCloud),
+with its Mosquitto on 1884 because the Mac's own Mosquitto has 1883. The Gateway Bridge runs on the Pi instead:
+
+```bash
+# Mac (Docker Desktop running)
+git clone https://github.com/chirpstack/chirpstack-docker.git ~/chirpstack-docker && cd ~/chirpstack-docker
+sed -i '' 's/"1883:1883"/"1884:1883"/' docker-compose.yml
+docker compose pull chirpstack chirpstack-rest-api postgres redis mosquitto
+docker compose up -d chirpstack chirpstack-rest-api postgres redis mosquitto    # UI: http://<mac>:8080
+docker compose images                                                          # versions, for the record
+
+# Pi, from the repo root: the Gateway Bridge, then the virtual gateway's own check
+./scripts/setup_gateway_pi.sh <mac-ip> as923
+python3 network/virtual_gateway.py --selftest
+```
+
+The region (`as923` or `eu868`) must be the same in `setup_gateway_pi.sh`, `virtual_gateway.py --region` and the
+ChirpStack device profile. `virtual_gateway.py` reports every frame on channel 0 at DR0, which the LoRaWAN 1.1
+uplink MIC in `app_aead.c` assumes. ChirpStack drops frames from gateways it doesn't know: register the gateway ID
+(`--eui`, default `0102030405060708`) first. The steps after this one are in [docs/pending.md](docs/pending.md).
 
 ---
 
@@ -858,7 +893,7 @@ wrapper around mldsa-native, ML-DSA-87 only; `mldsa_bench` (ML-DSA-87) already r
 | Req | Covered by |
 |---|---|
 | R1 MQTT over mTLS with PQ certs on a Pi/VM | `mqtt_bench.py` + `gen_certs.sh` (server + client certs per algorithm) |
-| R2 / R3 / R4 / R8 LoRaWAN split, setup, ChirpStack, shared architecture | Not benchmark code: team/infrastructure work on the test bench |
+| R2 / R3 / R4 / R8 LoRaWAN split, setup, ChirpStack, shared architecture | ChirpStack network side: this branch, steps in `docs/pending.md`. LoRaWAN split, setup and shared architecture: team / infrastructure work on the test bench |
 | R5 all algorithms, customer's form | `stage1_customer_form_$TAG.csv` (Pico columns); Stage 2 sweeps every cert type |
 | R6 AES and Ascon | `pipeline_summary_$TAG.csv` and `pipeline_summary_pico_<board>.csv`: real LoRaWAN 1.0.x / 1.1 vs AES-GCM vs Ascon on the same frame, uplink and downlink, end to end through the broker (host and Pico W) |
 | R7 versions | `versions_$TAG.json` and every `*_meta_$TAG.json`, plus a `Library` column per row |
