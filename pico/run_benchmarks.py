@@ -164,6 +164,11 @@ SKETCHES = [
                             ("ECDSA-P256", "ECDSA_P256", "ECDSAP256"), ("Ed25519", "ED25519", "ED25519"),
                             ("ML-DSA-65", "MLDSA65", "MLDSA65"), ("ML-DSA-87", "MLDSA87", "MLDSA87"),
                             ("Falcon-512", "FALCON512", "FALCON512"), ("Falcon-1024", "FALCON1024", "FALCON1024"))],
+    # one fixed LoRaWAN device for ChirpStack (branch LoRa_1.1_implementation, docs/pending.md step 7): APP_KEYS (192 hex)
+    # and DEV_ADDR from the environment, FCnt in flash (LittleFS), lorawan11 + lorawan11_e2e, few messages (the virtual
+    # gateway hands ChirpStack one frame a second). Run it with its own --tag: its rows are not benchmark rows.
+    S("mqtt_tls_bench", "MQTT ChirpStack device ML-DSA-44 (wolfSSL)", 600, BOTH, 0,
+      flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_LORA_FIXED -DMT_NO_SWEEP -DMT_ITERS=5 -DMT_PIPE_ITERS=1 -DMT_MSGS=5"),
     # --- liboqs 0.16 bare-metal (portable C): the same code the Pi/Mac run via oqs-provider and the host liboqs stage.
     #     One algorithm per firmware (-DLB_ALG=<liboqs id>); reports peak stack per op (painted big stack,
     #     -DLB_STACK_KB, default 160 KB RP2040 / 400 KB RP2350).
@@ -275,9 +280,10 @@ def cert_dir(sig):
     from mqtt_bench import SIGS_R3
     return (os.path.join(ROOT, "certs", "round3", sig), MQTT_R3_PORT) if sig in SIGS_R3 else (os.path.join(ROOT, "certs", sig), MQTT_BASE_PORT)
 
-def mqtt_secrets(sig, gen):
+def mqtt_secrets(sig, gen, lora=False):
     """mt_secrets.h in gen/: Wi-Fi + broker from the environment, certs/<sig>'s CA, client cert and key as DER,
-    the broker's ports for sig. Returns why it can't (a status), else None. Deleted after the compile."""
+    the broker's ports for sig; lora (-DMT_LORA_FIXED): the device's DevAddr and keys from DEV_ADDR / APP_KEYS.
+    Returns why it can't (a status), else None. Deleted after the compile."""
     d, base = cert_dir(sig)
     from mqtt_bench import port_of
     if not all(os.path.exists(os.path.join(d, f)) for f in ("CA.crt", "client.crt", "client.key")):
@@ -302,6 +308,17 @@ def mqtt_secrets(sig, gen):
             return f"NO_CERTS: {d} (gen_certs.sh --deploy <broker IP>) and certs/ECDSAP256 (the old root)"
         blobs += [("SRV_DER", der("server.crt")), ("OLD_CA_DER", der(old)),
                   ("UPD_PUB", open(os.path.join(d, "update.pub"), "rb").read())]
+    if lora:  # DEV_ADDR as ChirpStack shows it (big-endian) -> wire order; APP_KEYS = app 32 | nwk 16 | nwk2 16 | e2e 32
+        k, d = os.environ.get("APP_KEYS", ""), os.environ.get("DEV_ADDR", "")
+        if not (re.fullmatch(r"[0-9a-fA-F]{192}", k) and re.fullmatch(r"[0-9a-fA-F]{8}", d)):
+            return "NO_LORA_KEYS: export APP_KEYS (192 hex) and DEV_ADDR (8 hex), the device registered in ChirpStack"
+        blobs += [("LORA_KEYS", bytes.fromhex(k)), ("LORA_DEVADDR", bytes.fromhex(d)[::-1])]
+        air = os.environ.get("AIR", "")  # host:port of virtual_gateway.py --air: the uplinks as UDP datagrams too
+        if air:
+            host, _, port = air.rpartition(":")
+            if not (host and port.isdigit()):
+                return "BAD_AIR: AIR=<gateway ip>:<port>, e.g. 192.168.50.132:1680"
+            out += [f"#define AIR_HOST {json.dumps(host)}", f"#define AIR_PORT {port}"]
     for name, b in blobs:
         out.append(f"static const unsigned char {name}[] = {{{','.join(map(str, b))}}};")
     os.makedirs(gen, exist_ok=True)
@@ -794,6 +811,8 @@ def main():
         missing = [k for k in MQTT_ENV if not os.environ.get(k)] if s["folder"] == "mqtt_tls_bench" else []
         if s["boards"] and missing:  # exported in THIS shell; BROKER = the ./run_all.sh --serve-broker machine
             gated.append((s, "missing from the environment: " + ", ".join(missing))); continue
+        if "-DMT_LORA_FIXED" in s.get("flags", "") and not (os.environ.get("APP_KEYS") and os.environ.get("DEV_ADDR")):
+            gated.append((s, "the ChirpStack device: export APP_KEYS and DEV_ADDR (README section 0.4)")); continue
         if family not in s["boards"]:
             gated.append((s, s["note"] or f"won't fit {family} ({s['ws_kb']} KB > {board['sram_kb']} KB SRAM)")); continue
         if s["tier"] == "candidate" and not args.candidates:
@@ -865,12 +884,12 @@ def main():
         flags = s.get("flags", "")
         if wifi:  # the W board (Wi-Fi) + a generated header with the credentials and certificates
             sig = re.search(r"-DMT_SIG=(\w+)", flags)[1]
-            why = mqtt_secrets(sig, os.path.join(outdir, "gen"))
+            why = mqtt_secrets(sig, os.path.join(outdir, "gen"), lora="-DMT_LORA_FIXED" in flags)
             if why:
                 print("    !!", why); row(label, lib=lib_of(s), status=why); continue
             flags += f" -I{os.path.join(outdir, 'gen')}"
         build_fqbn = re.sub(r"^(rp2040:rp2040:rpipico2?)\b", r"\1w", fqbn) if wifi else fqbn
-        if "-DMT_DEPLOY" in flags:  # LittleFS (trust anchor, LoRaWAN state): a 64 KB flash filesystem
+        if "-DMT_DEPLOY" in flags or "-DMT_LORA_FIXED" in flags:  # LittleFS (trust anchor, LoRaWAN state): 64 KB
             build_fqbn += ":flash=" + ("4194304_65536" if "rpipico2" in build_fqbn else "2097152_65536")
         cmd = ["arduino-cli","compile","--fqbn",build_fqbn,"--output-dir",outdir]
         if flags:

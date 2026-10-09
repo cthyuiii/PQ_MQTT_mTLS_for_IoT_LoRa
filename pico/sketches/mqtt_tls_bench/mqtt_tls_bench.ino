@@ -50,9 +50,16 @@
 //   and refuse blocks only, for any certificate type (-DWB_<ALG>): the trust-anchor update, the signed KEM exchange
 //   and FCnt in flash stay in the ML-DSA-44 firmware. The refuse lines also give the CRL's load time (crl_load_us:
 //   wolfSSL verifies the CRL's signature with the CA when it is loaded, once per block's context) and its size.
+//   -DMT_LORA_FIXED (APP_KEYS, 192 hex, and DEV_ADDR in the environment: run_benchmarks.py writes them into mt_secrets.h):
+//   one fixed LoRaWAN device that a network server (ChirpStack) knows, instead of random keys and DevAddr per boot. Its
+//   FCnt is kept in flash as the deployment firmware's (reserved FCNT_GAP ahead), and the pipeline sends the frames
+//   ChirpStack accepts: lorawan11 and lorawan11_e2e. Uplinks reach ChirpStack through network/virtual_gateway.py:
+//   with AIR=<host:port> in the environment each uplink also goes there as one UDP datagram (the "air", --air), after
+//   its message is timed; without it the gateway reads them from the broker (watch mode, RAW=1).
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <wolfssl.h>
 #include <wolfssl/ssl.h>
 #include <hardware/structs/watchdog.h>  // scratch registers survive a watchdog reboot: which block hung
@@ -70,6 +77,12 @@
 #endif
 #include <LittleFS.h>
 #include "deploy_wolf.h"
+#endif
+#if defined(MT_DEPLOY_FULL) || defined(MT_LORA_FIXED)
+#define MT_LORA_FLASH  // the LoRaWAN state (keys, DevAddr, FCnt reservation) in flash
+#ifndef MT_DEPLOY
+#include <LittleFS.h>
+#endif
 #endif
 #include <wolfssl/wolfcrypt/hash.h>
 #ifdef CURVE25519_SMALL  // wolfSSL's small, slow Curve25519 code (-DWB_SMALL_25519, the A/B); default: its normal code
@@ -142,12 +155,14 @@ static const char *const REFUSE[] = {"wrong-name", "revoked", "expired"};
 #define WRONG_NAME "192.0.2.1"  // TEST-NET-1: never the broker
 #endif
 // connect x 3 modes, pipeline x 3 modes x the PIPE schemes x up / down, then sweep x TLS / mTLS x every group
-// the pipeline's schemes (LA[] indices): LoRaWAN 1.1, with AES-128 and with 256-bit keys (mqtt_bench.AEADS_DEFAULT);
-// -DMT_ALL_SCHEMES: all ten
+// the pipeline's schemes (LA[] indices): LoRaWAN 1.1, with AES-128, with 256-bit keys, and around an AES-256 layer
+// (mqtt_bench.AEADS_DEFAULT); -DMT_ALL_SCHEMES: all eleven; -DMT_LORA_FIXED: the two a network server accepts
 #ifdef MT_ALL_SCHEMES
-static const int PIPE[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+static const int PIPE[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+#elif defined(MT_LORA_FIXED)
+static const int PIPE[] = {2, 10};  // lorawan11, lorawan11_e2e
 #else
-static const int PIPE[] = {2, 4};  // lorawan11, lorawan11_256
+static const int PIPE[] = {2, 4, 10};  // lorawan11, lorawan11_256, lorawan11_e2e
 #endif
 enum { NP = sizeof PIPE / sizeof *PIPE };
 #ifdef MT_KEX_ONLY
@@ -374,7 +389,10 @@ static bool subscribe(Conn *c, const char *filter) {  // QoS 0, packet id 1, wai
   return io_write(c, pkt, n) == n && read_packet(c, &type, body, sizeof body) >= 0 && type == 0x90;
 }
 
-#ifdef MT_DEPLOY_FULL
+#ifdef MT_LORA_FLASH
+#ifndef FCNT_GAP
+#define FCNT_GAP 64
+#endif
 // the LoRaWAN state in flash (/lora.bin): DevAddr, keys and an FCnt reservation. Frames below the reservation may
 // have been sent; the board saves a new one FCNT_GAP frames ahead before it reaches it, so after any reboot or crash
 // FCnt resumes at the saved value and never repeats under these keys (one flash write per FCNT_GAP frames).
@@ -403,6 +421,9 @@ static bool lora_load() {  // true: keys, DevAddr and FCnt (= the saved reservat
 }
 #endif
 
+#if defined(MT_LORA_FIXED) && defined(AIR_HOST)
+static WiFiUDP air;  // the uplink as a radio would send it: one datagram to the virtual gateway
+#endif
 // the pipeline: seal a reading with the block's scheme (lora_aead.h; the frame, FCnt and direction as the host's
 // app_seal), PUBLISH it, wait for the broker to deliver it back, then verify + decrypt it (app_open)
 static char topic[32];
@@ -421,7 +442,7 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     int sl = snprintf(s, sizeof s, "{\"seq\":%lu,\"temp_c\":21.5,\"rh\":48}", (unsigned long)(fcnt + 1));
     memset(pt, ' ', MT_PAYLOAD);
     memcpy(pt, s, sl < MT_PAYLOAD ? sl : MT_PAYLOAD);
-#ifdef MT_DEPLOY_FULL
+#ifdef MT_LORA_FLASH
     if (fcnt_persist && fcnt + 1 >= fcnt_reserved) {  // reserve the next FCNT_GAP frames before sending this one
       STEP(S_FLASH);
       uint32_t s0 = micros();
@@ -449,6 +470,9 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     if (ok) { memcpy(frame, body + off, fl); ok = sc.open(MT_PAYLOAD) == 0 && !memcmp(out, pt, MT_PAYLOAD); }
     uint32_t t3 = micros();
     if (!ok) { snprintf(err, sizeof err, "payload verification failed: %s", sc.name); return err; }
+#if defined(MT_LORA_FIXED) && defined(AIR_HOST)
+    if (!down && air.beginPacket(AIR_HOST, AIR_PORT)) { air.write(frame, fl); air.endPacket(); }  // untimed
+#endif
     if (m == 0) first = micros() - t_conn;
     STEP(S_SERIAL);
     if (report) Serial.printf("msg,%d,%d,%lu,%lu,%lu,%lu,%lu\n", iter, m, (unsigned long)(t1 - t0),
@@ -879,8 +903,17 @@ void setup() {
                 (int)N_GROUPS, MT_KEX_ITERS, MT_KEX_WARMUP, (int)N_BLOCKS);
   kat_ok = la_kat();  // before the session keys: the vectors bring their own
   Serial.printf("#kat LoRaWAN / AES-CMAC / Ascon known-answer checks: %s\n", kat_ok ? "OK" : "FAIL");
-#ifdef MT_DEPLOY_FULL  // keys, DevAddr and FCnt from flash; new ones (saved) on the first boot
+#ifdef MT_LORA_FLASH  // keys, DevAddr and FCnt from flash; new ones (saved) on the first boot
   bool fs = LittleFS.begin(), restored = fs && lora_load();
+  for (int i = 0; i < 32; i++) k_e2e[i] = rp2040.hwrand32();
+#ifdef MT_LORA_FIXED  // the build's device (mt_secrets.h); FCnt goes on from flash only if flash holds the same device
+  restored = restored && !memcmp(devaddr, LORA_DEVADDR, 4) && !memcmp(k_app, LORA_KEYS, 32) &&
+             !memcmp(k_nwk, LORA_KEYS + 32, 16) && !memcmp(k_nwk2, LORA_KEYS + 48, 16);
+  memcpy(devaddr, LORA_DEVADDR, 4); memcpy(k_app, LORA_KEYS, 32); memcpy(k_nwk, LORA_KEYS + 32, 16);
+  memcpy(k_nwk2, LORA_KEYS + 48, 16); memcpy(k_e2e, LORA_KEYS + 64, 32);
+  fcnt_persist = true;  // every pipeline block: a network server must never see FCnt go back
+  if (!restored) fcnt = 0;
+#else
   if (!restored) {
     for (int i = 0; i < 32; i++) k_app[i] = rp2040.hwrand32();
     for (int i = 0; i < 16; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
@@ -888,12 +921,14 @@ void setup() {
     fcnt = 0;
   }
   boot_fcnt = fcnt;
+#endif
   bool saved = fs && lora_save(fcnt + FCNT_GAP);
   Serial.printf("#lora %s: devaddr=%02x%02x%02x%02x fcnt=%lu reserved=%lu%s\n", restored ? "restored from flash" : "new keys",
                 devaddr[0], devaddr[1], devaddr[2], devaddr[3], (unsigned long)fcnt, (unsigned long)fcnt_reserved,
                 !fs ? " (no flash filesystem: build with a LittleFS partition)" : saved ? "" : " (SAVE FAILED)");
 #else
   for (int i = 0; i < 32; i++) k_app[i] = rp2040.hwrand32();
+  for (int i = 0; i < 32; i++) k_e2e[i] = rp2040.hwrand32();
   for (int i = 0; i < 16; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
 #endif
   WiFi.mode(WIFI_STA);
@@ -908,7 +943,7 @@ void setup() {
   else {
     Serial.printf("#wifi rssi=%ld dBm channel=%d ip=%s broker=%s\n", (long)WiFi.RSSI(),
                   WiFi.channel(), WiFi.localIP().toString().c_str(), broker.toString().c_str());
-#ifndef MT_DEPLOY_FULL
+#ifndef MT_LORA_FLASH
     for (int i = 0; i < 4; i++) devaddr[i] = rp2040.hwrand32();
 #endif
     rp2040.wdt_begin(8000);  // the RP2040's longest; reset per connection and inside every socket wait

@@ -7,6 +7,8 @@
 //   lorawan11  LoRaWAN 1.1: same encryption; uplink MIC from two CMACs (two keys), downlink MIC from one (SNwkSIntKey)
 //   aes256ctr  the 1.0.x frame with 256-bit keys (AES-256-CTR + AES-256-CMAC; CMAC key = k_nwk | k_nwk2)
 //   lorawan11_256  the 1.1 frame with 256-bit keys (AES-256-CTR; 1.1 MIC rules, CMAC keys F = k_nwk | k_nwk2, S = k_nwk2 | k_nwk)
+//   lorawan11_e2e  a standard lorawan11 frame (AES-128; FPort 2) around AES-256-CTR (same A_i blocks) under k_e2e: a
+//              network server holding the LoRaWAN keys removes the outer layer, only the application reads the payload
 //   aes128gcm / aes256gcm, aes128ccm / aes256ccm, ascon: header as AAD, nonce DevAddr | FCnt (32 bits) | Dir | zeros
 //              (GCM 12 bytes, CCM 13, Ascon 16), 16-byte tag
 // AES: BearSSL bundled in arduino-pico (constant-time aes_ct; neither chip has an AES engine). BearSSL has no CMAC,
@@ -29,7 +31,8 @@ int crypto_aead_decrypt(unsigned char *m, unsigned long long *mlen, unsigned cha
 }
 
 enum { HDR = 9, MAXP = 222, TAG = 16, CCM_N = 13 };
-static uint8_t k_app[32], k_nwk[16], k_nwk2[16], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
+static uint8_t k_app[32], k_nwk[16], k_nwk2[16], k_e2e[32], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
+static uint8_t lw_fport = 1;  // FPort: 2 marks lorawan11_e2e (same keys and MIC as lorawan11), as app_aead.c
 static uint8_t pt[MAXP], frame[HDR + MAXP + TAG], out[MAXP];
 static uint32_t fcnt;  // the device's frame counter: runs on across schemes and connections (a key never sees an
 static bool down;      // FCnt twice per direction: keep a run under 65,536 frames); down = downlink frames
@@ -50,7 +53,7 @@ static void nonce(uint8_t n[16], uint32_t fc) {
   n[4] = fc; n[5] = fc >> 8; n[6] = fc >> 16; n[7] = fc >> 24; n[8] = dir();
 }
 static void header(uint32_t fc) {
-  frame[0] = down ? 0x60 : 0x40; memcpy(frame + 1, devaddr, 4); frame[5] = 0; frame[6] = fc; frame[7] = fc >> 8; frame[8] = 1;
+  frame[0] = down ? 0x60 : 0x40; memcpy(frame + 1, devaddr, 4); frame[5] = 0; frame[6] = fc; frame[7] = fc >> 8; frame[8] = lw_fport;
 }
 
 // ---- AES-CMAC (RFC 4493) on BearSSL's constant-time AES-CBC: CBC-MAC with subkeys K1/K2
@@ -81,11 +84,11 @@ static void cmac(const cmac_key *c, const uint8_t b0[16], const uint8_t *msg, in
 }
 
 // ---- schemes: seal(len) protects pt into frame; open(len) verifies + decrypts frame into out (0 = ok)
-static br_aes_ct_ctr_keys lw_ctr, gcm_aes;
+static br_aes_ct_ctr_keys lw_ctr, e2e_ctr, gcm_aes;
 static br_gcm_context gcm;
 static br_aes_ct_ctrcbc_keys ccm_aes;
 static br_ccm_context ccm;
-static bool lw11;
+static bool lw11, e2e;
 
 static void mic(int n, uint32_t fc, uint8_t m[4]) {  // over frame[0..n)
   uint8_t b0[16], f[16], s[16];
@@ -96,10 +99,14 @@ static void mic(int n, uint32_t fc, uint8_t m[4]) {  // over frame[0..n)
   cmac(&cm_s, b0, frame, n, s);  // 1.1: B1 == B0 bytes when ConfFCnt/TxDr/TxCh = 0; second key
   m[0] = s[0]; m[1] = s[1]; m[2] = f[0]; m[3] = f[1];
 }
-static void lw_crypt(uint32_t fc, uint8_t *data, int len) {  // CTR with A_1, A_2, ... (counter in byte 15)
+static void ctr_crypt(const br_aes_ct_ctr_keys *k, uint32_t fc, uint8_t *data, int len) {  // CTR with A_1, A_2, ...
   uint8_t a[16];
   block(a, 0x01, fc, 1);
-  br_aes_ct_ctr_run(&lw_ctr, a, (uint32_t)a[12] << 24 | (uint32_t)a[13] << 16 | a[14] << 8 | a[15], data, len);
+  br_aes_ct_ctr_run(k, a, (uint32_t)a[12] << 24 | (uint32_t)a[13] << 16 | a[14] << 8 | a[15], data, len);
+}
+static void lw_crypt(uint32_t fc, uint8_t *data, int len) {  // + the inner AES-256 layer for lorawan11_e2e
+  if (e2e) ctr_crypt(&e2e_ctr, fc, data, len);
+  ctr_crypt(&lw_ctr, fc, data, len);
 }
 static int none_seal(int len) { header(++fcnt & 0xFFFF); memcpy(frame + HDR, pt, len); return 0; }
 static int none_open(int len) { memcpy(out, frame + HDR, len); return 0; }
@@ -112,6 +119,7 @@ static int lw_seal(int len) {
 static int lw_open(int len) {
   uint32_t fc = frame[6] | frame[7] << 8;
   uint8_t m[4];
+  if (frame[8] != lw_fport) return -1;
   mic(HDR + len, fc, m);
   if (memcmp(m, frame + HDR + len, 4)) return -1;
   memcpy(out, frame + HDR, len); lw_crypt(fc, out, len);
@@ -168,14 +176,18 @@ static const la_scheme LA[] = {
   {"aes256gcm", "AES-256-GCM", "BearSSL (arduino-pico)", gcm_seal, gcm_open, TAG},
   {"aes128ccm", "AES-128-CCM", "BearSSL (arduino-pico)", ccm_seal, ccm_open, TAG},
   {"aes256ccm", "AES-256-CCM", "BearSSL (arduino-pico)", ccm_seal, ccm_open, TAG},
-  {"ascon", "Ascon-AEAD128", "ascon-c armv6m_lowsize", ascon_seal, ascon_open, TAG}};
+  {"ascon", "Ascon-AEAD128", "ascon-c armv6m_lowsize", ascon_seal, ascon_open, TAG},
+  {"lorawan11_e2e", "LoRaWAN-1.1 AES-128-CTR+2xCMAC around AES-256-CTR (end to end)", "BearSSL (arduino-pico)", lw_seal,
+   lw_open, 4}};
 enum { LA_N = sizeof LA / sizeof *LA };
-// key schedules for scheme k from the current keys (k_app, k_nwk, k_nwk2); the "256" schemes use 256-bit keys
+// key schedules for scheme k from the current keys (k_app, k_nwk, k_nwk2, k_e2e); the "256" schemes use 256-bit keys
 static void la_setup(int k) {
   int kl = strstr(LA[k].name, "256") ? 32 : 16;
   uint8_t nk[32], nk2[32];  // the 256-bit CMAC keys, as app_aead.c: F = k_nwk | k_nwk2, S (1.1) = k_nwk2 | k_nwk
   memcpy(nk, k_nwk, 16); memcpy(nk + 16, k_nwk2, 16); memcpy(nk2, k_nwk2, 16); memcpy(nk2 + 16, k_nwk, 16);
   lw11 = !strncmp(LA[k].name, "lorawan11", 9);
+  e2e = !strcmp(LA[k].name, "lorawan11_e2e"); lw_fport = e2e ? 2 : 1;
+  if (e2e) br_aes_ct_ctr_init(&e2e_ctr, k_e2e, 32);
   br_aes_ct_ctr_init(&lw_ctr, k_app, kl);
   cmac_init(&cm_f, kl == 32 ? nk : k_nwk, kl); cmac_init(&cm_s, kl == 32 ? nk2 : k_nwk2, kl);
   br_aes_ct_ctr_init(&gcm_aes, k_app, kl); br_gcm_init(&gcm, &gcm_aes.vtable, br_ghash_ctmul32);
@@ -212,7 +224,7 @@ static bool lorawan_kat() {  // lora-packet README uplink 40F17DBE49000200019543
   uint8_t d0[4]; memcpy(d0, devaddr, 4);
   unhex("f17dbe49", devaddr); unhex("ec925802ae430ca77fd3dd73cb2cc588", k_app);
   unhex("44024241ed4ce9a68c6a8bc055233fd3", k_nwk);
-  br_aes_ct_ctr_init(&lw_ctr, k_app, 16); cmac_init(&cm_f, k_nwk); lw11 = false;
+  br_aes_ct_ctr_init(&lw_ctr, k_app, 16); cmac_init(&cm_f, k_nwk); lw11 = false; e2e = false; lw_fport = 1;
   unhex("40F17DBE4900020001954378762B11FF0D", frame);
   bool ok = lw_open(4) == 0 && memcmp(out, "test", 4) == 0;
   // LoRaWAN 1.1 downlink MIC (ChirpStack lorawan phypayload_test.go): one CMAC under SNwkSIntKey, Dir = 1 in B0

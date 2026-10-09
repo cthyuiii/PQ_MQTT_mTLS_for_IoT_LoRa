@@ -21,15 +21,30 @@
  * DOWN=1 sends downlink frames (MHDR 0x60, Dir = 1: what a network server sends a device) instead of uplinks.
  *
  * Payloads are a readable reading ({"seq":N,...} padded to PAYLOAD bytes) on topic pqc/pipe/<pid>.
- * APP_KEYS (128 hex chars: 32 B app key, 16 B + 16 B network keys) replaces the per-process random keys,
- * so another process holding the same keys can decrypt (mqtt_bench.py --watch sets it).
+ * APP_KEYS (128 hex chars: 32 B app key, 16 B + 16 B network keys; + 64 for lorawan11_e2e's 32 B inner key) replaces
+ * the per-process random keys, so another process holding the same keys can decrypt (mqtt_bench.py --watch sets it).
+ * The LoRaWAN keys a network server needs: AppSKey = app key bytes 0-15, FNwkSIntKey = bytes 32-47, SNwkSIntKey = 48-63.
+ * DEV_ADDR (8 hex, as ChirpStack shows it, e.g. 01234567; needs APP_KEYS): one fixed device instead of a DevAddr per
+ * process. Its frame counter then outlives the process, as a device's does: FCNT_FILE (default
+ * ~/.cache/iot-pqc/fcnt_<DEV_ADDR>) holds a reservation FCNT_GAP frames ahead, taken under a lock, so a restart (or a
+ * second process) continues above every counter already used: no keystream repeats, and a network server never sees
+ * the counter go back.
  *
  * Watch mode (SUB = topic filter, e.g. "pqc/pipe/#"): an independent subscriber on the same host / port /
  * TLS options. It prints every PUBLISH as it arrives: time, topic, bytes, FCnt, and with APP_KEYS the
  * scheme whose MIC / tag verifies plus the decrypted reading (a frame no scheme verifies is shown as
  * unprotected "none" text, or as ciphertext without keys). The topic stays scheme-free so the bytes on
  * the wire match timing runs. WATCH_NAME labels the lines. Runs until killed; keepalive 0 (Mosquitto's
- * default max_keepalive 0 allows it).
+ * default max_keepalive 0 allows it). RAW=1: one line per PUBLISH instead, "<unix time> <topic> <payload hex>"
+ * (network/virtual_gateway.py and chirpstack_app.py read these; any broker, e.g. ChirpStack's events).
+ *
+ * Air mode (AIR=1, MSGS > 0): a LoRaWAN device with no broker, as on a radio: host / port are the virtual gateway's
+ * air (network/virtual_gateway.py --air), and each of MSGS sealed uplinks goes there as one UDP datagram. AIR_LISTEN=<s>:
+ * then wait that long for downlinks on the same socket (Class A: after an uplink), check and print them. Rows:
+ *   air,idx,fcnt,seal_us        down,fcnt,<scheme>,<reading>
+ *
+ * Relay mode (PUB = topic prefix, e.g. "pqc/down"): reads virtual_gateway.py's "downlink <time> <frame hex>"
+ * lines on stdin and PUBLISHes each frame on <PUB>/<DevAddr>: a network server's downlink back to the device.
  *
  * stdout: "#lib <version>", "#suite <negotiated TLS suite>", then CSV
  *   iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B
@@ -70,6 +85,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 
 #include "app_aead.h"
 #ifdef HAVE_LIBOQS
@@ -304,13 +322,46 @@ static void reading(unsigned char *pt, int payload, int seq) {
     memset(pt, ' ', payload);
     memcpy(pt, s, n < payload ? n : payload);
 }
-static int have_keys;
-static unsigned char keys[64];
+static int have_keys, have_e2e, have_dev;
+static unsigned char keys[96], dev_fixed[4];
 static void use_shared_keys(void) {  /* APP_KEYS -> app_aead (after app_aead_init / selftest) */
-    /* processes share these keys (so a watcher can decrypt): a DevAddr per process keeps their nonces apart */
+    /* processes share these keys (so a watcher can decrypt): a DevAddr per process keeps their nonces apart, unless
+     * DEV_ADDR makes them one device (then FCNT_FILE keeps its counter unique) */
     pid_t pid = getpid();
     unsigned char devaddr[4] = {pid & 0xFF, pid >> 8 & 0xFF, pid >> 16 & 0xFF, 0x26};
+    if (have_dev) memcpy(devaddr, dev_fixed, 4);
     if (have_keys) app_aead_set_keys(keys, keys + 32, keys + 48, devaddr);
+    if (have_e2e) app_aead_set_e2e_key(keys + 64);
+}
+/* PUBLISH (QoS 0) of topic + data, built in pkt -> packet length */
+static int publish_packet(unsigned char *pkt, const char *topic, const unsigned char *data, size_t len) {
+    int tl = (int)strlen(topic), h = 0;
+    pkt[h++] = 0x30; h += put_len(pkt + h, 2 + tl + (int)len);
+    pkt[h++] = tl >> 8; pkt[h++] = tl & 0xFF; memcpy(pkt + h, topic, tl);
+    memcpy(pkt + h + tl, data, len);
+    return h + tl + (int)len;
+}
+
+/* the frame counter: runs on across connections, so no key sees one twice. With DEV_ADDR it also outlives the
+ * process: a block of FCNT_GAP counters is reserved in fcnt_path (under a lock, so concurrent processes get disjoint
+ * blocks) before the first of them is used, and a restart resumes after the last reservation */
+enum { FCNT_GAP = 64 };
+static char fcnt_path[512];
+static uint32_t seq, reserved;
+static uint32_t next_fcnt(void) {
+    if (fcnt_path[0] && seq + 1 > reserved) {
+        char b[24] = {0};
+        int fd = open(fcnt_path, O_RDWR | O_CREAT, 0600);
+        if (fd < 0 || flock(fd, LOCK_EX)) die(fcnt_path, strerror(errno));
+        uint32_t r = pread(fd, b, sizeof b - 1, 0) > 0 ? (uint32_t)strtoul(b, NULL, 10) : 0;
+        if (r > seq) seq = r;  /* counters up to r may have been used */
+        reserved = seq + FCNT_GAP;
+        int l = snprintf(b, sizeof b, "%u\n", reserved);
+        if (ftruncate(fd, 0) || pwrite(fd, b, l, 0) != l || fsync(fd)) die(fcnt_path, strerror(errno));
+        close(fd);  /* and the lock */
+    }
+    if (++seq > 0xFFFF) die("FCnt would wrap (LoRaWAN 1.0.x rejoins first):", "fewer messages per process");
+    return seq;
 }
 
 /* SUBSCRIBE to `topic`, then time `msgs` protected PUBLISHes that the broker echoes back to us; t_conn = when this
@@ -322,11 +373,10 @@ static void pipeline(conn_t *c, int iter, int msgs, int payload, const char *top
     unsigned char type;
     subscribe(c, topic);
     for (int m = 0; m < msgs; m++) {
-        static int seq;  /* FCnt: runs on across connections, so no key sees one twice */
-        if (++seq > 0xFFFF) die("FCnt would wrap (LoRaWAN 1.0.x rejoins first):", "fewer messages per process");
-        reading(pt, payload, seq);
+        uint32_t fc = next_fcnt();
+        reading(pt, payload, (int)fc);
         double t0 = now_us();
-        int fl = app_seal(down, (uint32_t)seq, pt, payload, pkt + 16);  /* frame built in place */
+        int fl = app_seal(down, fc, pt, payload, pkt + 16);  /* frame built in place */
         double t1 = now_us();
         if (fl < 0) die("payload too large for", app_aead_label());
         unsigned char hdr[8];
@@ -356,14 +406,6 @@ static void pipeline(conn_t *c, int iter, int msgs, int payload, const char *top
 }
 
 #ifdef HAVE_LIBOQS
-/* PUBLISH (QoS 0) of topic + data, built in pkt -> packet length */
-static int publish_packet(unsigned char *pkt, const char *topic, const unsigned char *data, size_t len) {
-    int tl = (int)strlen(topic), h = 0;
-    pkt[h++] = 0x30; h += put_len(pkt + h, 2 + tl + (int)len);
-    pkt[h++] = tl >> 8; pkt[h++] = tl & 0xFF; memcpy(pkt + h, topic, tl);
-    memcpy(pkt + h + tl, data, len);
-    return h + tl + (int)len;
-}
 static void sha256(const unsigned char *d, size_t n, unsigned char out[32]) {
     unsigned int l; EVP_Digest(d, n, out, &l, EVP_sha256(), NULL);
 }
@@ -569,13 +611,57 @@ static void kem_respond(conn_t *c) {
 }
 #endif
 
+/* the scheme whose MIC / tag verifies frame f under the shared keys (lorawan11_e2e only with its key): -> payload
+ * length, app_aead left on that scheme (its label); -1 = none does */
+static int open_any(const unsigned char *f, int fl, unsigned char *pt) {
+    int n = -1;
+    for (int k = 0; have_keys && n < 0 && APP_AEAD_NAMES[k]; k++)
+        if ((have_e2e || strcmp(APP_AEAD_NAMES[k], "lorawan11_e2e")) && app_aead_init(APP_AEAD_NAMES[k]) == 0) {
+            use_shared_keys(); n = app_open(f, fl, pt);
+        }
+    return n;
+}
+
+/* air mode: the device's side of the radio (see the header) */
+static void air_device(const char *host, const char *port, int msgs, int payload, double listen_s) {
+    static unsigned char pt[1024], fr[1024 + 64], out[1024];
+    struct addrinfo hints = {0}, *ai;
+    hints.ai_socktype = SOCK_DGRAM;
+    if (getaddrinfo(host, port, &hints, &ai) != 0) die("cannot resolve", host);
+    int fd = socket(ai->ai_family, SOCK_DGRAM, 0);
+    printf("#aead %s (%s), uplink over the air (UDP to %s:%s), %d B payload + %d B overhead\nair,idx,fcnt,seal_us\n",
+           app_aead_label(), app_aead_library(), host, port, payload, app_aead_overhead());
+    for (int m = 0; m < msgs; m++) {
+        uint32_t fc = next_fcnt();
+        reading(pt, payload, (int)fc);
+        double t0 = now_us();
+        int fl = app_seal(0, fc, pt, payload, fr);
+        double t1 = now_us();
+        if (fl < 0) die("payload too large for", app_aead_label());
+        if (sendto(fd, fr, (size_t)fl, 0, ai->ai_addr, ai->ai_addrlen) != fl) die("air send failed", strerror(errno));
+        printf("air,%d,%u,%.3f\n", m, fc, t1 - t0);
+    }
+    fflush(stdout);
+    struct timeval tmo = {1, 0};  /* wait in 1 s slices */
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tmo, sizeof tmo);
+    for (double end = now_ms() + listen_s * 1e3; now_ms() < end;) {
+        int fl = (int)recv(fd, fr, sizeof fr, 0), n;
+        if (fl < APP_HDR + 4) continue;
+        if (fr[5] & 0x0F) printf("down,%d,-,MAC commands in FOpts (not decoded)\n", fr[6] | fr[7] << 8);
+        else if ((n = open_any(fr, fl, out)) < 0) printf("down,%d,REJECTED (no scheme verifies),%d B\n", fr[6] | fr[7] << 8, fl);
+        else printf("down,%d,%s,%.*s\n", fr[6] | fr[7] << 8, app_aead_label(), n, (const char *)out);
+        fflush(stdout);
+    }
+    freeaddrinfo(ai);
+}
+
 /* watch mode: print each PUBLISH the broker delivers to this independent subscriber */
-static void watch(conn_t *c, const char *filter, const char *name) {
-    static unsigned char body[2048], pt[1024];
+static void watch(conn_t *c, const char *filter, const char *name, int raw) {
+    static unsigned char body[65536], pt[1024];  /* ChirpStack's JSON events run to a few KB */
     unsigned char type;
     int len;
     subscribe(c, filter);
-    printf("[watch %s] subscribed to %s%s\n", name, filter,
+    fprintf(raw ? stderr : stdout, "[watch %s] subscribed to %s%s\n", name, filter,
            have_keys ? " (holds the pipeline's keys: decrypts)" : " (no keys: shows ciphertext)");
     fflush(stdout);
     while ((len = read_packet(c, &type, body, sizeof body)) >= 0) {
@@ -586,11 +672,16 @@ static void watch(conn_t *c, const char *filter, const char *name) {
         snprintf(topic, sizeof topic, "%.*s", tl, (const char *)body + 2);
         struct timeval tv; struct tm tm;
         gettimeofday(&tv, NULL); localtime_r(&tv.tv_sec, &tm);
+        if (raw) {
+            printf("%ld.%06ld %s ", (long)tv.tv_sec, (long)tv.tv_usec, topic);
+            for (int i = 0; i < fl; i++) printf("%02x", f[i]);
+            printf("\n"); fflush(stdout);
+            continue;
+        }
         printf("[watch %s] %02d:%02d:%02d.%06ld  %s  %d B", name, tm.tm_hour, tm.tm_min, tm.tm_sec,
                (long)tv.tv_usec, topic, fl);
         if (fl >= APP_HDR) printf("  FCnt %d", f[6] | f[7] << 8);
-        for (int k = 0; have_keys && n < 0 && APP_AEAD_NAMES[k]; k++)  /* the scheme that verifies */
-            if (app_aead_init(APP_AEAD_NAMES[k]) == 0) { use_shared_keys(); n = app_open(f, fl, pt); }
+        n = open_any(f, fl, pt);  /* the scheme that verifies */
         int printable = fl > APP_HDR;
         for (int i = APP_HDR; i < fl; i++) printable &= isprint(f[i]) != 0;
         if (n >= 0) {
@@ -601,11 +692,31 @@ static void watch(conn_t *c, const char *filter, const char *name) {
             while (n > 0 && f[APP_HDR + n - 1] == ' ') n--;
             printf("  -> %.*s  (none: no MIC / tag, unprotected)\n", n, (const char *)f + APP_HDR);
         } else {
-            printf("  -> %s ", have_keys ? "REJECTED (no scheme verifies):" : "ciphertext");
+            printf("  -> %s ", !have_keys ? "ciphertext" : f[8] == 2 && !have_e2e ? "REJECTED (FPort 2 = lorawan11_e2e: APP_KEYS lacks its key):" : "REJECTED (no scheme verifies):");
             for (int i = APP_HDR; i < fl && i < APP_HDR + 16; i++) printf("%02x", f[i]);
             printf("...\n");
         }
         fflush(stdout);
+    }
+}
+
+/* relay mode: virtual_gateway.py's downlinks ("downlink <time> <frame hex>" on stdin) -> PUBLISH on <prefix>/<DevAddr> */
+static void relay(conn_t *c, const char *prefix) {
+    static char line[4096];
+    static unsigned char f[512], pkt[1024];
+    char topic[160];
+    while (fgets(line, sizeof line, stdin)) {
+        char *h = strrchr(line, ' ');
+        int n = 0;
+        if (strncmp(line, "downlink ", 9) || !h) continue;
+        for (h++; isxdigit((unsigned char)h[0]) && isxdigit((unsigned char)h[1]) && n < (int)sizeof f; h += 2) {
+            unsigned v; sscanf(h, "%2x", &v); f[n++] = (unsigned char)v;
+        }
+        if (n < APP_HDR + 3) continue;  /* MHDR | FHDR (7) | MIC (4) at least */
+        snprintf(topic, sizeof topic, "%s/%02x%02x%02x%02x", prefix, f[4], f[3], f[2], f[1]);
+        int l = publish_packet(pkt, topic, f, (size_t)n);
+        if (io_write(c, pkt, l) != l) die("mqtt publish failed", "relay");
+        printf("relayed %d B to %s\n", n, topic); fflush(stdout);
     }
 }
 
@@ -623,14 +734,31 @@ int main(int argc, char **argv) {
     int msgs = getenv("MSGS") ? atoi(getenv("MSGS")) : 0, payload = getenv("PAYLOAD") ? atoi(getenv("PAYLOAD")) : 51;
     char topic[64];
     snprintf(topic, sizeof topic, "pqc/pipe/%d", (int)getpid());
-    const char *hex = getenv("APP_KEYS"), *sub = getenv("SUB");
+    const char *hex = getenv("APP_KEYS"), *sub = getenv("SUB"), *pub = getenv("PUB"), *da = getenv("DEV_ADDR");
     if (hex) {
-        for (int i = 0; i < 64; i++) {
-            unsigned v;
-            if (!isxdigit((unsigned char)hex[2 * i]) || sscanf(hex + 2 * i, "%2x", &v) != 1) die("APP_KEYS", "needs 128 hex chars");
+        int n = (int)strlen(hex) / 2;
+        if (strlen(hex) != 128 && strlen(hex) != 192) die("APP_KEYS", "needs 128 hex chars (+ 64: lorawan11_e2e's key)");
+        for (int i = 0; i < n; i++) {
+            unsigned v = 0;
+            if (!isxdigit((unsigned char)hex[2 * i]) || sscanf(hex + 2 * i, "%2x", &v) != 1) die("APP_KEYS", "not hex");
             keys[i] = (unsigned char)v;
         }
-        have_keys = 1;
+        have_keys = 1; have_e2e = n == 96;
+    }
+    if (da) {  /* as ChirpStack shows it (big-endian); the frame carries it little-endian */
+        char *end;
+        unsigned long v = strtoul(da, &end, 16);
+        if (strlen(da) != 8 || *end) die("DEV_ADDR", "needs 8 hex chars, e.g. 01234567");
+        if (!hex) die("DEV_ADDR", "needs APP_KEYS (a fixed device has fixed keys)");
+        for (int i = 0; i < 4; i++) dev_fixed[i] = (unsigned char)(v >> 8 * i);
+        have_dev = 1;
+        const char *home = getenv("HOME") ? getenv("HOME") : ".";
+        if (getenv("FCNT_FILE")) snprintf(fcnt_path, sizeof fcnt_path, "%s", getenv("FCNT_FILE"));
+        else {
+            snprintf(fcnt_path, sizeof fcnt_path, "%s/.cache", home); mkdir(fcnt_path, 0700);
+            snprintf(fcnt_path, sizeof fcnt_path, "%s/.cache/iot-pqc", home); mkdir(fcnt_path, 0700);
+            snprintf(fcnt_path, sizeof fcnt_path, "%s/.cache/iot-pqc/fcnt_%s", home, da);
+        }
     }
     if (msgs > 0) {
         if (payload < 1 || payload > 1024) die("PAYLOAD must be 1..1024 bytes", "");
@@ -639,6 +767,11 @@ int main(int argc, char **argv) {
         use_shared_keys();  /* the self-test re-keys randomly, so after it */
     }
 
+    if (getenv("AIR") && atoi(getenv("AIR"))) {  /* air mode: no broker, frames as UDP datagrams */
+        if (msgs <= 0) die("AIR=1", "needs MSGS > 0");
+        air_device(host, port, msgs, payload, getenv("AIR_LISTEN") ? atof(getenv("AIR_LISTEN")) : 0);
+        return 0;
+    }
     struct addrinfo hints = {0}, *ai;
     hints.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(host, port, &hints, &ai) != 0) die("cannot resolve", host);
@@ -650,7 +783,7 @@ int main(int argc, char **argv) {
 #else
     if (kem || getenv("KEM_RESPOND")) die("KEM exchange", "this build has no liboqs: use mqtt_kem_timer (build_timer.sh)");
 #endif
-    if (sub || getenv("KEM_RESPOND")) {  /* watch / responder: one connection, then serve until killed */
+    if (sub || pub || getenv("KEM_RESPOND")) {  /* watch / relay / responder: one connection, then serve until killed */
         conn_t c = {0};
         unsigned char pkt[64], ack[4];
         char id[32];
@@ -658,14 +791,15 @@ int main(int argc, char **argv) {
         c.fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (connect(c.fd, ai->ai_addr, ai->ai_addrlen) != 0) die("tcp connect failed (no listener?)", strerror(errno));
         if (ca && (r = tls_connect(&c)) != 0) die("tls handshake failed", tls_err(&c, r));
-        snprintf(id, sizeof id, "pqc-%s-%d", sub ? "watch" : "kem", (int)getpid());  /* own id: a shared one would evict the timer */
+        snprintf(id, sizeof id, "pqc-%s-%d", sub ? "watch" : pub ? "relay" : "kem", (int)getpid());  /* own id: a shared one would evict the timer */
         n = connect_packet(pkt, id, 0);
         if (io_write(&c, pkt, n) != n || io_read_n(&c, ack, 4) != 4 || ack[0] != 0x20 || ack[3] != 0)
-            die("mqtt connect failed", sub ? "watch mode" : "kem responder");
+            die("mqtt connect failed", sub ? "watch mode" : pub ? "relay mode" : "kem responder");
+        if (pub) { relay(&c, pub); return 0; }
 #ifdef HAVE_LIBOQS
         if (!sub) { kem_respond(&c); return 0; }
 #endif
-        watch(&c, sub, getenv("WATCH_NAME") ? getenv("WATCH_NAME") : host);
+        watch(&c, sub, getenv("WATCH_NAME") ? getenv("WATCH_NAME") : host, getenv("RAW") && atoi(getenv("RAW")));
         return 0;
     }
     printf("#lib %s\n", ca ? tls_version() : "none (plain MQTT)");

@@ -77,12 +77,13 @@ Host = the Mac and the Pi (the same C sources; the Pi uses its system OpenSSL, t
 | handshake crypto breakdown | wolfSSL client: `hs_timing.c` (`-Wl,--wrap` of wolfCrypt's `wc_*`); OpenSSL client: `hs_timing_openssl.c` (the executable's own `EVP_*` in front of libcrypto's, Linux) | `hs_timing.c` (`--wrap`) |
 | the broker's side of each handshake | `broker_hs_timing.c`, preloaded into Mosquitto (`LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`): `SSL_read` / `SSL_write` / `SSL_accept` while handshaking, and the `EVP_*` inside | — |
 
-**Payload protection (the pipeline; default LoRaWAN 1.1 and its 256-bit form)**
+**Payload protection (the pipeline; default LoRaWAN 1.1, its 256-bit form, and the 1.1 frame around AES-256)**
 
 | Job | Host (`network/app_aead.c`) | Pico (`lora_aead.h`) |
 |---|---|---|
 | LoRaWAN FRMPayload encryption (AES-128 / AES-256 counter mode, the A-blocks) | OpenSSL `EVP_aes_128_ctr` / `EVP_aes_256_ctr` | BearSSL `br_aes_ct_ctr_*` |
 | LoRaWAN MIC (AES-CMAC; 1.1: two per uplink) | OpenSSL `EVP_MAC_fetch("CMAC")` on AES-128-CBC / AES-256-CBC | CMAC written in `lora_aead.h` on BearSSL `br_aes_ct_cbcenc_*` |
+| `lorawan11_e2e`: the AES-256 layer inside the 1.1 frame | OpenSSL `EVP_aes_256_ctr` (the e2e key), then the 1.1 frame as above | BearSSL `br_aes_ct_ctr_*` twice (`ctr_crypt`) |
 | AES-GCM / AES-CCM (`--aeads`, not LoRaWAN frames) | OpenSSL `EVP_aes_*_gcm` / `EVP_aes_*_ccm` | BearSSL `br_gcm_*` / `br_ccm_*` |
 | Ascon-AEAD128 (`--aeads`) | ascon-c `crypto_aead_encrypt` / `_decrypt` (C) | ascon-c `armv6m_lowsize` (M0 assembly) |
 
@@ -95,7 +96,22 @@ Host = the Mac and the Pi (the same C sources; the Pi uses its system OpenSSL, t
 | signed exchange (ML-DSA-44) | OpenSSL `EVP_DigestSign` / `EVP_DigestVerify` | wolfCrypt `wc_MlDsaKey_SignCtx` / `_VerifyCtx` (`deploy_wolf.h`) |
 | broker name, CRL, dates | OpenSSL `SSL_set1_host`, `X509_STORE_add_crl` + `X509_V_FLAG_CRL_CHECK` (the CRL's signature checked in every handshake); wolfSSL host client `wolfSSL_check_ip_address`, `wolfSSL_CTX_LoadCRLFile` (checked once, at load); dates always | wolfSSL `wolfSSL_check_ip_address`, `wolfSSL_CTX_LoadCRLBuffer` (checked once per context, timed: `crl_load_us`), for every certificate type (`-DMT_DEPLOY_CHECKS`); dates on NTP time (arduino-pico `NTP`, lwIP SNTP) |
 | trust-anchor update | the update signed with OpenSSL (`pkeyutl`, `gen_certs.sh --deploy`), published retained by `mqtt_bench.py` | verified with wolfCrypt (`dp_ta_verify`), kept in LittleFS (arduino-pico) |
-| LoRaWAN keys and FCnt across reboots | — | LittleFS file `/lora.bin` |
+| LoRaWAN keys and FCnt across reboots | one fixed device (`DEV_ADDR`): the FCnt reservation in `~/.cache/iot-pqc/fcnt_<DEV_ADDR>`, `flock` | LittleFS file `/lora.bin` (deployment firmware, and `-DMT_LORA_FIXED`) |
+
+**The simulated LoRaWAN network (branch `LoRa_1.1_implementation`, README section 0.4)**
+
+| Job | Where | Library, call |
+|---|---|---|
+| the radio (simulated): device → gateway, downlinks back | device / Pi | UDP datagrams, one per LoRaWAN frame: `mqtt_tls_timer` `AIR=1` (`sendto` / `recv`), the Pico's `WiFiUDP` (`-DMT_LORA_FIXED`, `AIR=`), `virtual_gateway.py --air` |
+| gateway (simulated) | Pi | `network/virtual_gateway.py`: Python `socket` / `json` / `base64`, the Semtech UDP packet-forwarder protocol (v2) |
+| frames out of a broker / downlinks back into it (without the air) | Pi | `mqtt_tls_timer` watch mode `RAW=1` / relay mode `PUB=` |
+| gateway → network server | Pi, Docker | ChirpStack Gateway Bridge 4 (Go) → plain MQTT on 127.0.0.1 → stunnel 5.76 (Alpine 3.23, OpenSSL 3.5.8): TLS 1.3, X25519MLKEM768, ML-DSA-44 client certificate |
+| ChirpStack's front door (gateways publish here) | Mac, Docker | ChirpStack's Mosquitto 2.1.2 (OpenSSL 3.5.8): listener 8883, X25519MLKEM768 only (`OPENSSL_CONF` Groups), ML-DSA-44 certificates of its own CA, client certificate required (`scripts/chirpstack_pq_setup.sh`) |
+| network server (MIC, AES-128 layer, sessions, downlinks) | Mac, Docker | ChirpStack 4.19.2 (Rust; its own MQTT TLS would be rustls 0.23 with `ring`: no ML-KEM, no ML-DSA): gateways read from its Mosquitto inside Docker; its MQTT integration → plain → stunnel (`chirpstack-app-proxy`) → the MQTT broker; Postgres 14, Redis 7 |
+| the MQTT broker (application side) | Pi | the project's broker (`run_all.sh --serve-broker`, Mosquitto + OpenSSL 3.5): the ML-DSA-44 mTLS listener (:18835), certs/MLDSA44 |
+| application: the AES-256 layer off, ChirpStack's delay | Pi | `mqtt_tls_timer` (OpenSSL: X25519MLKEM768, ML-DSA-44 client certificate) `RAW=1` on the MQTT broker → `network/chirpstack_app.py`: the `openssl enc -aes-256-ctr` command |
+| ChirpStack's TLS against PQ | Mac | `scripts/chirpstack_tls_test.sh`: our Mosquitto + throwaway Bridge / ChirpStack containers |
+| ChirpStack's certificates | Mac | OpenSSL `req -newkey ML-DSA-44`, `x509 -req` (`scripts/chirpstack_pq_setup.sh`): a CA, its Mosquitto, the gateway; toward the MQTT broker: certs/MLDSA44's client certificate |
 
 **Around them**: `run_all.sh` (bash) runs the stages; `mqtt_bench.py` starts brokers and clients and summarises; the
 Pico runner `pico/run_benchmarks.py` compiles with arduino-cli, flashes (UF2 copy or picotool) and reads the board
@@ -262,8 +278,9 @@ Check:
 3. `pico/logs/results.csv`: `RUNTIME_MEMORY_FAIL` / `STACK_OVERFLOW` rows are results the plan
    wants reported, not errors to hide.
 4. Watch the first hardware runs of `wolfssl_bench`, `liboqs_bench` and the new `mqtt_tls_bench` pipeline.
-   - `mqtt_tls_bench` should end `OK (41 MQTT blocks)`: 3 connect blocks, 3 modes × 2 schemes (`lorawan11`,
-     `lorawan11_256`) × up / down, then TLS / mTLS × 13 key-exchange groups (`-DMT_ALL_SCHEMES`: 89, all 10 schemes).
+   - `mqtt_tls_bench` should end `OK (47 MQTT blocks)`: 3 connect blocks, 3 modes × 3 schemes (`lorawan11`,
+     `lorawan11_256`, `lorawan11_e2e`) × up / down, then TLS / mTLS × 13 key-exchange groups (`-DMT_ALL_SCHEMES`: 95,
+     all 11 schemes).
      - Each block is `#block <stage> <mode> [<scheme> <up|down>]`. The stage is `connect` (Stage 2: one row
        per connection) or `pipeline` (connections plus one row per message). The mode is the transport:
        `plain`, `TLS` (server-auth) or `mTLS` (mutual). So `#block pipeline mTLS ascon down` means pipeline
@@ -766,6 +783,10 @@ Key size, 128 vs 256 bits, per AES mode:
   standard LoRaWAN; it shows what a 256-bit key costs in LoRaWAN's own construction. `lorawan11_256` does the same
   for the 1.1 frame: AES-256-CTR, and the 1.1 MIC rules (two CMACs per uplink, one per downlink) with AES-256-CMAC
   keys nwk ‖ nwk2 and nwk2 ‖ nwk.
+- **`lorawan11_e2e`:** the standard 1.1 frame (AES-128 encryption and MIC, so a stock network server such as ChirpStack
+  accepts it) around AES-256-CTR under a fourth, 32-byte key that only the application holds. The 256 bits protect
+  the reading end to end, including from the network server's operator; the MIC stays AES-128 and 4 bytes, as in
+  every LoRaWAN frame. FPort 2 marks it.
 - **GCM / CCM:** 128 and 256 each. AES-256 runs 14 rounds instead of 10, so expect about 40 % more time per
   block on chips without AES instructions (the Pico).
 - All run on the same frame, so the byte overhead stays 4 B (CTR + MIC) or 16 B (AEAD tag) either way.

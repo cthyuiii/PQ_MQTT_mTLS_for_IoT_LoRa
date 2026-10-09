@@ -12,6 +12,10 @@
  *   aes128ccm / aes256ccm     AES-CCM (CTR + CBC-MAC, as BLE / 802.15.4), header as AAD, 13-byte nonce, 16-byte tag
  *   ascon      Ascon-AEAD128 (SP 800-232), header as AAD, nonce from DevAddr|FCnt|Dir, 16-byte tag
  *   none       header + plaintext (the unprotected reference)
+ *   lorawan11_e2e  a standard lorawan11 frame (AES-128; FPort 2) around AES-256-CTR (the same A_i blocks) under a
+ *              separate 256-bit key: a LoRaWAN network server (ChirpStack) checks the MIC and removes the outer layer
+ *              with the keys it holds, and only the application, holding the e2e key, reads the payload
+ * FPort is 1, and 2 for lorawan11_e2e (app_open checks it: the same keys open both, FPort says which).
  * OpenSSL libcrypto for AES/CMAC; ascon-c compiled in when HAVE_ASCON_C is defined.
  */
 #ifndef APP_AEAD_H
@@ -33,5 +37,6 @@ int app_aead_selftest(void);               /* 0 = all known-answer + tamper chec
 /* tests only: fixed keys (app 32 B, nwk 16 B, nwk2 16 B) + DevAddr (4 B, wire order) */
 void app_aead_set_keys(const unsigned char *app, const unsigned char *nwk, const unsigned char *nwk2,
                        const unsigned char *devaddr4);
+void app_aead_set_e2e_key(const unsigned char *e2e32);  /* lorawan11_e2e's inner key (32 B) */
 
 #endif

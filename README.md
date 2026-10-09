@@ -27,21 +27,28 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   │                                certs/DEPLOY (CRL, revoked / expired certs, the signed trust-anchor update);
 │   │                                DEPLOY_SIGS=all: + certs/DEPLOY_<SIG>, the same checks for the other 8 types
 │   ├── collate_results.py         ← every result file → results/all_results.csv
-│   └── setup_gateway_pi.sh        ← Pi: ChirpStack Gateway Bridge in Docker (UDP 127.0.0.1:1700 → ChirpStack's broker)
+│   ├── setup_gateway_pi.sh        ← Pi: ChirpStack Gateway Bridge in Docker (UDP 127.0.0.1:1700), behind stunnel with PQ=
+│   ├── chirpstack_pq_setup.sh     ← Mac: PQ TLS on both sides of ChirpStack (its Mosquitto :8883; stunnel to the MQTT broker)
+│   ├── stunnel/Dockerfile         ← the TLS proxy: stunnel on Alpine's OpenSSL 3.5 (ML-DSA, X25519MLKEM768)
+│   └── chirpstack_tls_test.sh     ← can ChirpStack's own MQTT clients do PQ TLS? (hybrid key exchange, ML-DSA certificates)
 ├── signatures/                    ← Stage 1: keygen / sign / verify
 │   ├── sig_speed.c                ← one C bench for OpenSSL, liboqs (-DSIG_LIBOQS) and wolfSSL (-DSIG_WOLFSSL)
 │   ├── to_customer_form.py        ← the customer's table (stage1_customer_form_<tag>.csv)
 │   └── reference/                 ← NIST submission code: round 3 SDitH, QR-UOV, FAEST, SQIsign (setup_round3.sh); HAWK
 ├── network/                       ← everything measured through the MQTT broker
-│   ├── mqtt_tls_timer.c           ← MQTT client: plain / TLS / mTLS connect, the pipeline, the KEM exchange (OpenSSL or wolfSSL)
-│   ├── app_aead.{c,h}             ← the pipeline's LoRaWAN 1.0.x / 1.1 frames (up / down), AES-GCM, Ascon, self-test
+│   ├── mqtt_tls_timer.c           ← MQTT client: plain / TLS / mTLS connect, the pipeline, the KEM exchange (OpenSSL or wolfSSL);
+│   │                                one fixed LoRaWAN device (DEV_ADDR, FCnt kept in a file), over UDP "air" (AIR=1),
+│   │                                raw frames out (RAW=1), downlinks in (PUB=)
+│   ├── app_aead.{c,h}             ← the pipeline's LoRaWAN 1.0.x / 1.1 frames (up / down), the 1.1 frame around AES-256
+│   │                                (lorawan11_e2e), AES-GCM, Ascon, self-test
 │   ├── wire_stats.h               ← socket writes / reads and TCP segments, for the on-wire byte estimate
 │   ├── hs_timing_openssl.c        ← the OpenSSL client's crypto inside each handshake (Linux)
 │   ├── broker_hs_timing.c         ← the broker's side of each handshake, preloaded into Mosquitto
 │   ├── mqtt_bench.py              ← Stage 2 + pipeline + KEM exchange driver (one Mosquitto per certificate)
 │   ├── tls_sweep.sh               ← TLS / mTLS key-exchange sweep: MQTT connections to the broker's listeners
 │   ├── provenance.py              ← board name + versions record
-│   ├── virtual_gateway.py         ← virtual LoRa gateway: frames → Semtech UDP → Gateway Bridge (no radio)
+│   ├── virtual_gateway.py         ← virtual LoRa gateway: frames → Semtech UDP → Gateway Bridge (no radio), and back
+│   ├── chirpstack_app.py          ← the application behind ChirpStack: removes the AES-256 layer, times ChirpStack's delay
 │   └── build_ascon.sh, build_timer.sh, build_wolfssl.sh
 ├── pico/                          ← Pico W (RP2040) / Pico 2 W (RP2350), flashed from the Mac
 │   ├── run_benchmarks.py          ← compile, flash, read serial, merge into logs/results.csv
@@ -453,7 +460,8 @@ client (mqtt_tls_timer)                          Mosquitto                      
 ```
 
 `--modes plain,tls,mtls` gives the three transports, and `--aeads` the payload schemes. The default is LoRaWAN 1.1,
-as the standard (`lorawan11`, AES-128) and with 256-bit keys in the same construction (`lorawan11_256`); `--aeads`
+as the standard (`lorawan11`, AES-128), with 256-bit keys in the same construction (`lorawan11_256`), and as the
+standard frame around an AES-256 layer only the application removes (`lorawan11_e2e`, below); `--aeads`
 adds `none`, `lorawan10`, `aes256ctr`, the GCM / CCM pairs and `ascon` (the Pico: `-DMT_ALL_SCHEMES`). Every payload scheme protects the same LoRaWAN data frame, so the numbers
 compare like for like. Each scheme runs as uplink frames (MHDR 0x40) and as downlink frames (MHDR 0x60,
 Dir = 1), on the host and on the Pico W (`lora_aead.h`, the same bytes):
@@ -470,6 +478,10 @@ MHDR(1) | DevAddr(4) | FCtrl(1) | FCnt(2) | FPort(1) | FRMPayload | MIC (4) or t
   one CMAC, under SNwkSIntKey.
 * **Downlinks** set Dir = 1 in A_i and B0. Their FCnt is the downlink counter, so an uplink and a downlink
   with the same counter value still get different keystreams.
+* **`lorawan11_e2e`** is a standard LoRaWAN 1.1 frame (AES-128; FPort 2) whose payload is first encrypted with
+  AES-256-CTR (the same A-blocks) under a separate 32-byte key. A LoRaWAN network server checks the MIC and removes
+  the AES-128 layer with the keys it holds; only the application, holding the 32-byte key, reads the payload. No
+  extra bytes. FPort tells it apart from a `lorawan11` frame, which uses the same keys, MIC and counter.
 * **AES-GCM and Ascon** take the 9-byte header as associated data, use a nonce built from DevAddr, FCnt
   and the direction, and add a 16-byte tag.
 
@@ -479,36 +491,100 @@ The code is checked against a published LoRaWAN 1.0 uplink (`40F17DBE49…2B11FF
 1.1 downlink MIC, and the RFC 4493 CMAC examples; the host pipeline and the Pico run these checks before
 sending, and refuse to send if one fails. The Pico's BearSSL / ascon-c version produces the same frames as the
 host's OpenSSL / ascon-c version, byte for byte, for every scheme in both directions
-(`pico/tests/aead_host_test`, 48 frames).
+(`pico/tests/aead_host_test`, 88 frames: 11 schemes × up / down × 4 sizes).
 
 ## 0.4  Simulated LoRaWAN network: ChirpStack without a radio
 
 ```text
-device ─ PQ mTLS ─► our Mosquitto ─► virtual_gateway.py ─ UDP ─► Gateway Bridge ─ MQTT ─► ChirpStack ─► application
-(Mac host / Pico W)  (Pi)             (Pi)                         (Pi, Docker)            (Mac, Docker)
+device ─ "air" ─► gateway ─ stunnel ═PQ═► ChirpStack ─ stunnel ═PQ═► MQTT broker ═PQ═► application
+(Mac / Pico W)    (Pi: virtual_gateway.py,  (Mac, Docker: its     (Mac, Docker)   (Pi: run_all.sh  (Pi: chirpstack_app.py)
+   UDP             Gateway Bridge)           Mosquitto :8883                       --serve-broker,
+                                             + ChirpStack)                         :18835)
 ```
 
-The Mac runs ChirpStack from [chirpstack-docker](https://github.com/chirpstack/chirpstack-docker) (outside iCloud),
-with its Mosquitto on 1884 because the Mac's own Mosquitto has 1883. The Gateway Bridge runs on the Pi instead:
+- **The air:** a LoRa device has no broker or TLS before the gateway; only LoRaWAN's own AES protects the frame. Here
+  each frame is one UDP datagram to `virtual_gateway.py --air` (the device: `mqtt_tls_timer` with `AIR=1`; the Pico
+  with `AIR=` at build time), and a downlink goes back the same way.
+- **gateway → ChirpStack:** ChirpStack takes gateway traffic only from an MQTT broker, so its own Mosquitto is its
+  front door: a listener on 8883 with TLS 1.3, X25519MLKEM768 only, ML-DSA-44 certificates (its own CA) and a client
+  certificate required. ChirpStack reads it inside its Docker network; the plain listener stays on 127.0.0.1:1884.
+- **ChirpStack → MQTT broker:** its application events go to the project's PQ MQTT broker (`./run_all.sh
+  --serve-broker`, the ML-DSA-44 mTLS listener), the one the benchmarks measure; the application subscribes there with
+  its own certificate, and publishes ChirpStack's downlink commands there too.
+- **stunnel** (`scripts/stunnel`, Alpine's OpenSSL 3.5) is a TLS proxy: the Gateway Bridge and ChirpStack speak plain
+  MQTT to it on their own machine, and it speaks PQ TLS across the network; neither one's own TLS can (finding 117).
+- `scripts/chirpstack_pq_setup.sh` does the Mac side as a `docker-compose.override.yml` and new files (the compose
+  file stays as it is; delete the override to go back).
 
 ```bash
-# Mac (Docker Desktop running)
+# Mac (Docker Desktop running): ChirpStack from chirpstack-docker, outside iCloud
 git clone https://github.com/chirpstack/chirpstack-docker.git ~/chirpstack-docker && cd ~/chirpstack-docker
-sed -i '' 's/"1883:1883"/"1884:1883"/' docker-compose.yml
-docker compose pull chirpstack chirpstack-rest-api postgres redis mosquitto
+sed -i '' 's/"1883:1883"/"1884:1883"/' docker-compose.yml        # the Mac's own Mosquitto has 1883
 docker compose up -d chirpstack chirpstack-rest-api postgres redis mosquitto    # UI: http://<mac>:8080
-docker compose images                                                          # versions, for the record
+cd - && bash scripts/chirpstack_pq_setup.sh <mac-ip> <pi-ip>:18835   # certificates, ChirpStack's two stunnel sides
+(cd ~/chirpstack-docker && docker compose up -d --build --force-recreate --remove-orphans mosquitto chirpstack-app-proxy chirpstack)
+rsync -a ~/chirpstack-docker/configuration/pq/{ca.crt,gateway.crt,gateway.key} <pi-user>@<pi-ip>:chirpstack-pq/   # ON THE MAC
 
-# Pi, from the repo root: the Gateway Bridge, then the virtual gateway's own check
-./scripts/setup_gateway_pi.sh <mac-ip> as923
+# Pi, from the repo root: the MQTT broker (as for the Pico), the Gateway Bridge behind stunnel, the virtual gateway's check
+./run_all.sh --serve-broker                                       # its own terminal; certs/ as on the Mac
+PQ=~/chirpstack-pq ./scripts/setup_gateway_pi.sh <mac-ip> as923
 python3 network/virtual_gateway.py --selftest
 ```
 
 The region (`as923` or `eu868`) must be the same in `setup_gateway_pi.sh`, `virtual_gateway.py --region` and the
 ChirpStack device profile. `virtual_gateway.py` reports every frame on channel 0 at DR0, which the LoRaWAN 1.1
 uplink MIC in `app_aead.c` assumes. ChirpStack drops frames from gateways it doesn't know: register the gateway ID
-(`--eui`, default `0102030405060708`) first. Frames go out `--gap` seconds apart (default 1): ChirpStack holds each uplink about
-200 ms and then handles them in parallel, so frames sent closer together race and a lower FCnt can be dropped as old. The steps after this one are in [docs/pending.md](docs/pending.md).
+(`--eui`, default `0102030405060708`) first. Frames go out `--gap` seconds apart (default 1): ChirpStack holds each
+uplink about 200 ms and then handles them in parallel, so frames sent closer together race and a lower FCnt can be
+dropped as old.
+
+**One device in ChirpStack** (ABP, MAC version 1.1.0; RX1 delay 1, RX1 data-rate offset 0, RX2 923200000 Hz, DR2
+for AS923; device-status request frequency 0). Its keys come from `APP_KEYS` (192 hex = 96 bytes):
+
+| `APP_KEYS` bytes | Key | Where |
+|---|---|---|
+| 0-15 (of the 32-byte app key) | AppSKey | ChirpStack |
+| 32-47 | FNwkSIntKey | ChirpStack |
+| 48-63 | SNwkSIntKey | ChirpStack |
+| 64-95 | the AES-256 key of `lorawan11_e2e` | the application only |
+
+NwkSEncKey is any value (no MAC commands are sent). `DEV_ADDR` is the DevAddr as ChirpStack shows it. With
+`DEV_ADDR`, the client's frame counter lives in `~/.cache/iot-pqc/fcnt_<DEV_ADDR>` (`FCNT_FILE`), reserved 64
+frames ahead, so every run continues above the last; set the activation's uplink counter to 0 for a new device.
+
+**A run through ChirpStack:**
+
+```bash
+K=<192 hex>; E2E=${K:128:64}; C=certs/MLDSA44      # the device's keys; E2E = the application's AES-256 key
+# Pi, the gateway: frames from the air -> ChirpStack; ChirpStack's downlinks back over the air
+python3 -u network/virtual_gateway.py --air 0.0.0.0:1680 | tee vgw.log
+# Pi, the application: PQ mTLS to the MQTT broker, the AES-256 layer removed, ChirpStack's delay per frame
+RAW=1 SUB='application/+/device/+/event/up' GROUP=X25519MLKEM768 network/mqtt_tls_timer 127.0.0.1 18835 1 0 \
+  $C/CA.crt $C/client.crt $C/client.key \
+  | python3 network/chirpstack_app.py --e2e-key $E2E --sent vgw.log --csv results/chirpstack_delay_<tag>.csv
+# Mac, the device: a few readings per scheme over the air; then 10 s listening for a downlink
+for a in lorawan11 lorawan11_e2e; do AIR=1 AIR_LISTEN=10 DEV_ADDR=01234567 APP_KEYS=$K AEAD=$a MSGS=5 \
+  network/mqtt_tls_timer <pi-ip> 1680 1 0; done
+# or the Pico W as the device (its own DevAddr, registered the same way; FCnt in its flash): its pipeline as usual,
+# and every uplink also to the air
+AIR=<pi-ip>:1680 APP_KEYS=$K DEV_ADDR=01234568 python3 pico/run_benchmarks.py --test mqtt --match chirpstack --tag chirpstack
+```
+
+- `chirpstack_app.py` prints each reading with its delay (event received − frame sent, both on the Pi's clock) and
+  a median / p95 at the end. ChirpStack's de-duplication wait (`deduplication_delay` under `[network]` in
+  `chirpstack.toml`, default 200 ms) is most of it: measure at the default and at a low value.
+- Downlinks: the application publishes ChirpStack's command on the MQTT broker (`mosquitto_pub -h localhost -p 18835
+  --cafile $C/CA.crt --cert $C/client.crt --key $C/client.key -t application/<app id>/device/<DevEUI>/command/down
+  -m '{"devEui":"<DevEUI>","fPort":1,"data":"<base64>"}'`), or queue one in ChirpStack's UI. It goes out after the
+  device's next uplink, back over the air to where that uplink came from; the device prints
+  `down,<FCnt>,<scheme>,<data>` once its MIC verifies.
+- Without the air: the gateway can read the frames from a broker instead (`RAW=1 SUB='pqc/pipe/#' mqtt_tls_timer ...
+  | virtual_gateway.py`), and `PUB=pqc/down` carries downlinks back through it.
+- Self-checks: `python3 network/virtual_gateway.py --selftest`, `python3 network/chirpstack_app.py --selftest`.
+- `bash scripts/chirpstack_tls_test.sh`: ChirpStack's and the Gateway Bridge's own MQTT clients against our Mosquitto
+  with the hybrid key exchange and with ML-DSA certificates (Docker; throwaway containers).
+
+The steps and their status are in [docs/pending.md](docs/pending.md).
 
 ---
 

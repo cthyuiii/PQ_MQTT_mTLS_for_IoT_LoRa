@@ -16,10 +16,11 @@ int main() {
   srand(7);
   for (int i = 0; i < 32; i++) k_app[i] = (uint8_t)rand();
   for (int i = 0; i < 16; i++) { k_nwk[i] = (uint8_t)rand(); k_nwk2[i] = (uint8_t)rand(); }
+  for (int i = 0; i < 32; i++) k_e2e[i] = (uint8_t)rand();
   static unsigned char ref[300];
   for (int k = 0; k < LA_N; k++)  // every scheme, both directions: the Pico's frame == app_aead's
     for (int d = 0; d < 2; d++) {
-      app_aead_init(LA[k].name); app_aead_set_keys(k_app, k_nwk, k_nwk2, devaddr);
+      app_aead_init(LA[k].name); app_aead_set_keys(k_app, k_nwk, k_nwk2, devaddr); app_aead_set_e2e_key(k_e2e);
       la_setup(k); down = d;
       for (int len : SIZES) {
         for (int i = 0; i < len; i++) pt[i] = (uint8_t)(i * 7 + k);
@@ -29,7 +30,7 @@ int main() {
         int rt = LA[k].open(len) == 0 && memcmp(out, pt, len) == 0;
         frame[HDR] ^= 1; int tamper = k == 0 || LA[k].open(len) != 0; frame[HDR] ^= 1;  // "none" has nothing to check
         bad |= !(same && rt && tamper);
-        printf("%-9s %-4s %3d B: Pico frame == app_aead frame %s, round trip %s, tamper rejected %s\n",
+        printf("%-13s %-4s %3d B: Pico frame == app_aead frame %s, round trip %s, tamper rejected %s\n",
                LA[k].name, d ? "down" : "up", len, same ? "yes" : "NO", rt ? "ok" : "FAIL", tamper ? "yes" : "NO");
       }
     }
