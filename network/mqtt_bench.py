@@ -205,6 +205,16 @@ def broker_hs_summary(args):
         print(f"[broker] the broker's side of {sum(r['n'] for r in rows)} handshakes -> {out}")
 
 
+# BROKER_ACL=1 (the ChirpStack set-up's broker, README 0.4): an ACL on each certificate's listeners. mTLS, by client
+# certificate name (use_identity_as_username): the benchmark clients and devices (pqc-client) keep pqc/, ChirpStack
+# publishes its events and reads its commands, the application the reverse. The server-auth TLS listener shares the
+# process and so the topics: its anonymous clients get pqc/ only, never ChirpStack's events
+ACL_MTLS = ("user pqc-client\ntopic readwrite pqc/#\n"
+            "user chirpstack\ntopic write application/+/device/+/event/#\ntopic read application/+/device/+/command/#\n"
+            "user application\ntopic read application/+/device/+/event/#\ntopic write application/+/device/+/command/#\n")
+ACL_TLS = "topic readwrite pqc/#\n"
+
+
 def start_brokers(args, tmp: Path, bind: str):
     """One Mosquitto per listener. Returns (processes, {sig: failure reason})."""
     env = dict(os.environ, OPENSSL_CONF=str(openssl_cnf(tmp, args.group)), **broker_hs_env(args))
@@ -212,6 +222,11 @@ def start_brokers(args, tmp: Path, bind: str):
               "log_type notice",  # notice: one line per connection, which follow_logs() shows on the broker machine
               "set_tcp_nodelay true"]  # no Nagle: a small CONNACK after the TLS 1.3 session tickets goes out at once
     procs, failed = [], {}
+    acl = os.environ.get("BROKER_ACL", "") not in ("", "0")
+    if acl:
+        (tmp / "acl_mtls").write_text(ACL_MTLS)
+        (tmp / "acl_tls").write_text(ACL_TLS)
+    acl_file = lambda f: [f"acl_file {tmp / f}"] if acl else []
 
     def launch(name, port, extra):
         conf = tmp / f"{name}.conf"
@@ -242,8 +257,9 @@ def start_brokers(args, tmp: Path, bind: str):
         tls = ["tls_version tlsv1.3", f"cafile {d}/{ca}", f"certfile {d}/server.crt", f"keyfile {d}/server.key"]
         err = launch(sig, port_of(args.base_port, sig), [
             "allow_anonymous false", "require_certificate true", "use_identity_as_username true", *tls,
+            *acl_file("acl_mtls"),
             f"listener {port_of(args.base_port, sig, 'TLS')} {bind}".rstrip(),   # server-auth TLS
-            "allow_anonymous true", "require_certificate false", *tls])
+            "allow_anonymous true", "require_certificate false", *tls, *acl_file("acl_tls")])
         if err:
             failed[sig] = err
     for ds in SIGS_DEPLOY:  # the deployment checks' listeners per set present, and DEPLOY's signed trust-anchor update
@@ -654,7 +670,9 @@ def main():
         if args.role in ("both", "broker"):
             procs, broker_failed = start_brokers(args, tmp, "127.0.0.1" if args.role == "both" else "")
             print(f"[broker] plain MQTT on :{args.base_port}; per signature mTLS / TLS listeners "
-                  f"(groups {', '.join(dict.fromkeys([args.group, *SWEEP_GROUPS]))}):")
+                  f"(groups {', '.join(dict.fromkeys([args.group, *SWEEP_GROUPS]))})"
+                  + ("; ACL per client certificate (BROKER_ACL)" if os.environ.get("BROKER_ACL", "") not in ("", "0") else "")
+                  + ":")
             for sig in args.sigs:
                 print(f"  {sig:<21} :{port_of(args.base_port, sig)} / :{port_of(args.base_port, sig, 'TLS')}"
                       f"  {broker_failed.get(sig, 'up')}")

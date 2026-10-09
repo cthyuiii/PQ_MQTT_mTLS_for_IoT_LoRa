@@ -318,9 +318,11 @@ was on the same machine, including one reached through this machine's own LAN ad
 ./run_all.sh --serve-broker                    # ends with: ./run_all.sh --broker 192.168.50.131
                                                # then one line per connection: client IP, certificate, TLS / mTLS
 ./run_all.sh --serve-broker --watch            # + every message routed (a second delivery: not for timing runs)
-# 2. both machines need the same certs/. Run rsync ON THE MAC, from the repo root, in either case:
-rsync -a --delete certs/ <pi-user>@<pi-ip>:PQ_MQTT_mTLS_for_IoT_LoRa/certs/    # Mac is the broker: push to the Pi
-rsync -a --delete <pi-user>@<pi-ip>:PQ_MQTT_mTLS_for_IoT_LoRa/certs/ certs/    # Pi is the broker: pull from the Pi
+# 2. both machines need the same certs/, made on the Mac, which keeps the CA and update signing keys. Run rsync ON THE
+#    MAC, from the repo root: the push leaves those keys behind (and removes any copies on the Pi)
+X=(--exclude CA.key --exclude ClientCA.key --exclude update.key --exclude '*.srl')
+rsync -a --delete --delete-excluded "${X[@]}" certs/ <pi-user>@<pi-ip>:PQ_MQTT_mTLS_for_IoT_LoRa/certs/   # push to the Pi
+rsync -a --delete "${X[@]}" <pi-user>@<pi-ip>:PQ_MQTT_mTLS_for_IoT_LoRa/certs/ certs/   # pull (the Mac's keys stay)
 # 3. the client machine (here the Pi), in its repo root
 ./run_all.sh --broker 192.168.50.131 --dry-run # reachable? certs/ = the broker's?
 ./run_all.sh --broker 192.168.50.131           # full run; or --test mqtt,pipeline for the MQTT part only
@@ -508,9 +510,14 @@ device ─ "air" ─► gateway ─ stunnel ═PQ═► ChirpStack ─ stunnel �
 - **gateway → ChirpStack:** ChirpStack takes gateway traffic only from an MQTT broker, so its own Mosquitto is its
   front door: a listener on 8883 with TLS 1.3, X25519MLKEM768 only, ML-DSA-44 certificates (its own CA) and a client
   certificate required. ChirpStack reads it inside its Docker network; the plain listener stays on 127.0.0.1:1884.
-- **ChirpStack → MQTT broker:** its application events go to the project's PQ MQTT broker (`./run_all.sh
+- **ChirpStack → MQTT broker:** its application events go to the project's PQ MQTT broker (`BROKER_ACL=1 ./run_all.sh
   --serve-broker`, the ML-DSA-44 mTLS listener), the one the benchmarks measure; the application subscribes there with
-  its own certificate, and publishes ChirpStack's downlink commands there too.
+  its own certificate, and publishes ChirpStack's downlink commands there too. ChirpStack's stunnel pins that broker's
+  certificate.
+- **Roles on the broker:** `chirpstack_pq_setup.sh` issues ML-DSA-44 client certificates `chirpstack` and `application`
+  from the broker's client CA (certs/MLDSA44), next to the devices' `pqc-client`. With `BROKER_ACL=1` each sees only its
+  own topics (`pqc/` for devices; events out of ChirpStack, commands into it), and the server-auth TLS listener's
+  anonymous clients only `pqc/`: without the ACL they share the mTLS listener's topics (finding 120).
 - **stunnel** (`scripts/stunnel`, Alpine's OpenSSL 3.5) is a TLS proxy: the Gateway Bridge and ChirpStack speak plain
   MQTT to it on their own machine, and it speaks PQ TLS across the network; neither one's own TLS can (finding 117).
 - `scripts/chirpstack_pq_setup.sh` does the Mac side as a `docker-compose.override.yml` and new files (the compose
@@ -526,7 +533,7 @@ cd - && bash scripts/chirpstack_pq_setup.sh <mac-ip> <pi-ip>:18835   # certifica
 rsync -a ~/chirpstack-docker/configuration/pq/{ca.crt,gateway.crt,gateway.key} <pi-user>@<pi-ip>:chirpstack-pq/   # ON THE MAC
 
 # Pi, from the repo root: the MQTT broker (as for the Pico), the Gateway Bridge behind stunnel, the virtual gateway's check
-./run_all.sh --serve-broker                                       # its own terminal; certs/ as on the Mac
+BROKER_ACL=1 ./run_all.sh --serve-broker                          # its own terminal; certs/ pushed from the Mac
 PQ=~/chirpstack-pq ./scripts/setup_gateway_pi.sh <mac-ip> as923
 python3 network/virtual_gateway.py --selftest
 ```
@@ -552,29 +559,29 @@ NwkSEncKey is any value (no MAC commands are sent). `DEV_ADDR` is the DevAddr as
 `DEV_ADDR`, the client's frame counter lives in `~/.cache/iot-pqc/fcnt_<DEV_ADDR>` (`FCNT_FILE`), reserved 64
 frames ahead, so every run continues above the last; set the activation's uplink counter to 0 for a new device.
 
-**A run through ChirpStack:**
+**A run through ChirpStack** (the Pico W is the device, the Pi the gateway, MQTT broker and application, the Mac
+ChirpStack). On the Pi, four terminals or tmux panes:
 
 ```bash
 K=<192 hex>; E2E=${K:128:64}; C=certs/MLDSA44      # the device's keys; E2E = the application's AES-256 key
-# Pi, the gateway: frames from the air -> ChirpStack; ChirpStack's downlinks back over the air
-python3 -u network/virtual_gateway.py --air 0.0.0.0:1680 | tee vgw.log
-# Pi, the application: PQ mTLS to the MQTT broker, the AES-256 layer removed, ChirpStack's delay per frame
+BROKER_ACL=1 ./run_all.sh --serve-broker                                      # 1: the MQTT broker, per-role ACL
+python3 -u network/virtual_gateway.py --air 0.0.0.0:1680 | tee vgw.log        # 2: the gateway
 RAW=1 SUB='application/+/device/+/event/up' GROUP=X25519MLKEM768 network/mqtt_tls_timer 127.0.0.1 18835 1 0 \
-  $C/CA.crt $C/client.crt $C/client.key \
-  | python3 network/chirpstack_app.py --e2e-key $E2E --sent vgw.log --csv results/chirpstack_delay_<tag>.csv
-# Mac, the device: a few readings per scheme over the air; then 10 s listening for a downlink
-for a in lorawan11 lorawan11_e2e; do AIR=1 AIR_LISTEN=10 DEV_ADDR=01234567 APP_KEYS=$K AEAD=$a MSGS=5 \
-  network/mqtt_tls_timer <pi-ip> 1680 1 0; done
-# or the Pico W as the device (its own DevAddr, registered the same way; FCnt in its flash): its pipeline as usual,
-# and every uplink also to the air
-AIR=<pi-ip>:1680 APP_KEYS=$K DEV_ADDR=01234568 python3 pico/run_benchmarks.py --test mqtt --match chirpstack --tag chirpstack
+  $C/CA.crt $C/application.crt $C/application.key \
+  | python3 network/chirpstack_app.py --e2e-key $E2E --sent vgw.log --csv results/chirpstack_delay_<tag>.csv   # 3
+BROKER=<pi-ip> AIR=<pi-ip>:1680 APP_KEYS=$K DEV_ADDR=01234568 \
+  python3 pico/run_benchmarks.py --test mqtt --match chirpstack --tag chirpstack                            # 4: the Pico
 ```
+
+The Pico runs its pipeline as usual (its own MQTT connections to the broker, timed) and sends every uplink to the air
+too; its device is registered in ChirpStack with DevAddr 01234568 and the keys above. A host can stand in for the
+device (`AIR=1 DEV_ADDR=… APP_KEYS=… AEAD=… MSGS=n mqtt_tls_timer <gateway> 1680 1 0`; `AIR_LISTEN=<s>` for downlinks).
 
 - `chirpstack_app.py` prints each reading with its delay (event received − frame sent, both on the Pi's clock) and
   a median / p95 at the end. ChirpStack's de-duplication wait (`deduplication_delay` under `[network]` in
   `chirpstack.toml`, default 200 ms) is most of it: measure at the default and at a low value.
 - Downlinks: the application publishes ChirpStack's command on the MQTT broker (`mosquitto_pub -h localhost -p 18835
-  --cafile $C/CA.crt --cert $C/client.crt --key $C/client.key -t application/<app id>/device/<DevEUI>/command/down
+  --cafile $C/CA.crt --cert $C/application.crt --key $C/application.key -t application/<app id>/device/<DevEUI>/command/down
   -m '{"devEui":"<DevEUI>","fPort":1,"data":"<base64>"}'`), or queue one in ChirpStack's UI. It goes out after the
   device's next uplink, back over the air to where that uplink came from; the device prints
   `down,<FCnt>,<scheme>,<data>` once its MIC verifies.

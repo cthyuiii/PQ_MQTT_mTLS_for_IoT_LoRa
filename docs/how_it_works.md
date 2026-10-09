@@ -83,7 +83,7 @@ Host = the Mac and the Pi (the same C sources; the Pi uses its system OpenSSL, t
 |---|---|---|
 | LoRaWAN FRMPayload encryption (AES-128 / AES-256 counter mode, the A-blocks) | OpenSSL `EVP_aes_128_ctr` / `EVP_aes_256_ctr` | BearSSL `br_aes_ct_ctr_*` |
 | LoRaWAN MIC (AES-CMAC; 1.1: two per uplink) | OpenSSL `EVP_MAC_fetch("CMAC")` on AES-128-CBC / AES-256-CBC | CMAC written in `lora_aead.h` on BearSSL `br_aes_ct_cbcenc_*` |
-| `lorawan11_e2e`: the AES-256 layer inside the 1.1 frame | OpenSSL `EVP_aes_256_ctr` (the e2e key), then the 1.1 frame as above | BearSSL `br_aes_ct_ctr_*` twice (`ctr_crypt`) |
+| `lorawan11_e2e`: the AES-256 layer inside the 1.1 frame | OpenSSL `EVP_aes_256_ctr` (the e2e key) + a 4-byte AES-256-CMAC tag (`EVP_MAC`, key from `EVP_aes_256_ecb` of the e2e key), then the 1.1 frame as above | BearSSL `br_aes_ct_ctr_*`, CMAC in `lora_aead.h` (key from `br_aes_ct_cbcenc_*`), then the 1.1 frame (`e2e_seal` / `e2e_open`) |
 | AES-GCM / AES-CCM (`--aeads`, not LoRaWAN frames) | OpenSSL `EVP_aes_*_gcm` / `EVP_aes_*_ccm` | BearSSL `br_gcm_*` / `br_ccm_*` |
 | Ascon-AEAD128 (`--aeads`) | ascon-c `crypto_aead_encrypt` / `_decrypt` (C) | ascon-c `armv6m_lowsize` (M0 assembly) |
 
@@ -784,9 +784,10 @@ Key size, 128 vs 256 bits, per AES mode:
   for the 1.1 frame: AES-256-CTR, and the 1.1 MIC rules (two CMACs per uplink, one per downlink) with AES-256-CMAC
   keys nwk ‖ nwk2 and nwk2 ‖ nwk.
 - **`lorawan11_e2e`:** the standard 1.1 frame (AES-128 encryption and MIC, so a stock network server such as ChirpStack
-  accepts it) around AES-256-CTR under a fourth, 32-byte key that only the application holds. The 256 bits protect
-  the reading end to end, including from the network server's operator; the MIC stays AES-128 and 4 bytes, as in
-  every LoRaWAN frame. FPort 2 marks it.
+  accepts it) around AES-256-CTR and a 4-byte AES-256-CMAC tag under a fourth, 32-byte key that only the application
+  holds (the tag's key derived from it). The 256 bits protect the reading end to end, including from the network
+  server's operator, who can neither read nor change it unnoticed. 8 bytes of overhead: a 47-byte reading fills
+  DR0's 51-byte payload. FPort 2 marks it.
 - **GCM / CCM:** 128 and 256 each. AES-256 runs 14 rounds instead of 10, so expect about 40 % more time per
   block on chips without AES instructions (the Pico).
 - All run on the same frame, so the byte overhead stays 4 B (CTR + MIC) or 16 B (AEAD tag) either way.

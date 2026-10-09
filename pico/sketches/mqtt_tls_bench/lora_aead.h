@@ -7,8 +7,9 @@
 //   lorawan11  LoRaWAN 1.1: same encryption; uplink MIC from two CMACs (two keys), downlink MIC from one (SNwkSIntKey)
 //   aes256ctr  the 1.0.x frame with 256-bit keys (AES-256-CTR + AES-256-CMAC; CMAC key = k_nwk | k_nwk2)
 //   lorawan11_256  the 1.1 frame with 256-bit keys (AES-256-CTR; 1.1 MIC rules, CMAC keys F = k_nwk | k_nwk2, S = k_nwk2 | k_nwk)
-//   lorawan11_e2e  a standard lorawan11 frame (AES-128; FPort 2) around AES-256-CTR (same A_i blocks) under k_e2e: a
-//              network server holding the LoRaWAN keys removes the outer layer, only the application reads the payload
+//   lorawan11_e2e  a standard lorawan11 frame (AES-128; FPort 2) around AES-256-CTR (same A_i blocks) + a 4-byte
+//              AES-256-CMAC tag (key derived from k_e2e, as app_aead.c): a network server holding the LoRaWAN keys removes
+//              the outer layer, only the application checks the tag and reads the payload
 //   aes128gcm / aes256gcm, aes128ccm / aes256ccm, ascon: header as AAD, nonce DevAddr | FCnt (32 bits) | Dir | zeros
 //              (GCM 12 bytes, CCM 13, Ascon 16), 16-byte tag
 // AES: BearSSL bundled in arduino-pico (constant-time aes_ct; neither chip has an AES engine). BearSSL has no CMAC,
@@ -33,7 +34,7 @@ int crypto_aead_decrypt(unsigned char *m, unsigned long long *mlen, unsigned cha
 enum { HDR = 9, MAXP = 222, TAG = 16, CCM_N = 13 };
 static uint8_t k_app[32], k_nwk[16], k_nwk2[16], k_e2e[32], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
 static uint8_t lw_fport = 1;  // FPort: 2 marks lorawan11_e2e (same keys and MIC as lorawan11), as app_aead.c
-static uint8_t pt[MAXP], frame[HDR + MAXP + TAG], out[MAXP];
+static uint8_t pt[MAXP], frame[HDR + MAXP + TAG], out[MAXP + TAG];
 static uint32_t fcnt;  // the device's frame counter: runs on across schemes and connections (a key never sees an
 static bool down;      // FCnt twice per direction: keep a run under 65,536 frames); down = downlink frames
 struct cmac_key { br_aes_ct_cbcenc_keys aes; uint8_t k1[16], k2[16]; };
@@ -57,7 +58,7 @@ static void header(uint32_t fc) {
 }
 
 // ---- AES-CMAC (RFC 4493) on BearSSL's constant-time AES-CBC: CBC-MAC with subkeys K1/K2
-static cmac_key cm_f, cm_s;
+static cmac_key cm_f, cm_s, cm_e2e;  // cm_e2e: lorawan11_e2e's inner tag
 static void dbl(uint8_t o[16], const uint8_t in[16]) {
   uint8_t carry = in[0] >> 7;
   for (int i = 0; i < 15; i++) o[i] = (in[i] << 1) | (in[i + 1] >> 7);
@@ -104,10 +105,7 @@ static void ctr_crypt(const br_aes_ct_ctr_keys *k, uint32_t fc, uint8_t *data, i
   block(a, 0x01, fc, 1);
   br_aes_ct_ctr_run(k, a, (uint32_t)a[12] << 24 | (uint32_t)a[13] << 16 | a[14] << 8 | a[15], data, len);
 }
-static void lw_crypt(uint32_t fc, uint8_t *data, int len) {  // + the inner AES-256 layer for lorawan11_e2e
-  if (e2e) ctr_crypt(&e2e_ctr, fc, data, len);
-  ctr_crypt(&lw_ctr, fc, data, len);
-}
+static void lw_crypt(uint32_t fc, uint8_t *data, int len) { ctr_crypt(&lw_ctr, fc, data, len); }
 static int none_seal(int len) { header(++fcnt & 0xFFFF); memcpy(frame + HDR, pt, len); return 0; }
 static int none_open(int len) { memcpy(out, frame + HDR, len); return 0; }
 static int lw_seal(int len) {
@@ -123,6 +121,27 @@ static int lw_open(int len) {
   mic(HDR + len, fc, m);
   if (memcmp(m, frame + HDR + len, 4)) return -1;
   memcpy(out, frame + HDR, len); lw_crypt(fc, out, len);
+  return 0;
+}
+static int e2e_seal(int len) {  // inner AES-256-CTR + 4 bytes of AES-256-CMAC over B0 | it, then the LoRaWAN layer
+  uint8_t b[16], t[16];
+  header(++fcnt & 0xFFFF);
+  memcpy(frame + HDR, pt, len); ctr_crypt(&e2e_ctr, fcnt & 0xFFFF, frame + HDR, len);
+  block(b, 0x49, fcnt & 0xFFFF, (uint8_t)len); cmac(&cm_e2e, b, frame + HDR, len, t); memcpy(frame + HDR + len, t, 4);
+  ctr_crypt(&lw_ctr, fcnt & 0xFFFF, frame + HDR, len + 4);
+  mic(HDR + len + 4, fcnt & 0xFFFF, frame + HDR + len + 4);
+  return 0;
+}
+static int e2e_open(int len) {
+  uint32_t fc = frame[6] | frame[7] << 8;
+  uint8_t m[4], b[16], t[16];
+  if (frame[8] != lw_fport) return -1;
+  mic(HDR + len + 4, fc, m);
+  if (memcmp(m, frame + HDR + len + 4, 4)) return -1;
+  memcpy(out, frame + HDR, len + 4); ctr_crypt(&lw_ctr, fc, out, len + 4);
+  block(b, 0x49, fc, (uint8_t)len); cmac(&cm_e2e, b, out, len, t);
+  if (memcmp(t, out + len, 4)) return -1;
+  ctr_crypt(&e2e_ctr, fc, out, len);
   return 0;
 }
 static int gcm_seal(int len) {
@@ -177,8 +196,8 @@ static const la_scheme LA[] = {
   {"aes128ccm", "AES-128-CCM", "BearSSL (arduino-pico)", ccm_seal, ccm_open, TAG},
   {"aes256ccm", "AES-256-CCM", "BearSSL (arduino-pico)", ccm_seal, ccm_open, TAG},
   {"ascon", "Ascon-AEAD128", "ascon-c armv6m_lowsize", ascon_seal, ascon_open, TAG},
-  {"lorawan11_e2e", "LoRaWAN-1.1 AES-128-CTR+2xCMAC around AES-256-CTR (end to end)", "BearSSL (arduino-pico)", lw_seal,
-   lw_open, 4}};
+  {"lorawan11_e2e", "LoRaWAN-1.1 AES-128-CTR+2xCMAC around AES-256-CTR+CMAC (end to end)", "BearSSL (arduino-pico)",
+   e2e_seal, e2e_open, 8}};
 enum { LA_N = sizeof LA / sizeof *LA };
 // key schedules for scheme k from the current keys (k_app, k_nwk, k_nwk2, k_e2e); the "256" schemes use 256-bit keys
 static void la_setup(int k) {
@@ -187,7 +206,16 @@ static void la_setup(int k) {
   memcpy(nk, k_nwk, 16); memcpy(nk + 16, k_nwk2, 16); memcpy(nk2, k_nwk2, 16); memcpy(nk2 + 16, k_nwk, 16);
   lw11 = !strncmp(LA[k].name, "lorawan11", 9);
   e2e = !strcmp(LA[k].name, "lorawan11_e2e"); lw_fport = e2e ? 2 : 1;
-  if (e2e) br_aes_ct_ctr_init(&e2e_ctr, k_e2e, 32);
+  if (e2e) {  // AES-256-CTR under k_e2e; the tag's key = AES-256(k_e2e, 02|0^15) | AES-256(k_e2e, 03|0^15), as app_aead.c
+    uint8_t km[32] = {2}, iv[16] = {0};
+    br_aes_ct_cbcenc_keys ek;
+    km[16] = 3;
+    br_aes_ct_ctr_init(&e2e_ctr, k_e2e, 32);
+    br_aes_ct_cbcenc_init(&ek, k_e2e, 32);
+    br_aes_ct_cbcenc_run(&ek, iv, km, 16);  // one block with a zero IV = ECB
+    memset(iv, 0, 16); br_aes_ct_cbcenc_run(&ek, iv, km + 16, 16);
+    cmac_init(&cm_e2e, km, 32);
+  }
   br_aes_ct_ctr_init(&lw_ctr, k_app, kl);
   cmac_init(&cm_f, kl == 32 ? nk : k_nwk, kl); cmac_init(&cm_s, kl == 32 ? nk2 : k_nwk2, kl);
   br_aes_ct_ctr_init(&gcm_aes, k_app, kl); br_gcm_init(&gcm, &gcm_aes.vtable, br_ghash_ctmul32);

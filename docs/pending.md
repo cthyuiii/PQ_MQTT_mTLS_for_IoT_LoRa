@@ -8,27 +8,20 @@ Labels: **G&B** = Gateway & Backend, **B&R** = Benchmarking & Reproducibility.
 
 ## Still to do
 
-- [~] **The two-machine run (steps 6, 10, 15):** ran 9 Oct (finding 119): 10 + 60 uplinks accepted. Left: the
-  delay summary per device from `results/chirpstack_delay_pi_pq.csv`, and the 10 ms de-duplication run. Was: Mac: done (ChirpStack's stunnel already reaches the Pi's broker,
-  finding 119); rsync `ca.crt`, `gateway.crt`, `gateway.key` to the Pi. Pi: `--serve-broker`, `PQ=~/chirpstack-pq
-  setup_gateway_pi.sh`, `virtual_gateway.py --air`, the application on :18835; Mac: the device with `AIR=1` (README
-  section 0.4). Then ChirpStack's delay at the default `deduplication_delay` and at 10 ms.
-- [x] **Step 7, the Pico W as the device:** ran 9 Oct, `OK (15 MQTT blocks)`, 60 uplinks accepted (finding 119). To
-  get its UDP send time (`air_us`), run it again on the new build. Was: register a second device (DevAddr 01234568, same profile, keys from
-  `APP_KEYS`), then `AIR=<pi-ip>:1680 APP_KEYS=... DEV_ADDR=01234568 python3 pico/run_benchmarks.py --test mqtt --match
-  chirpstack --tag chirpstack`. Compiled; not run on the board. It doesn't listen for downlinks (the host device does).
-- [ ] **Inner integrity of `lorawan11_e2e`:** none now (the application trusts ChirpStack's MIC check and the link
-  from ChirpStack), or a truncated AES-256-CMAC tag inside the payload (4 B: a 47-byte reading). Undecided.
-- [ ] **256-bit key derivation** (G&B with Security & Key Management): how the 32-byte e2e key is derived and from what
-  root, e.g. HKDF-SHA-256 (RFC 5869) or SP 800-108 with AES-256-CMAC, from a 256-bit device root key; inputs: DevAddr
-  (ABP) or JoinNonce | JoinEUI | DevNonce (OTAA); a label and version. The root key lives on the device and with the
-  application, never in ChirpStack. Proposal, not decided: refresh it with one ML-KEM ciphertext uplink (the device
-  holds the backend's ML-KEM public key, installed like our trust anchor; ML-KEM-512: 768 B = 16 frames at DR0).
-- [ ] `lorawan11_256` (the ad hoc nwk‖nwk2 / nwk2‖nwk CMAC keys): kept as the comparison row; ChirpStack rejects it.
-- [ ] **ChirpStack hardening** (docs/findings.md, Hardening): the broker now needs a client certificate on the LAN
-  (finding 118); still the compose defaults: the UI's admin password and `[api] secret`; certificate keys are mode
-  644 for the containers.
-- [ ] Step 12, the OTAA join (KIV), with the derivation above.
+The chain works end to end with the Pico W (finding 119); the final-setup hardening and the end-to-end tag are built
+(finding 120). To call this branch done:
+
+- [ ] **On the Pi:** take the certificates without CA keys (README 0.1 rsync, run on the Mac), restart the broker with
+  `BROKER_ACL=1`, and run the Pico once more: the tagged `lorawan11_e2e` frames through ChirpStack, and their timing.
+- [ ] **ChirpStack's admin password:** change it in the UI (the API secret is already new).
+- [ ] **The 256-bit key derivation:** done where the keys are made, not by ChirpStack: a master key at the application
+  (or a key service next to it) derives each device's end-to-end key, e.g. HKDF-SHA-256(master, "IoT-PQC e2e v1" |
+  DevEUI); the device is provisioned with its own derived key only. Write it down with Security & Key Management;
+  `chirpstack_app.py` could derive per DevEUI from a master instead of taking one key (offered).
+- [ ] **Merge** `LoRa_1.1_implementation` into `main` (or keep it as the LoRa deliverable), with `main`'s own `pending.md`.
+- Evidence stays on the Pi and in local copies (`results/`, `*.log` are gitignored): rsync or the Docker logs.
+- Not needed to finish (KIV): a real LoRa radio and gateway in place of the UDP air and `virtual_gateway.py`; the OTAA
+  join; downlinks to the Pico; the 10 ms de-duplication run on two machines (one-Mac figure in finding 116).
 
 ## Decided (9 Oct 2026)
 

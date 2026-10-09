@@ -12,9 +12,11 @@
  *   aes128ccm / aes256ccm     AES-CCM (CTR + CBC-MAC, as BLE / 802.15.4), header as AAD, 13-byte nonce, 16-byte tag
  *   ascon      Ascon-AEAD128 (SP 800-232), header as AAD, nonce from DevAddr|FCnt|Dir, 16-byte tag
  *   none       header + plaintext (the unprotected reference)
- *   lorawan11_e2e  a standard lorawan11 frame (AES-128; FPort 2) around AES-256-CTR (the same A_i blocks) under a
- *              separate 256-bit key: a LoRaWAN network server (ChirpStack) checks the MIC and removes the outer layer
- *              with the keys it holds, and only the application, holding the e2e key, reads the payload
+ *   lorawan11_e2e  a standard lorawan11 frame (AES-128; FPort 2) around AES-256-CTR (the same A_i blocks) + a 4-byte
+ *              AES-256-CMAC tag over B0 | that ciphertext, under a separate 256-bit key (the tag's key derived from it):
+ *              a LoRaWAN network server (ChirpStack) checks the MIC and removes the outer layer with the keys it holds;
+ *              only the application, holding the e2e key, checks the tag and reads the payload. Overhead 8 B: a
+ *              47-byte reading fits DR0's 51-byte FRMPayload
  * FPort is 1, and 2 for lorawan11_e2e (app_open checks it: the same keys open both, FPort says which).
  * OpenSSL libcrypto for AES/CMAC; ascon-c compiled in when HAVE_ASCON_C is defined.
  */

@@ -24,13 +24,13 @@ static const char *const LABELS[] = {"none", "LoRaWAN-1.0.x AES-128-CTR+CMAC", "
                                      "AES-256-CTR+CMAC (LoRaWAN 1.0.x frame, 256-bit keys)",
                                      "AES-256-CTR+2xCMAC (LoRaWAN 1.1 frame, 256-bit keys)", "AES-128-GCM", "AES-256-GCM",
                                      "AES-128-CCM", "AES-256-CCM", "Ascon-AEAD128",
-                                     "LoRaWAN-1.1 AES-128-CTR+2xCMAC around AES-256-CTR (end to end)"};
+                                     "LoRaWAN-1.1 AES-128-CTR+2xCMAC around AES-256-CTR+CMAC (end to end)"};
 enum { CCM_N = 13 };  /* CCM nonce bytes (L = 2: payloads up to 64 KiB), as IEEE 802.15.4's CCM* */
 
 static int kind = -1;
 static unsigned char k_app[32], k_nwk[16], k_nwk2[16], k_e2e[32], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
 static EVP_CIPHER_CTX *ctr, *ctr_e2e, *gcm, *ccm;
-static EVP_MAC_CTX *cmac_f, *cmac_s;
+static EVP_MAC_CTX *cmac_f, *cmac_s, *cmac_e2e;
 static int is_ctr(void) { return kind == LW10 || kind == LW11 || kind == CTR256 || kind == LW11_256 || kind == LW11_E2E; }
 static int is_lw11(void) { return kind == LW11 || kind == LW11_256 || kind == LW11_E2E; }  /* 1.1 MIC rules */
 /* FPort: the application's own field. 2 marks the end-to-end layer, so a receiver holding the same LoRaWAN keys
@@ -76,8 +76,8 @@ static void nonce(unsigned char n[16], int down, uint32_t fcnt) {
 
 static void rebuild(void) {  /* (re)key every context from the current keys */
     EVP_CIPHER_CTX_free(ctr); EVP_CIPHER_CTX_free(ctr_e2e); EVP_CIPHER_CTX_free(gcm); EVP_CIPHER_CTX_free(ccm);
-    EVP_MAC_CTX_free(cmac_f); EVP_MAC_CTX_free(cmac_s);
-    ctr = ctr_e2e = gcm = ccm = NULL; cmac_f = cmac_s = NULL;
+    EVP_MAC_CTX_free(cmac_f); EVP_MAC_CTX_free(cmac_s); EVP_MAC_CTX_free(cmac_e2e);
+    ctr = ctr_e2e = gcm = ccm = NULL; cmac_f = cmac_s = cmac_e2e = NULL;
     if (is_ctr()) {
         ctr = EVP_CIPHER_CTX_new();
         int k256 = kind == CTR256 || kind == LW11_256;
@@ -90,7 +90,19 @@ static void rebuild(void) {  /* (re)key every context from the current keys */
             if (kind == LW11_256) cmac_s = cmac_new(ks, 32);
         } else cmac_f = cmac_new(k_nwk, 16);
         if (kind == LW11 || kind == LW11_E2E) cmac_s = cmac_new(k_nwk2, 16);
-        if (kind == LW11_E2E) {  /* the inner layer: AES-256-CTR under k_e2e, a key the network server never holds */
+        if (kind == LW11_E2E) {  /* the inner layer, under k_e2e, a key the network server never holds: AES-256-CTR, and
+                                  * a 4-byte AES-256-CMAC tag under k_mac = AES-256(k_e2e, 02|0^15) | AES-256(k_e2e, 03|0^15)
+                                  * (blocks the CTR's A_i, first byte 01, never equal) */
+            unsigned char kb[32] = {2}, km[32];
+            int x;
+            kb[16] = 3;
+            EVP_CIPHER_CTX *e = EVP_CIPHER_CTX_new();
+            EVP_EncryptInit_ex(e, EVP_aes_256_ecb(), NULL, k_e2e, NULL);
+            EVP_CIPHER_CTX_set_padding(e, 0);
+            EVP_EncryptUpdate(e, km, &x, kb, 32);
+            EVP_CIPHER_CTX_free(e);
+            cmac_e2e = cmac_new(km, 32);
+            OPENSSL_cleanse(km, sizeof km);
             ctr_e2e = EVP_CIPHER_CTX_new();
             EVP_EncryptInit_ex(ctr_e2e, EVP_aes_256_ctr(), NULL, k_e2e, NULL);
         }
@@ -132,8 +144,8 @@ const char *app_aead_library(void) {
 #endif
     return OpenSSL_version(OPENSSL_VERSION);
 }
-int app_aead_overhead(void) { return APP_HDR + (kind == NONE ? 0 : is_ctr() ? 4 : 16); }
-int app_aead_max_payload(void) { return is_ctr() ? 255 - APP_HDR : kind == CCM128 || kind == CCM256 ? 65535 : 1 << 20; }
+int app_aead_overhead(void) { return APP_HDR + (kind == NONE ? 0 : kind == LW11_E2E ? 8 : is_ctr() ? 4 : 16); }  /* e2e: + its tag */
+int app_aead_max_payload(void) { return is_ctr() ? 255 - APP_HDR - (kind == LW11_E2E ? 4 : 0) : kind == CCM128 || kind == CCM256 ? 65535 : 1 << 20; }
 
 static void mic(const unsigned char *msg, int n, int down, uint32_t fcnt, unsigned char out[4]) {
     unsigned char b0[16], f[16], s[16];
@@ -160,9 +172,15 @@ int app_seal(int down, uint32_t fcnt, const unsigned char *pt, int len, unsigned
         if (len > app_aead_max_payload()) return -1;
         block(iv, 0x01, down, fcnt, 1);  /* A_1; CTR increments the last byte -> A_2, A_3, ... */
         EVP_EncryptInit_ex(ctr, NULL, NULL, NULL, iv);
-        if (kind == LW11_E2E) {  /* inner AES-256-CTR (same A_i blocks, its own key), then the LoRaWAN layer on top */
+        if (kind == LW11_E2E) {  /* inner AES-256-CTR (same A_i blocks, its own key) + 4 bytes of AES-256-CMAC over B0 |
+                                  * that ciphertext, then the LoRaWAN layer on top of both */
+            unsigned char b[16], t[16];
             EVP_EncryptInit_ex(ctr_e2e, NULL, NULL, NULL, iv);
             EVP_EncryptUpdate(ctr_e2e, ct, &n, pt, len);
+            block(b, 0x49, down, fcnt, (unsigned char)len);
+            cmac(cmac_e2e, b, ct, len, t);
+            memcpy(ct + len, t, 4);
+            len += 4;
             EVP_EncryptUpdate(ctr, ct, &n, ct, len);
         } else EVP_EncryptUpdate(ctr, ct, &n, pt, len);
         mic(out, APP_HDR + len, down, fcnt, ct + len);
@@ -214,11 +232,15 @@ int app_open(const unsigned char *in, int len, unsigned char *pt) {
         if (CRYPTO_memcmp(m, in + len - 4, 4)) return -1;
         block(iv, 0x01, down, fcnt, 1);
         EVP_EncryptInit_ex(ctr, NULL, NULL, NULL, iv);
-        EVP_EncryptUpdate(ctr, pt, &n, ct, body);
-        if (kind == LW11_E2E) {  /* what the network server forwards; the application removes the inner layer */
+        if (kind == LW11_E2E) {  /* what the network server forwards; the application checks the tag, then decrypts */
+            unsigned char inner[255], b[16], t[16];
+            EVP_EncryptUpdate(ctr, inner, &n, ct, body + 4);
+            block(b, 0x49, down, fcnt, (unsigned char)body);
+            cmac(cmac_e2e, b, inner, body, t);
+            if (CRYPTO_memcmp(t, inner + body, 4)) return -1;
             EVP_EncryptInit_ex(ctr_e2e, NULL, NULL, NULL, iv);
-            EVP_EncryptUpdate(ctr_e2e, pt, &n, pt, body);
-        }
+            EVP_EncryptUpdate(ctr_e2e, pt, &n, inner, body);
+        } else EVP_EncryptUpdate(ctr, pt, &n, ct, body);
         return body;
     case GCM128: case GCM256:
         nonce(iv, down, fcnt);
@@ -327,6 +349,20 @@ int app_aead_selftest(void) {
         kind = k ? LW11_E2E : LW11; rebuild();
         int n = app_seal(0, 9, src, 51, buf);
         kind = k ? LW11 : LW11_E2E; rebuild();
+        bad |= app_open(buf, n, pt) != -1;
+    }
+    /* 5. the inner tag: whoever holds the LoRaWAN keys (the network server) changes the inner ciphertext and re-seals
+     * the outer layer with a valid MIC; the e2e receiver still rejects it */
+    kind = LW11_E2E; rebuild();
+    {
+        int n = app_seal(0, 11, src, 47, buf), x;
+        unsigned char iv[16];
+        bad |= n != APP_HDR + 47 + 8 || app_open(buf, n, pt) != 47 || memcmp(pt, src, 47) != 0;
+        block(iv, 0x01, 0, 11, 1);
+        EVP_EncryptInit_ex(ctr, NULL, NULL, NULL, iv); EVP_EncryptUpdate(ctr, buf + APP_HDR, &x, buf + APP_HDR, 51);
+        buf[APP_HDR] ^= 1;  /* one bit of the inner ciphertext */
+        EVP_EncryptInit_ex(ctr, NULL, NULL, NULL, iv); EVP_EncryptUpdate(ctr, buf + APP_HDR, &x, buf + APP_HDR, 51);
+        mic(buf, APP_HDR + 51, 0, 11, buf + APP_HDR + 51);  /* a valid MIC again */
         bad |= app_open(buf, n, pt) != -1;
     }
     if (saved == NONE) app_aead_init("none");

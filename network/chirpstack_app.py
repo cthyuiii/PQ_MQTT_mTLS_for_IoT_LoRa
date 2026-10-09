@@ -7,9 +7,9 @@ lorawan11_e2e layer (AES-256-CTR, FPort 2) that ChirpStack can't, and times Chir
     python3 network/chirpstack_app.py --selftest
 
 Input: mqtt_tls_timer's RAW lines ("<unix time> <topic> <payload hex>"), each payload one ChirpStack JSON event.
-FPort 1 = a lorawan11 reading (ChirpStack already decrypted it); FPort 2 = lorawan11_e2e, decrypted here with the e2e
-key (APP_KEYS hex chars 128-191) and counter blocks from the event's devAddr and fCnt, by the openssl command (no new
-Python dependency). --sent: the virtual gateway's output on the same machine (same clock): delay = event received -
+FPort 1 = a lorawan11 reading (ChirpStack already decrypted it); FPort 2 = lorawan11_e2e: AES-256-CTR ciphertext + a
+4-byte AES-256-CMAC tag, checked and decrypted here with the e2e key (APP_KEYS hex chars 128-191; the tag's key derived
+from it) and blocks from the event's devAddr and fCnt, by the openssl command (no new Python dependency). --sent: the virtual gateway's output on the same machine (same clock): delay = event received -
 frame sent, per DevAddr and FCnt = ChirpStack's de-duplication wait + its processing + the MQTT hops on the way.
 """
 import argparse, base64, csv, json, os, statistics, subprocess, sys
@@ -17,9 +17,28 @@ import argparse, base64, csv, json, os, statistics, subprocess, sys
 OSSL = os.environ.get("OSSL", "openssl")
 
 
-def a_block(devaddr_be, fcnt, down=0, i=1):
-    """LoRaWAN's A_i block, as app_aead.c block(): 0x01 | 0^4 | Dir | DevAddr (LE) | FCnt (4 B LE) | 0 | i"""
-    return bytes([1, 0, 0, 0, 0, down]) + bytes.fromhex(devaddr_be)[::-1] + fcnt.to_bytes(4, "little") + bytes([0, i])
+def block(first, devaddr_be, fcnt, last, down=0):
+    """LoRaWAN's A_i (first 0x01) / B0 (0x49) block, as app_aead.c block(): first | 0^4 | Dir | DevAddr (LE) | FCnt (4 B LE)
+    | 0 | last"""
+    return bytes([first, 0, 0, 0, 0, down]) + bytes.fromhex(devaddr_be)[::-1] + fcnt.to_bytes(4, "little") + bytes([0, last])
+
+
+def ossl(*args, data=b""):
+    return subprocess.run([OSSL, *args], input=data, capture_output=True, check=True).stdout
+
+
+def e2e_open(key, devaddr_be, fcnt, data):
+    """lorawan11_e2e's inner layer: ciphertext | 4-byte tag -> the reading, or None if the tag doesn't verify. The tag's
+    key = AES-256(key, 02|0^15) | AES-256(key, 03|0^15); tag = AES-256-CMAC(that key, B0 | ciphertext)[:4]"""
+    if len(data) < 4:
+        return None
+    c, tag = data[:-4], data[-4:]
+    kmac = ossl("enc", "-aes-256-ecb", "-nopad", "-K", key.hex(), data=bytes([2] + [0] * 15 + [3] + [0] * 15))
+    mac = ossl("mac", "-cipher", "AES-256-CBC", "-macopt", f"hexkey:{kmac.hex()}", "CMAC",
+               data=block(0x49, devaddr_be, fcnt, len(c)) + c).decode().strip()
+    if bytes.fromhex(mac)[:4] != tag:
+        return None
+    return ctr(key, block(1, devaddr_be, fcnt, 1), c)
 
 
 def ctr(key, iv, data):
@@ -36,7 +55,9 @@ def reading(ev, e2e_key):
     if fp == 2:
         if not e2e_key:
             return da, fc, fp, "lorawan11_e2e ciphertext (no --e2e-key) " + data.hex()
-        data = ctr(e2e_key, a_block(da, fc), data)
+        data = e2e_open(e2e_key, da, fc, data)
+        if data is None:
+            return da, fc, fp, "REJECTED: lorawan11_e2e tag doesn't verify (changed after the device sealed it)"
     return da, fc, fp, data.decode(errors="replace").rstrip()
 
 
@@ -63,13 +84,15 @@ def summary(rows):
 
 
 def selftest():
-    # a lorawan11_e2e uplink from mqtt_tls_timer (AppSKey 11.., e2e key 44.., DevAddr 01234567, FCnt 65, FPort 2)
+    # a lorawan11_e2e uplink sealed by app_aead.c (AppSKey 11.., e2e key 44.., DevAddr 01234567, FCnt 65, 47-byte reading)
     frame = bytes.fromhex("406745230100410002fdea0fa8b63ededba3e12842fa3adaf82853246359e6b73af42591df3b9a2fe4b87d92c18"
-                          "09039f0f5ea9735cbde48f90d572f2955f913")
-    assert a_block("01234567", 65) == bytes.fromhex("01000000000067452301410000000001")
-    inner = ctr(bytes([0x11] * 16), a_block("01234567", 65), frame[9:-4])  # what ChirpStack does with the AppSKey
+                          "09039f0f5ea9735cbde48ae90fc1dfbe7307b")
+    assert block(1, "01234567", 65, 1) == bytes.fromhex("01000000000067452301410000000001")
+    inner = ctr(bytes([0x11] * 16), block(1, "01234567", 65, 1), frame[9:-4])  # what ChirpStack does with the AppSKey
     ev = {"devAddr": "01234567", "fCnt": 65, "fPort": 2, "data": base64.b64encode(inner).decode()}
     assert reading(ev, bytes([0x44] * 32)) == ("01234567", 65, 2, '{"seq":65,"temp_c":21.5,"rh":48}')
+    changed = bytes([inner[0] ^ 1]) + inner[1:]  # one bit, as whoever holds ChirpStack's keys could
+    assert reading(dict(ev, data=base64.b64encode(changed).decode()), bytes([0x44] * 32))[3].startswith("REJECTED")
     assert reading(ev, None)[3].startswith("lorawan11_e2e ciphertext")
     plain = {"devAddr": "01234567", "fCnt": 1, "fPort": 1, "data": base64.b64encode(b'{"seq":1} ').decode()}
     assert reading(plain, None) == ("01234567", 1, 1, '{"seq":1}')

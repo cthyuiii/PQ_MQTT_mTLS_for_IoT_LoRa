@@ -168,7 +168,8 @@ SKETCHES = [
     # and DEV_ADDR from the environment, FCnt in flash (LittleFS), lorawan11 + lorawan11_e2e, few messages (the virtual
     # gateway hands ChirpStack one frame a second). Run it with its own --tag: its rows are not benchmark rows.
     S("mqtt_tls_bench", "MQTT ChirpStack device ML-DSA-44 (wolfSSL)", 600, BOTH, 0,
-      flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_LORA_FIXED -DMT_NO_SWEEP -DMT_ITERS=5 -DMT_PIPE_ITERS=1 -DMT_MSGS=5"),
+      flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_LORA_FIXED -DMT_NO_SWEEP -DMT_ITERS=5 -DMT_PIPE_ITERS=1 -DMT_MSGS=5 "
+            "-DMT_PAYLOAD=47"),  # 47 B + the e2e tag + MIC = 64 B: within DR0's 51-byte FRMPayload
     # --- liboqs 0.16 bare-metal (portable C): the same code the Pi/Mac run via oqs-provider and the host liboqs stage.
     #     One algorithm per firmware (-DLB_ALG=<liboqs id>); reports peak stack per op (painted big stack,
     #     -DLB_STACK_KB, default 160 KB RP2040 / 400 KB RP2350).
