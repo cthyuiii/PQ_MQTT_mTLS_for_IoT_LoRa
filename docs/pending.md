@@ -155,15 +155,33 @@ inside the Pi, as on a real gateway). **Device** = a host client on the Mac firs
    keep-alive, logs `PUSH_ACK` / `PULL_RESP`, prints the send time per FCnt; `--selftest` checks the packet layout.
    Done when: the gateway shows online in ChirpStack. Built 9 Oct: `--selftest` passes, and a loopback run against a
    stand-in bridge got the frame, stats, keep-alive and a downlink acknowledgement. Not yet run against the real bridge.
-3. [ ] Smoke test with a known-good frame: the published LoRaWAN 1.0 uplink from the `app_aead.c` self-test
-   (DevAddr 49BE7DF1, FCnt 2, payload "test", its keys) to a temporary LoRaWAN 1.0 ABP device.
-   Done when: the event shows "test". Proves gateway → bridge → ChirpStack before our 1.1 code is involved.
+3. [ ] Smoke tests, ABP devices (RX1 delay 1, RX1 DR offset 0; RX2 AS923: 923200000 Hz, DR2 / EU868: 869525000 Hz, DR0):
+   a. LoRaWAN 1.1.0 device: DevAddr 01234567; AppSKey 11..11, FNwkSIntKey 22..22, SNwkSIntKey 33..33,
+      NwkSEncKey 44..44 (16 bytes each); counters 0. Three uplinks sealed by `app_aead.c` (`lorawan11`, the
+      pipeline's 51-byte reading, FCnt 1-3):
+      ```
+      40674523010001000162E9C7B054F8AAC802C900B1988E3DBA5AB5F3B29C98D038B2C8C7FB95815D25F9D90483180365F29CF5BA3FCA3F1AABFC7D21180BF200
+      406745230100020001A9ECBE6BBFF7D441361855E29211F27D2CFC1E50C1C481CC68BA5A563867C62060063C5B6873D0EEEFA72BB944E3C5AD6554711CC30BC2
+      406745230100030001EBB04F9B145C3D303F00D8F6623536B49A73FDD20201C351952177DF1EA8C1AF1BC2427DBE31AE4A3AF4FF00E56029E354F9CBA909F5C4
+      ```
+      Done when: three `up` events with data `eyJzZXEiOjEs…` (`{"seq":1,...}`), 2, 3. This is the first check of our
+      1.1 uplink MIC by another implementation (only the downlink MIC had a published vector).
+      Run 1 (9 Oct, frames sent within 1 ms): ChirpStack accepted FCnt 2 and 3 and answered each with a downlink
+      (DevStatusReq, timed 1 s after those two uplinks); FCnt 1 was dropped. ChirpStack holds each uplink ~200 ms, then
+      handles them in parallel: FCnt 2 / 3 raised the counter first, so FCnt 1 looked old. Fix: `virtual_gateway.py
+      --gap` (default 1 s between frames). To do: re-run with the counters reset to 0, confirm three events and the
+      decoded readings; set the device profile's device-status request frequency to 0 (no radio to answer it).
+   b. Only if (a) fails: LoRaWAN 1.0.3 device with the published uplink from the `app_aead.c` self-test
+      (DevAddr 49BE7DF1, NwkSKey 44024241ed4ce9a68c6a8bc055233fd3, AppSKey ec925802ae430ca77fd3dd73cb2cc588, FCnt 2,
+      payload "test"). Passes → the setup is right and our 1.1 MIC is the problem; fails → the setup.
 4. [ ] Fixed device on the host client (`mqtt_tls_timer.c`): `DEV_ADDR` replaces the per-process DevAddr; with it set,
    the FCnt is kept in a file and reserved ahead (as the Pico does in flash), so a restart never reuses a counter under
    the same keys and ChirpStack never sees it go back. Check: two runs in a row continue the counter;
    `aead_host_test` still byte-identical.
 5. [ ] Frames out of the PQ broker: `SUB=pqc/pipe/#` watch mode prints the raw frame (hex) per message with `RAW=1`,
    piped into the virtual gateway. It reuses the client's PQ TLS and our certificates: no MQTT library in Python.
+   The pipeline sends back to back; through ChirpStack the frames go out `--gap` apart (the pipe queues them),
+   so ChirpStack runs use few messages per connection.
 6. [ ] LoRaWAN 1.1 end to end with the host client: a 1.1 ABP device with the section 3 key mapping.
    Done when: the events show the 51-byte readings (`{"seq":n,...}`) in order, with no MIC or FCnt errors.
 7. [ ] The Pico W as the device: register its DevAddr and keys (kept in flash by the deployment firmware).

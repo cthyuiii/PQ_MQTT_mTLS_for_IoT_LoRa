@@ -507,7 +507,8 @@ python3 network/virtual_gateway.py --selftest
 The region (`as923` or `eu868`) must be the same in `setup_gateway_pi.sh`, `virtual_gateway.py --region` and the
 ChirpStack device profile. `virtual_gateway.py` reports every frame on channel 0 at DR0, which the LoRaWAN 1.1
 uplink MIC in `app_aead.c` assumes. ChirpStack drops frames from gateways it doesn't know: register the gateway ID
-(`--eui`, default `0102030405060708`) first. The steps after this one are in [docs/pending.md](docs/pending.md).
+(`--eui`, default `0102030405060708`) first. Frames go out `--gap` seconds apart (default 1): ChirpStack holds each uplink about
+200 ms and then handles them in parallel, so frames sent closer together race and a lower FCnt can be dropped as old. The steps after this one are in [docs/pending.md](docs/pending.md).
 
 ---
 

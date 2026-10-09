@@ -84,6 +84,9 @@ def main():
     ap.add_argument("--bridge", default="127.0.0.1:1700", help="Gateway Bridge UDP address (default %(default)s)")
     ap.add_argument("--eui", default="0102030405060708", help="gateway ID as registered in ChirpStack (16 hex)")
     ap.add_argument("--region", choices=FREQ, default="as923", help="must match the Gateway Bridge and ChirpStack")
+    ap.add_argument("--gap", type=float, default=1.0,
+                    help="seconds between frames (default %(default)s): ChirpStack holds each uplink ~200 ms, then "
+                         "handles them in parallel, so closer frames race and a lower FCnt that loses is dropped")
     ap.add_argument("--frame", help="send this one hex frame, wait for the bridge's ack, exit (1 = no ack)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
@@ -97,11 +100,13 @@ def main():
     threading.Thread(target=keepalive, args=(sock, eui, bridge), daemon=True).start()
     if a.frame and uplink(a.frame) is None:
         sys.exit("--frame: not a hex LoRaWAN uplink")
+    last = 0.0
     for line in [a.frame] if a.frame else sys.stdin:
         phy = uplink(line)
         if phy is None:
             continue
-        t = time.time()
+        time.sleep(max(0.0, last + a.gap - time.time()))  # ponytail: one gap for all devices; per DevAddr if several
+        t = last = time.time()
         pkt = packet(PUSH_DATA, eui, rxpk(phy, FREQ[a.region], t))
         label = f"DevAddr {phy[4:0:-1].hex()} FCnt {phy[6] | phy[7] << 8}" if phy[0] >> 5 else "join request"
         sent[pkt[1:3]] = label
