@@ -1529,8 +1529,18 @@ Pico W's pipeline; no run of the new form yet)
        through its stunnel, the gateway and the air, and the device verified it ("queued via the PQ MQTT broker").
        ChirpStack's delay: median 224.5 ms, p95 227.7 ms over 6 frames (one more broker hop than 118's 219.6 ms).
      - **With the Pi's broker:** ChirpStack's stunnel then connected to the Pi's `--serve-broker` (192.168.50.132:18835)
-       with no TLS or MQTT error: the two machines share the ML-DSA-44 CA. The gateway side on the Pi and a run
-       through it are still to do (`docs/pending.md`).
+       with no TLS or MQTT error: the two machines share the ML-DSA-44 CA.
+     - **On two machines (9 Oct, 15:52-16:10 UTC):** the Pi as gateway (virtual gateway, Gateway Bridge, stunnel), MQTT
+       broker and application; the Mac as ChirpStack. ChirpStack accepted 10 uplinks from the Mac host device and 60
+       from the **Pico W** (`-DMT_LORA_FIXED`, DevAddr 01234568, its frames on the UDP air), with no MIC or frame-counter
+       error (its log). The Pico's run: `OK (15 MQTT blocks)`. At the application, 30 of the Pico's readings were
+       copied here: FCnt 61-70 and 101-110 (FPort 2, decrypted with the AES-256 key only there) and 81-90 (FPort 1),
+       in order; the gaps are the downlink blocks' frames, which never go on the air. ChirpStack's delay in those 30
+       (frame to the Pi's bridge → event at the Pi's application, through the Mac and back): median 235.7 ms, min
+       219.6, max 326.4; the full set is in `results/chirpstack_delay_pi_pq.csv` on the Pi.
+     - **Time on air:** a 64-byte frame at DR0 (SF12BW125) takes 2,793 ms on a LoRa radio (computed,
+       `virtual_gateway.py`), against microseconds for the UDP datagram that stands in for it; the device's send is now
+       timed (`send_us` on the host, `air_us` in the Pico's rows; built, not yet run on the board).
      - The benchmark set's server certificate names only localhost / 127.0.0.1, so ChirpStack's stunnel checks the CA
        but not the broker's address (stunnel warns); a certificate naming the Pi's address would add that check.
 

@@ -8,11 +8,13 @@ Labels: **G&B** = Gateway & Backend, **B&R** = Benchmarking & Reproducibility.
 
 ## Still to do
 
-- [ ] **The two-machine run (steps 6, 10, 15):** Mac: done (ChirpStack's stunnel already reaches the Pi's broker,
+- [~] **The two-machine run (steps 6, 10, 15):** ran 9 Oct (finding 119): 10 + 60 uplinks accepted. Left: the
+  delay summary per device from `results/chirpstack_delay_pi_pq.csv`, and the 10 ms de-duplication run. Was: Mac: done (ChirpStack's stunnel already reaches the Pi's broker,
   finding 119); rsync `ca.crt`, `gateway.crt`, `gateway.key` to the Pi. Pi: `--serve-broker`, `PQ=~/chirpstack-pq
   setup_gateway_pi.sh`, `virtual_gateway.py --air`, the application on :18835; Mac: the device with `AIR=1` (README
   section 0.4). Then ChirpStack's delay at the default `deduplication_delay` and at 10 ms.
-- [ ] **Step 7, the Pico W as the device:** register a second device (DevAddr 01234568, same profile, keys from
+- [x] **Step 7, the Pico W as the device:** ran 9 Oct, `OK (15 MQTT blocks)`, 60 uplinks accepted (finding 119). To
+  get its UDP send time (`air_us`), run it again on the new build. Was: register a second device (DevAddr 01234568, same profile, keys from
   `APP_KEYS`), then `AIR=<pi-ip>:1680 APP_KEYS=... DEV_ADDR=01234568 python3 pico/run_benchmarks.py --test mqtt --match
   chirpstack --tag chirpstack`. Compiled; not run on the board. It doesn't listen for downlinks (the host device does).
 - [ ] **Inner integrity of `lorawan11_e2e`:** none now (the application trusts ChirpStack's MIC check and the link
@@ -72,6 +74,7 @@ inside the Pi, as on a real gateway). **Device** = the Mac host client, or the P
     ChirpStack's Mosquitto (8883: ML-DSA-44 CA, X25519MLKEM768 only, client certificate required; plain only on
     127.0.0.1:1884) → ChirpStack → stunnel → the project's PQ MQTT broker (:18835) → application. Classical and
     certificate-less clients refused (finding 118); the whole chain with downlinks on the Mac (finding 119).
-15. [x] The radio as UDP "air": `virtual_gateway.py --air`, the device `mqtt_tls_timer AIR=1` (+ `AIR_LISTEN` for
+15. [x] (Pico W and Mac device through the Pi, finding 119; send timing `send_us` / `air_us` and the computed
+    LoRa airtime per frame added after.) The radio as UDP "air": `virtual_gateway.py --air`, the device `mqtt_tls_timer AIR=1` (+ `AIR_LISTEN` for
     downlinks, sent back to where the uplink came from), the Pico `AIR=` at build time (compiled). Tested on the Mac
     with the full PQ chain (finding 118).

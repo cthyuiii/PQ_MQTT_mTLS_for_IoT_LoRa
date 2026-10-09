@@ -41,7 +41,7 @@
  * Air mode (AIR=1, MSGS > 0): a LoRaWAN device with no broker, as on a radio: host / port are the virtual gateway's
  * air (network/virtual_gateway.py --air), and each of MSGS sealed uplinks goes there as one UDP datagram. AIR_LISTEN=<s>:
  * then wait that long for downlinks on the same socket (Class A: after an uplink), check and print them. Rows:
- *   air,idx,fcnt,seal_us        down,fcnt,<scheme>,<reading>
+ *   air,idx,fcnt,seal_us,send_us    down,fcnt,<scheme>,<reading>    (send_us: the sendto(), not LoRa airtime)
  *
  * Relay mode (PUB = topic prefix, e.g. "pqc/down"): reads virtual_gateway.py's "downlink <time> <frame hex>"
  * lines on stdin and PUBLISHes each frame on <PUB>/<DevAddr>: a network server's downlink back to the device.
@@ -629,7 +629,7 @@ static void air_device(const char *host, const char *port, int msgs, int payload
     hints.ai_socktype = SOCK_DGRAM;
     if (getaddrinfo(host, port, &hints, &ai) != 0) die("cannot resolve", host);
     int fd = socket(ai->ai_family, SOCK_DGRAM, 0);
-    printf("#aead %s (%s), uplink over the air (UDP to %s:%s), %d B payload + %d B overhead\nair,idx,fcnt,seal_us\n",
+    printf("#aead %s (%s), uplink over the air (UDP to %s:%s), %d B payload + %d B overhead\nair,idx,fcnt,seal_us,send_us\n",
            app_aead_label(), app_aead_library(), host, port, payload, app_aead_overhead());
     for (int m = 0; m < msgs; m++) {
         uint32_t fc = next_fcnt();
@@ -639,7 +639,7 @@ static void air_device(const char *host, const char *port, int msgs, int payload
         double t1 = now_us();
         if (fl < 0) die("payload too large for", app_aead_label());
         if (sendto(fd, fr, (size_t)fl, 0, ai->ai_addr, ai->ai_addrlen) != fl) die("air send failed", strerror(errno));
-        printf("air,%d,%u,%.3f\n", m, fc, t1 - t0);
+        printf("air,%d,%u,%.3f,%.3f\n", m, fc, t1 - t0, now_us() - t1);
     }
     fflush(stdout);
     struct timeval tmo = {1, 0};  /* wait in 1 s slices */

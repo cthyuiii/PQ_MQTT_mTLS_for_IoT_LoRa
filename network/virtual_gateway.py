@@ -8,13 +8,14 @@ protocol (v2), as if a radio gateway had received them. No radio; standard libra
     python3 network/virtual_gateway.py --selftest
 
 Every frame goes out as channel 0 at DR0 (SF12BW125): our LoRaWAN 1.1 uplink MIC (app_aead.c, mic()) uses
-TxCh = TxDr = 0, and ChirpStack recomputes them from what the gateway reports. Only uplinks are forwarded
+TxCh = TxDr = 0, and ChirpStack recomputes them from what the gateway reports. Each "sent" line also gives the frame's
+LoRa airtime at DR0, computed (a 64-byte frame: 2.8 s), which a UDP datagram doesn't take. Only uplinks are forwarded
 (join request, data up). Prints the send time of each frame (for ChirpStack's delay). A downlink from ChirpStack
 is acknowledged and printed as "downlink <time> ... <frame hex>". With --air it also goes back over the air: to the
 address the device's last uplink came from (mqtt_tls_timer AIR=1 listens there). From stdin, mqtt_tls_timer's
 relay mode (PUB=pqc/down) can carry it to the device through a broker instead.
 """
-import argparse, base64, itertools, json, os, socket, sys, threading, time
+import argparse, base64, itertools, json, math, os, socket, sys, threading, time
 
 FREQ = {"as923": 923.2, "eu868": 868.1}  # channel 0 of each region, MHz
 PUSH_DATA, PUSH_ACK, PULL_DATA, PULL_RESP, PULL_ACK, TX_ACK = range(6)
@@ -30,6 +31,14 @@ def rxpk(phy, freq, t):
                       "tmst": int(t * 1e6) & 0xFFFFFFFF, "chan": 0, "rfch": 0, "freq": freq, "stat": 1,
                       "modu": "LORA", "datr": "SF12BW125", "codr": "4/5", "rssi": -60, "lsnr": 9.5,
                       "size": len(phy), "data": base64.b64encode(phy).decode()}]}
+
+
+def airtime_ms(n, sf=12, bw=125e3, cr=1, preamble=8):
+    """LoRa time on air of an n-byte PHYPayload (Semtech AN1200.13): explicit header, CRC on, coding rate 4/(4+cr),
+    low-data-rate optimisation at SF11/12. Computed, not measured: what a radio would spend sending the frame."""
+    ts, de = 2 ** sf / bw, 1 if sf >= 11 else 0
+    symbols = 8 + max(math.ceil((8 * n - 4 * sf + 28 + 16) / (4 * (sf - 2 * de))) * (cr + 4), 0)
+    return ((preamble + 4.25) + symbols) * ts * 1e3
 
 
 def stat(t):  # gateway statistics: ChirpStack marks the gateway as seen
@@ -108,6 +117,7 @@ def selftest():
     assert uplink(f"[watch pi] 12:00:00.000001  pqc/pipe/1  17 B  {v}") == bytes.fromhex(v)
     assert uplink("60" + v[2:]) is None and uplink("not hex") is None and uplink("") is None  # downlink, text, empty
     assert is_uplink(bytes.fromhex(v)) and not is_uplink(bytes.fromhex("60" + v[2:])) and not is_uplink(b"\x40" * 5)
+    assert round(airtime_ms(64)) == 2793 and round(airtime_ms(17)) == 1319  # SF12BW125: our 64 B frame, the vector
     print("virtual_gateway selftest OK")
 
 
@@ -145,7 +155,7 @@ def main():
         label = f"DevAddr {phy[4:0:-1].hex()} FCnt {phy[6] | phy[7] << 8}" if phy[0] >> 5 else "join request"
         sent[pkt[1:3]] = label
         sock.sendto(pkt, bridge)
-        print(f"sent {t:.6f} {label} {len(phy)} B", flush=True)
+        print(f"sent {t:.6f} {label} {len(phy)} B airtime {airtime_ms(len(phy)):.0f} ms", flush=True)
     if a.frame:
         sys.exit(0 if acked.wait(2) else "no PUSH_ACK from the bridge at " + a.bridge)
     time.sleep(1)  # last acks

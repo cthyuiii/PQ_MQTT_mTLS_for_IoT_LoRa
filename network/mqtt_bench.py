@@ -345,6 +345,9 @@ def summarize(common: dict, rows: list[dict], msgs: list[dict], wholes: list[dic
                    **stats("rtt", [x / 1e3 for x in f("rtt_us")], "ms"), **stats("e2e", e2e, "ms"),
                    e2e_p90_ms=e2e[int(0.9 * (len(e2e) - 1))],
                    msg_tx_B=int(statistics.median(f("tx_B"))), msg_rx_B=int(statistics.median(f("rx_B"))))
+        air = [float(m["air_us"]) for m in msgs if m.get("air_us")]  # the Pico's UDP uplink to the air (ChirpStack runs)
+        if air:
+            out.update(**stats("air", air, "us"))
     if wholes:
         out.update(**stats("whole_first", [float(w["first_ms"]) for w in wholes], "ms"),
                    **stats("whole_all", [float(w["all_ms"]) for w in wholes], "ms"))

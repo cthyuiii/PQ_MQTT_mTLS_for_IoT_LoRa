@@ -102,7 +102,7 @@ Host = the Mac and the Pi (the same C sources; the Pi uses its system OpenSSL, t
 
 | Job | Where | Library, call |
 |---|---|---|
-| the radio (simulated): device → gateway, downlinks back | device / Pi | UDP datagrams, one per LoRaWAN frame: `mqtt_tls_timer` `AIR=1` (`sendto` / `recv`), the Pico's `WiFiUDP` (`-DMT_LORA_FIXED`, `AIR=`), `virtual_gateway.py --air` |
+| the radio (simulated): device → gateway, downlinks back | device / Pi | UDP datagrams, one per LoRaWAN frame: `mqtt_tls_timer` `AIR=1` (`sendto` / `recv`, timed: `send_us`), the Pico's `WiFiUDP` (`-DMT_LORA_FIXED`, `AIR=`; timed: `air_us`), `virtual_gateway.py --air` (+ each frame's LoRa airtime at DR0, computed: `airtime_ms`, Semtech AN1200.13) |
 | gateway (simulated) | Pi | `network/virtual_gateway.py`: Python `socket` / `json` / `base64`, the Semtech UDP packet-forwarder protocol (v2) |
 | frames out of a broker / downlinks back into it (without the air) | Pi | `mqtt_tls_timer` watch mode `RAW=1` / relay mode `PUB=` |
 | gateway → network server | Pi, Docker | ChirpStack Gateway Bridge 4 (Go) → plain MQTT on 127.0.0.1 → stunnel 5.76 (Alpine 3.23, OpenSSL 3.5.8): TLS 1.3, X25519MLKEM768, ML-DSA-44 client certificate |

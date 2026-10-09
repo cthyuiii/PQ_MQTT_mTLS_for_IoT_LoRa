@@ -424,6 +424,13 @@ static bool lora_load() {  // true: keys, DevAddr and FCnt (= the saved reservat
 #if defined(MT_LORA_FIXED) && defined(AIR_HOST)
 static WiFiUDP air;  // the uplink as a radio would send it: one datagram to the virtual gateway
 #endif
+#if defined(MT_LORA_FIXED) && defined(AIR_HOST)
+#define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us"
+static const char *air_col(uint32_t us) { static char s[16]; snprintf(s, sizeof s, us ? ",%lu" : ",", (unsigned long)us); return s; }
+#else
+#define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B"
+static const char *air_col(uint32_t) { return ""; }
+#endif
 // the pipeline: seal a reading with the block's scheme (lora_aead.h; the frame, FCnt and direction as the host's
 // app_seal), PUBLISH it, wait for the broker to deliver it back, then verify + decrypt it (app_open)
 static char topic[32];
@@ -470,14 +477,16 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     if (ok) { memcpy(frame, body + off, fl); ok = sc.open(MT_PAYLOAD) == 0 && !memcmp(out, pt, MT_PAYLOAD); }
     uint32_t t3 = micros();
     if (!ok) { snprintf(err, sizeof err, "payload verification failed: %s", sc.name); return err; }
+    if (m == 0) first = micros() - t_conn;  // the 'whole' row: before the air send
+    uint32_t air_us = 0;  // the uplink to the air, timed apart from seal / round trip / open: Wi-Fi UDP, not LoRa airtime
 #if defined(MT_LORA_FIXED) && defined(AIR_HOST)
-    if (!down && air.beginPacket(AIR_HOST, AIR_PORT)) { air.write(frame, fl); air.endPacket(); }  // untimed
+    uint32_t t4 = micros();
+    if (!down && air.beginPacket(AIR_HOST, AIR_PORT)) { air.write(frame, fl); air.endPacket(); air_us = micros() - t4; }
 #endif
-    if (m == 0) first = micros() - t_conn;
     STEP(S_SERIAL);
-    if (report) Serial.printf("msg,%d,%d,%lu,%lu,%lu,%lu,%lu\n", iter, m, (unsigned long)(t1 - t0),
+    if (report) Serial.printf("msg,%d,%d,%lu,%lu,%lu,%lu,%lu%s\n", iter, m, (unsigned long)(t1 - t0),
                               (unsigned long)(t2 - t1), (unsigned long)(t3 - t2),
-                              (unsigned long)(c->tx - tx0), (unsigned long)(c->rx - rx0));
+                              (unsigned long)(c->tx - tx0), (unsigned long)(c->rx - rx0), air_col(air_us));
   }
   if (report && msgs > 0)
     Serial.printf("whole,%d,%.3f,%.3f,%d\n", iter, first / 1e3, (micros() - t_conn) / 1e3, msgs);
@@ -815,7 +824,7 @@ static void bench_block(const Block &b) {
   Serial.printf("#lib %s\n", tls ? "wolfSSL " LIBWOLFSSL_VERSION_STRING : "none (plain MQTT)");
   Serial.println("iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B,hs_writes,hs_reads,writes,reads,"
                  "free_heap_B," HS_COLS);
-  if (msgs > 0) Serial.println("msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B\nwhole,iter,first_ms,all_ms,msgs");
+  if (msgs > 0) Serial.println(MSG_HDR "\nwhole,iter,first_ms,all_ms,msgs");
 #ifdef MT_DEPLOY_FULL
   if (cur_signed && !e && (dp_key_private(&dev_key, KEY_DER, sizeof KEY_DER) ||
                            dp_key_cert(&srv_key, SRV_DER, sizeof SRV_DER, CA_DER, sizeof CA_DER)))

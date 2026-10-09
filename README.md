@@ -580,6 +580,9 @@ AIR=<pi-ip>:1680 APP_KEYS=$K DEV_ADDR=01234568 python3 pico/run_benchmarks.py --
   `down,<FCnt>,<scheme>,<data>` once its MIC verifies.
 - Without the air: the gateway can read the frames from a broker instead (`RAW=1 SUB='pqc/pipe/#' mqtt_tls_timer ...
   | virtual_gateway.py`), and `PUB=pqc/down` carries downlinks back through it.
+- Timing the air: the device's send is timed (`send_us` in the host's `air` rows, `air_us` in the Pico's `msg` rows,
+  `air_*` in its pipeline summary), and each `sent` line of `virtual_gateway.py` gives the frame's LoRa airtime at DR0,
+  computed (64 B: 2.8 s): what a radio would spend, which the UDP stand-in doesn't.
 - Self-checks: `python3 network/virtual_gateway.py --selftest`, `python3 network/chirpstack_app.py --selftest`.
 - `bash scripts/chirpstack_tls_test.sh`: ChirpStack's and the Gateway Bridge's own MQTT clients against our Mosquitto
   with the hybrid key exchange and with ML-DSA certificates (Docker; throwaway containers).
