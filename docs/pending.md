@@ -2,14 +2,14 @@
 
 What this branch still needs: a simulated ChirpStack network (no radio) that accepts our LoRaWAN 1.1 frames,
 with 256-bit protection end to end and PQ TLS on every network link. How to run it: README section 0.4.
-Results: docs/findings.md 115-119.
+Results: docs/findings.md 115-120.
 Chain: device ─ air ─► gateway ─ stunnel ═PQ═► ChirpStack ─ stunnel ═PQ═► MQTT broker ═PQ═► application.
 Labels: **G&B** = Gateway & Backend, **B&R** = Benchmarking & Reproducibility.
 
-## Still to do
+## Status: done (10 Oct 2026)
 
-The chain works end to end with the Pico W (finding 119); the final-setup hardening and the end-to-end tag are built
-(finding 120). To call this branch done:
+The chain works end to end with the Pico W (finding 119), with the final-setup hardening, the end-to-end tag and the
+per-device keys in place (finding 120). Every item below is ticked; what's left is KIV.
 
 - [x] **On the Pi:** certificates pushed without CA keys; the Pico's tagged run went through ChirpStack (60 uplinks,
   18:54-18:55 UTC, none rejected). Its timing is on the Pi (`results/*chirpstack*`).
@@ -18,8 +18,11 @@ The chain works end to end with the Pico W (finding 119); the final-setup harden
   key = HKDF-SHA-256(master, "IoT-PQC lorawan11_e2e v1" | DevEUI); `chirpstack_app.py --e2e-master-file`, and
   `--derive <DevEUI>` for provisioning. To share with Security & Key Management.
 - [x] **Merge:** no; the branch stays as it is (the LoRa deliverable).
-- [ ] **The Pi's broker with `BROKER_ACL=1`:** the 18:54 run was through a broker without it (finding 120).
-- [ ] **The Pico on a derived key:** provision it from the master key on the Pi (README section 0.4) and run once.
+- [x] **The Pi's broker with `BROKER_ACL=1`:** on since 10 Oct 04:32 UTC; anonymous refused on `application/`
+  (finding 120).
+- [x] **The Pico on a derived key** (10 Oct): its FPort 2 readings opened with the application's master key. 28
+  uplinks got through, then a one-minute Pi ↔ Mac link drop lost the rest. The final run (04:39-04:40 UTC, ACL on):
+  60 / 60 through ChirpStack, no errors (finding 120). Its CSV and the Pico's seal times are on the Pi.
 - Evidence stays on the Pi and in local copies (`results/`, `*.log` are gitignored): rsync or the Docker logs.
 - Not needed to finish (KIV): a real LoRa radio and gateway in place of the UDP air and `virtual_gateway.py`; the OTAA
   join; downlinks to the Pico; the 10 ms de-duplication run on two machines (one-Mac figure in finding 116).

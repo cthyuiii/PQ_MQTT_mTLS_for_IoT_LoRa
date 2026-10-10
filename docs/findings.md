@@ -1579,10 +1579,25 @@ Pico W's pipeline; no run of the new form yet)
        event; each device is provisioned with its own key only (`chirpstack_app.py --derive <DevEUI>`). HKDF checked
        against RFC 5869 test case 1. Live (Mac stand-in gateway → ChirpStack → the Pi's broker → the application):
        frames sealed with device 01234567's derived key were read; one sealed with the old shared test key was
-       rejected by the tag. ChirpStack holds none of these keys.
-     - **The Pi's broker was still running without `BROKER_ACL=1`** after the run: an anonymous client on :18935
-       received a test message published on `application/acl-check/...` (a topic the application doesn't read). The
-       restart with the variable is what turns the ACL on.
+       rejected by the tag. ChirpStack holds none of these keys. **The Pico on its derived key** (10 Oct, 04:20-04:21
+       UTC; the application on `--e2e-master-file`): its FPort 2 readings opened at the application, none rejected.
+     - **A Pi ↔ Mac link drop in that run:** 28 uplinks reached ChirpStack (04:20:52-04:21:27), each about 1 s apart;
+       the delay rose from 233 to 413 ms over the last few. Then both of the Pi's connections to the Mac went silent for
+       about a minute: ChirpStack's Mosquitto dropped the gateway at 04:22:12 ("exceeded timeout"), ChirpStack's link
+       to the broker timed out (04:22:08-04:22:19), and both reconnected at 04:22:22-26. The Pico, the virtual gateway
+       and the bridge (all on the Pi) kept working: frames such as FCnt 616-622 were acknowledged by the local bridge
+       and then lost with the dropped connection (unconfirmed uplinks, MQTT QoS 0). There was no sign of it on the
+       Mac. Losing unconfirmed uplinks is LoRaWAN's normal behaviour; confirmed uplinks would retry them.
+     - **The Pi's broker, first without `BROKER_ACL=1`** (checked at 04:24 UTC): an anonymous client on :18935 received
+       a test message published on `application/acl-check/...` (a topic the application doesn't read). The same check
+       against `BROKER_ACL=1` on the Mac (Mosquitto 2.1.2) refused the anonymous client and delivered to
+       `application`, so the fault was the Pi's start-up, not the ACL. ChirpStack's broker connection from 9 Oct 18:31
+       stayed up until the link drop, so that run went through the 9 Oct broker.
+     - **Then with `BROKER_ACL=1`** (restarted 04:32 UTC; ChirpStack reconnected by itself at 04:32:34): the anonymous
+       client on :18935 gets nothing on `application/` and still works on `pqc/`. **The final run** (04:39:27-04:40:26
+       UTC; the Pico on its derived key; ACL on): 60 uplinks into ChirpStack, 60 events out, 1.00 s apart (max gap
+       1.09 s), no errors, no link drop. ChirpStack's own part (gateway message in → event published, from its log)
+       took a median of 213.1 ms (206.3-230.3): the 200 ms de-duplication wait plus about 13 ms.
 
 ### Sources
 
@@ -1679,7 +1694,7 @@ what is already in place, measured or tested in each area.
 | Trust-anchor update format | `PQTA` \| CA length \| CA \| ML-DSA-44 signature: no version, no expiry | An old signed update can be replayed: a rollback to an earlier (perhaps compromised) root | A version and an expiry inside the signed bytes; keep the highest version seen in flash / OTP and refuse lower ones | Signed format with a length field; a changed byte in the length, the CA or the signature is refused (`deploy_host_test`) | not started |
 | Update key | `certs/DEPLOY/update.key` made next to the CA, on the broker machine | Whoever holds it can install any root on every device | Keep it offline (HSM or an air-gapped machine), apart from the CA; a second key in firmware for recovery | A separate ML-DSA-44 update key, not the CA's; the device holds only its public half (`UPD_PUB`) | not started |
 | ChirpStack backend | PQ in front of ChirpStack (:8883, client certificate required) and behind it (stunnel, the broker's certificate pinned); plain only inside Docker and on 127.0.0.1; a random API secret; certificate folder 700. The UI's admin password is the default until changed; keys inside the folder are 644 for the containers; FPort 1 readings are in clear inside ChirpStack | The default UI login on the LAN; ChirpStack's operator reads FPort 1 readings | Change the admin password (UI); keys 600 per container user; FPort 2 for readings ChirpStack shouldn't see; CRLs for these CAs | Both sides PQ, classical and certificate-less clients refused (118-120); pinning tested both ways; API secret replaced (120); 180 Pico frames through it (119) | done except the admin password (yours, in the UI) |
-| MQTT broker identities | One ML-DSA-44 client certificate per role: `pqc-client` (devices, benchmarks), `chirpstack`, `application`; with `BROKER_ACL=1` an ACL per listener by certificate name; the server-auth TLS listener's anonymous clients get `pqc/` only | Without `BROKER_ACL=1` (benchmark runs), anyone with the public CA certificate reads ChirpStack's events and injects downlinks through :18935 (120) | Run the ChirpStack set-up's broker with `BROKER_ACL=1`; per-device certificates (device identity row) | Role certificates issued; ACL tested both ways on a stand-in broker (120) | in place with `BROKER_ACL=1` (the Pi's broker to be restarted with it) |
+| MQTT broker identities | One ML-DSA-44 client certificate per role: `pqc-client` (devices, benchmarks), `chirpstack`, `application`; with `BROKER_ACL=1` an ACL per listener by certificate name; the server-auth TLS listener's anonymous clients get `pqc/` only | Without `BROKER_ACL=1` (benchmark runs), anyone with the public CA certificate reads ChirpStack's events and injects downlinks through :18935 (120) | Run the ChirpStack set-up's broker with `BROKER_ACL=1`; per-device certificates (device identity row) | Role certificates issued; ACL tested both ways on a stand-in broker; on the Pi's broker since 10 Oct 04:32 UTC: anonymous refused on `application/`, `pqc/` served, the final run through it (120) | done |
 | CA keys on every machine | Certificates are made on the Mac; `rsync certs/` to the Pi leaves out `CA.key`, `ClientCA.key`, `update.key` and the serials, and removes copies already there | The Mac still holds every CA key next to the certificates | CA keys offline (or in an HSM), the update key apart from the CA (update key row) | Nothing on the Pi needs the keys (120); README's rsync updated | in place once pushed with the new rsync |
 | LoRaWAN keys and activation | ABP: DevAddr and LoRaWAN session keys set per device and in ChirpStack, static for the device's life (the test devices share public test patterns); end-to-end keys derived per device from an application master key (HKDF-SHA-256 over DevEUI), or one shared test key | Test LoRaWAN keys on a real device let anyone forge its frames at the LoRaWAN layer (the end-to-end layer still holds with derived keys); no rekeying | Per-device random LoRaWAN keys; OTAA (KIV) for fresh session keys; the master key offline / in an HSM next to the application | Derivation built and tested (RFC 5869 vector; live through ChirpStack: the derived key read, the old shared key rejected, 120); FCnt never reused (109, 116, 119) | end-to-end keys: done (`--e2e-master-file`); LoRaWAN keys: not started |
 | End-to-end layer integrity | `lorawan11_e2e`: AES-256-CTR + a 4-byte AES-256-CMAC tag (its own derived key) inside the LoRaWAN frame | A 4-byte tag: one forgery in 2^32 per try, as LoRaWAN's own MIC | — | Tag built and tested: a changed inner ciphertext with a valid LoRaWAN MIC is rejected (host self-test, application check); host = Pico frames (120) | done (Pico timing to run) |
