@@ -320,7 +320,7 @@ was on the same machine, including one reached through this machine's own LAN ad
 ./run_all.sh --serve-broker --watch            # + every message routed (a second delivery: not for timing runs)
 # 2. both machines need the same certs/, made on the Mac, which keeps the CA and update signing keys. Run rsync ON THE
 #    MAC, from the repo root: the push leaves those keys behind (and removes any copies on the Pi)
-X=(--exclude CA.key --exclude ClientCA.key --exclude update.key --exclude '*.srl')
+X=(--exclude CA.key --exclude ClientCA.key --exclude update.key --exclude '*.srl' --exclude chirpstack.key)  # chirpstack.key: the Mac's proxy only
 rsync -a --delete --delete-excluded "${X[@]}" certs/ <pi-user>@<pi-ip>:PQ_MQTT_mTLS_for_IoT_LoRa/certs/   # push to the Pi
 rsync -a --delete "${X[@]}" <pi-user>@<pi-ip>:PQ_MQTT_mTLS_for_IoT_LoRa/certs/ certs/   # pull (the Mac's keys stay)
 # 3. the client machine (here the Pi), in its repo root
@@ -577,6 +577,10 @@ The Pico runs its pipeline as usual (its own MQTT connections to the broker, tim
 too; its device is registered in ChirpStack with DevAddr 01234568 and the keys above. A host can stand in for the
 device (`AIR=1 DEV_ADDR=… APP_KEYS=… AEAD=… MSGS=n mqtt_tls_timer <gateway> 1680 1 0`; `AIR_LISTEN=<s>` for downlinks).
 
+- End-to-end keys per device: the application keeps one master key (`openssl rand -hex 32 > e2e_master; chmod 600`)
+  and `chirpstack_app.py --e2e-master-file e2e_master` derives each device's key from the event's DevEUI
+  (HKDF-SHA-256); `--derive <DevEUI>` prints one device's key for its `APP_KEYS` (hex 128-191) at provisioning.
+  ChirpStack never holds it; `--e2e-key` (one key for every device) stays for tests.
 - `chirpstack_app.py` prints each reading with its delay (event received − frame sent, both on the Pi's clock) and
   a median / p95 at the end. ChirpStack's de-duplication wait (`deduplication_delay` under `[network]` in
   `chirpstack.toml`, default 200 ms) is most of it: measure at the default and at a low value.

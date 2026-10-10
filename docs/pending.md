@@ -11,14 +11,15 @@ Labels: **G&B** = Gateway & Backend, **B&R** = Benchmarking & Reproducibility.
 The chain works end to end with the Pico W (finding 119); the final-setup hardening and the end-to-end tag are built
 (finding 120). To call this branch done:
 
-- [ ] **On the Pi:** take the certificates without CA keys (README 0.1 rsync, run on the Mac), restart the broker with
-  `BROKER_ACL=1`, and run the Pico once more: the tagged `lorawan11_e2e` frames through ChirpStack, and their timing.
-- [ ] **ChirpStack's admin password:** change it in the UI (the API secret is already new).
-- [ ] **The 256-bit key derivation:** done where the keys are made, not by ChirpStack: a master key at the application
-  (or a key service next to it) derives each device's end-to-end key, e.g. HKDF-SHA-256(master, "IoT-PQC e2e v1" |
-  DevEUI); the device is provisioned with its own derived key only. Write it down with Security & Key Management;
-  `chirpstack_app.py` could derive per DevEUI from a master instead of taking one key (offered).
-- [ ] **Merge** `LoRa_1.1_implementation` into `main` (or keep it as the LoRa deliverable), with `main`'s own `pending.md`.
+- [x] **On the Pi:** certificates pushed without CA keys; the Pico's tagged run went through ChirpStack (60 uplinks,
+  18:54-18:55 UTC, none rejected). Its timing is on the Pi (`results/*chirpstack*`).
+- [x] **ChirpStack's admin password:** changed (10 Oct).
+- [x] **The 256-bit key derivation** (finding 120): the application's master key (a file) → each device's end-to-end
+  key = HKDF-SHA-256(master, "IoT-PQC lorawan11_e2e v1" | DevEUI); `chirpstack_app.py --e2e-master-file`, and
+  `--derive <DevEUI>` for provisioning. To share with Security & Key Management.
+- [x] **Merge:** no; the branch stays as it is (the LoRa deliverable).
+- [ ] **The Pi's broker with `BROKER_ACL=1`:** the 18:54 run was through a broker without it (finding 120).
+- [ ] **The Pico on a derived key:** provision it from the master key on the Pi (README section 0.4) and run once.
 - Evidence stays on the Pi and in local copies (`results/`, `*.log` are gitignored): rsync or the Docker logs.
 - Not needed to finish (KIV): a real LoRa radio and gateway in place of the UDP air and `virtual_gateway.py`; the OTAA
   join; downlinks to the Pico; the 10 ms de-duplication run on two machines (one-Mac figure in finding 116).
