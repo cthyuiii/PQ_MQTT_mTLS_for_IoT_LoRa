@@ -22,7 +22,8 @@ per-device keys in place (finding 120). Every item below is ticked; what's left 
   (finding 120).
 - [x] **The Pico on a derived key** (10 Oct): its FPort 2 readings opened with the application's master key. 28
   uplinks got through, then a one-minute Pi ↔ Mac link drop lost the rest. The final run (04:39-04:40 UTC, ACL on):
-  60 / 60 through ChirpStack, no errors (finding 120). Its CSV and the Pico's seal times are on the Pi.
+  60 / 60 through ChirpStack, no errors, but on the old shared test key (finding 120). Optional: one run with both
+  the derived key and the ACL on.
 - Evidence stays on the Pi and in local copies (`results/`, `*.log` are gitignored): rsync or the Docker logs.
 - Not needed to finish (KIV): a real LoRa radio and gateway in place of the UDP air and `virtual_gateway.py`; the OTAA
   join; downlinks to the Pico; the 10 ms de-duplication run on two machines (one-Mac figure in finding 116).
