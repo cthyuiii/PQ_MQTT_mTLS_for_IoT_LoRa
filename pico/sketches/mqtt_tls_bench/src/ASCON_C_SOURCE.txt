@@ -1,4 +1,9 @@
 ascon-c (https://github.com/ascon/ascon-c) commit 446347f21b209f3921c65ece70027c366cbe1693,
 crypto_aead/asconaead128/armv6m_lowsize (Cortex-M0 assembly in permutations.S) + tests/crypto_aead.h,
-unmodified. License: CC0 1.0. The inline-asm "armv6m" variant does not build with arduino-pico GCC
+unmodified but for an #if defined(__arm__) around each .c / .S file. License: CC0 1.0. The inline-asm "armv6m" variant does not build with arduino-pico GCC
 for RP2040 (runs out of low registers), so the standalone-.S variant is used on both boards.
+
+esp32/: the same commit's crypto_aead/asconaead128/esp32 (32-bit C optimised for the ESP32), unmodified but for an
+#if defined(__XTENSA__) around each .c file, so each board compiles only its own. Its asm_esp32 variant (Xtensa
+funnel-shift assembly) is not used: at this commit it still implements Ascon-128 v1.2, not NIST SP 800-232
+(ascon-c's README: only asm_rv32i is updated), and la_kat() checks the SP 800-232 vectors.

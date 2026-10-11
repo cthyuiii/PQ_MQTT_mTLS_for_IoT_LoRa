@@ -1,3 +1,4 @@
+#if defined(__arm__)  // the Pico's Ascon (ASCON_C_SOURCE.txt); the ESP32 builds esp32/ instead
 #include "api.h"
 #include "ascon.h"
 #include "permutations.h"
@@ -112,4 +113,5 @@ int ascon_aead(uint8_t* tag, uint8_t* out, const uint8_t* in, uint64_t inlen,
   return (((result - 1) >> 8) & 1) - 1;
 }
 
+#endif
 #endif

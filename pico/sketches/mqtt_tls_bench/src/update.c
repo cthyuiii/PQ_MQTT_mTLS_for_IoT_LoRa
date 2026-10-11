@@ -1,3 +1,4 @@
+#if defined(__arm__)  // the Pico's Ascon (ASCON_C_SOURCE.txt); the ESP32 builds esp32/ instead
 #include "api.h"
 #include "ascon.h"
 #include "permutations.h"
@@ -75,4 +76,5 @@ void ascon_update(ascon_state_t* s, uint8_t* out, const uint8_t* in,
   s->x[i] ^= PAD(len);
 }
 
+#endif
 #endif

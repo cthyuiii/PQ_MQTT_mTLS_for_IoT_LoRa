@@ -2,10 +2,10 @@
 
 The ESP32 port of the Pico's Stage 1 sketches (11 Oct 2026). How each sketch was brought up on the RP2040, and what failed there, is in [pico_build_notes.md](pico_build_notes.md).
 
-The Stage 1 sketches also build for a classic ESP32 (Xtensa LX6 dual core @ 240 MHz, ~320 KB DRAM, no PSRAM;
-`arduino-esp32` 3.3.12, FQBN `esp32:esp32:esp32`). Run them with
-`python pico/run_benchmarks.py --board esp32 --tag esp32` (results in `pico/logs_esp32/`). The Pico builds are meant
-to be unchanged: every board call goes through `pico/libraries/board_compat/src/board_compat.h`, which maps to the same
+The Stage 1 sketches and the Pico W's Stage 2 firmware (`mqtt_tls_bench`) also build for a classic ESP32 (Xtensa
+LX6 dual core @ 240 MHz, ~320 KB DRAM, no PSRAM; `arduino-esp32` 3.3.12, FQBN `esp32:esp32:esp32`). Run them with
+`python pico/run_benchmarks.py --board esp32` (Stage 1 results in `pico/logs_esp32/`; Stage 2 below). The Pico builds
+are meant to be unchanged: every board call goes through `pico/libraries/board_compat/src/board_compat.h`, which maps to the same
 `rp2040.*` calls on arduino-pico.
 
 **What differs from the Pico, and how each sketch deals with it**
@@ -45,6 +45,40 @@ to be unchanged: every board call goes through `pico/libraries/board_compat/src/
 the same set overflows 106 KB, so `mldsa_bench` runs it as `-DMLD_CONFIG_REDUCE_RAM`, its own row), MAYO-1/2/3 (237 KB+
 of stack), UOV-pkc (238 KB+ secret keys), QR-UOV-1q7L10 (160 KB stack), SQIsign (128–216 KB stacks), FAEST (267 KB+
 heap), SDitH (335 KB).
+
+**Stage 2, the pipeline and the deployment checks (`mqtt_tls_bench`)**
+
+The same firmware as the Pico W's, over the ESP32's Wi-Fi, against the same brokers: every block, row and log line is
+the Pico's, so `run_benchmarks.py --board esp32 --test mqtt` summarises them with the host's code into
+`results/*_pico_esp32.*` (WIFI_SSID, WIFI_PASS and BROKER in the environment, `certs/` copied from the broker machine).
+What the ESP32 build changes:
+
+- **Watchdog.** The RP2040's 8 s hardware watchdog becomes the task watchdog on the loop task (8 s, a panic and reboot
+  when it fires). Its scratch registers, which tell the next boot which block and step hung, become `RTC_NOINIT` memory,
+  which a watchdog, panic or software reset keeps. A crash (any panic, not only the watchdog's) also moves on to the next
+  block, as `#watchdog <block>: crashed during <step>`; the runner logs the panic dump, keeps it out of the parsed rows,
+  and stops only if the board crashes before any block at every boot. SNOVA's long signatures are covered by a watchdog
+  *user* that a timer feeds (10 × 2 s, as the Pico's repeating timer), since the task watchdog is fed only by its task.
+- **Stack.** The blocks run on a heap block through `esp_execute_shared_stack_function`, as in `bigstack.h`, taken at
+  boot before Wi-Fi splits the heap (16 KB; 80 KB for the KEM exchange; SNOVA's 36–104 KB). `#stack` scans for the
+  0xA5 fill.
+- **Pipeline crypto.** AES, CMAC and GCM / CCM are the same BearSSL code (`make_bearssl_lib.sh`), still software `aes_ct`:
+  the ESP32 has an AES engine, but it isn't used, so the rows compare the same code. Ascon is ascon-c's `esp32` C
+  variant (`src/esp32/`) at the Pico's commit: its `asm_esp32` assembly still implements Ascon-128 v1.2, not NIST
+  SP 800-232. Each board compiles only its own Ascon (`#if defined(__arm__)` / `__XTENSA__` around the files). The
+  known-answer checks (CMAC, CCM, LoRaWAN, the SP 800-232 Ascon vector) pass on the board.
+- **Handshake timing** (`hs_timing.c`, `-Wl,--wrap`) uses `esp_timer_get_time()`; the wraps link as on the Pico.
+- **Wi-Fi, time, flash.** `WiFi.setSleep(false)` for the Pico's `noLowPowerMode()`; `configTime()` for its NTP client
+  (the deployment checks); LittleFS on the spiffs partition. The runner builds with the Huge APP partition table (3 MB
+  of program, 1 MB of LittleFS): the deployment and SNOVA builds are 1.21–1.30 MB, past the default table's 1.2 MB.
+- **Randomness.** `esp_random()` is true random only while the radio runs: the LoRaWAN keys made before Wi-Fi starts
+  use the bootloader's entropy source, switched off again before Wi-Fi needs the ADC.
+
+Checked so far (11 Oct 2026): every variant compiles (Stage 2 per certificate, the KEM exchange, the full and checks-only
+deployment firmware, SNOVA V_K on a 104 KB stack); the ML-DSA-44 firmware flashes, passes the known-answer checks and
+reports a failed Wi-Fi join through the runner. Not yet run against a broker, so heap and timing on the ESP32 are open:
+the Pico's TLS peaks are 21–64 KB of wolfSSL heap, 76 / 138 KB for Falcon-512 / 1024 mTLS (signing), with Wi-Fi's own
+buffers on the same ~300 KB.
 
 **Open questions.** Against the Pico W (200 MHz) most rows are 1.5–3× faster (clock 1.2×, plus the LX6's 32×32→64
 multiply). Three groups are not, and comparing implementations of the same scheme on the same board narrows each one

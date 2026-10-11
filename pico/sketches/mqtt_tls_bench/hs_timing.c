@@ -7,7 +7,7 @@
 //             CertificateVerify
 //     sign    the client's CertificateVerify (mTLS)
 //   Only the outermost call counts (depth). __real_<f> is weak: a build without that algorithm never calls it.
-//   The wrapped names are the WRAP() lines below; run_benchmarks.py (Pico) and build_timer.sh (Linux, static
+//   The wrapped names are the WRAP() lines below; run_benchmarks.py (Pico, ESP32) and build_timer.sh (Linux, static
 //   wolfSSL) read them from this file for the --wrap flags. macOS's linker has no --wrap: no columns there.
 #include <stdint.h>
 #ifndef ARDUINO
@@ -18,7 +18,10 @@
 #include <wolfssl/wolfcrypt/hash.h>
 #include "hs_timing.h"
 
-#ifdef ARDUINO
+#if defined(ARDUINO_ARCH_ESP32)
+#include <esp_timer.h>
+static double now_us(void) { return (double)esp_timer_get_time(); }
+#elif defined(ARDUINO)
 #include <hardware/timer.h>
 static double now_us(void) { return (double)time_us_64(); }
 #else

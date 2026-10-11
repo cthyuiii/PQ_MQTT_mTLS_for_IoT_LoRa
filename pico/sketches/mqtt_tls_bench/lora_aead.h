@@ -9,13 +9,23 @@
 //   lorawan11_256  the 1.1 frame with 256-bit keys (AES-256-CTR; 1.1 MIC rules, CMAC keys F = k_nwk | k_nwk2, S = k_nwk2 | k_nwk)
 //   aes128gcm / aes256gcm, aes128ccm / aes256ccm, ascon: header as AAD, nonce DevAddr | FCnt (32 bits) | Dir | zeros
 //              (GCM 12 bytes, CCM 13, Ascon 16), 16-byte tag
-// AES: BearSSL bundled in arduino-pico (constant-time aes_ct; neither chip has an AES engine). BearSSL has no CMAC,
+// AES: BearSSL bundled in arduino-pico (constant-time aes_ct; neither Pico chip has an AES engine). BearSSL has no CMAC,
 // so CMAC is built on its AES-CBC (RFC 4493). Ascon: official ascon-c 'armv6m_lowsize' (Cortex-M0 assembly,
 // NIST SP 800-232), in src/. la_kat() checks CMAC (128 / 256), CCM, LoRaWAN and Ascon against published vectors
 // before any message is sent.
+// ESP32: the same BearSSL code (ecdsa_bench/make_bearssl_lib.sh, arduino-pico's commit), still software aes_ct: the
+// ESP32's AES engine isn't used, so the rows compare the same code; Ascon is ascon-c's 'esp32' C variant (src/esp32/).
 // Header-only on purpose: the sketch and the host test both include it.
 #pragma once
+#if defined(ARDUINO_ARCH_ESP32)
+#include <bearssl.h>
+#define LA_AES_LIB "BearSSL (arduino-pico's, as a library)"
+#define LA_ASCON_LIB "ascon-c esp32"
+#else
 #include <bearssl/bearssl.h>
+#define LA_AES_LIB "BearSSL (arduino-pico)"
+#define LA_ASCON_LIB "ascon-c armv6m_lowsize"
+#endif
 #include <stdio.h>
 #include <string.h>
 
@@ -160,15 +170,15 @@ static int ascon_open(int len) {
 struct la_scheme { const char *name, *label, *lib; la_fn seal, open; int tag; };
 static const la_scheme LA[] = {
   {"none", "none", "-", none_seal, none_open, 0},
-  {"lorawan10", "LoRaWAN-1.0.x AES-128-CTR+CMAC", "BearSSL (arduino-pico)", lw_seal, lw_open, 4},
-  {"lorawan11", "LoRaWAN-1.1 AES-128-CTR+2xCMAC", "BearSSL (arduino-pico)", lw_seal, lw_open, 4},
-  {"aes256ctr", "AES-256-CTR+CMAC (LoRaWAN 1.0.x frame, 256-bit keys)", "BearSSL (arduino-pico)", lw_seal, lw_open, 4},
-  {"lorawan11_256", "AES-256-CTR+2xCMAC (LoRaWAN 1.1 frame, 256-bit keys)", "BearSSL (arduino-pico)", lw_seal, lw_open, 4},
-  {"aes128gcm", "AES-128-GCM", "BearSSL (arduino-pico)", gcm_seal, gcm_open, TAG},
-  {"aes256gcm", "AES-256-GCM", "BearSSL (arduino-pico)", gcm_seal, gcm_open, TAG},
-  {"aes128ccm", "AES-128-CCM", "BearSSL (arduino-pico)", ccm_seal, ccm_open, TAG},
-  {"aes256ccm", "AES-256-CCM", "BearSSL (arduino-pico)", ccm_seal, ccm_open, TAG},
-  {"ascon", "Ascon-AEAD128", "ascon-c armv6m_lowsize", ascon_seal, ascon_open, TAG}};
+  {"lorawan10", "LoRaWAN-1.0.x AES-128-CTR+CMAC", LA_AES_LIB, lw_seal, lw_open, 4},
+  {"lorawan11", "LoRaWAN-1.1 AES-128-CTR+2xCMAC", LA_AES_LIB, lw_seal, lw_open, 4},
+  {"aes256ctr", "AES-256-CTR+CMAC (LoRaWAN 1.0.x frame, 256-bit keys)", LA_AES_LIB, lw_seal, lw_open, 4},
+  {"lorawan11_256", "AES-256-CTR+2xCMAC (LoRaWAN 1.1 frame, 256-bit keys)", LA_AES_LIB, lw_seal, lw_open, 4},
+  {"aes128gcm", "AES-128-GCM", LA_AES_LIB, gcm_seal, gcm_open, TAG},
+  {"aes256gcm", "AES-256-GCM", LA_AES_LIB, gcm_seal, gcm_open, TAG},
+  {"aes128ccm", "AES-128-CCM", LA_AES_LIB, ccm_seal, ccm_open, TAG},
+  {"aes256ccm", "AES-256-CCM", LA_AES_LIB, ccm_seal, ccm_open, TAG},
+  {"ascon", "Ascon-AEAD128", LA_ASCON_LIB, ascon_seal, ascon_open, TAG}};
 enum { LA_N = sizeof LA / sizeof *LA };
 // key schedules for scheme k from the current keys (k_app, k_nwk, k_nwk2); the "256" schemes use 256-bit keys
 static void la_setup(int k) {

@@ -1,3 +1,4 @@
+#if defined(__arm__)  // the Pico's Ascon (ASCON_C_SOURCE.txt); the ESP32 builds esp32/ instead
 #ifdef ASCON_PRINT_STATE
 
 #include "printstate.h"
@@ -47,4 +48,5 @@ void printstate(const char* text, const ascon_state_t* s) {
   printf("\n");
 }
 
+#endif
 #endif

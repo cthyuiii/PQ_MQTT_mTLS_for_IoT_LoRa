@@ -46,7 +46,8 @@ WOLF_LIBS = os.path.join(os.environ.get("IOT_PQC_CACHE", os.path.expanduser("~/.
 # Board profiles. The non-W FQBN is used on purpose for BOTH the plain and the W
 # variants: the crypto benches need no WiFi, and the non-W build frees the cyw43
 # stack/RAM. hwrand32() works on every variant. (You can override with --fqbn.)
-# mqtt_tls_bench is the exception: it builds for the W board (rpipicow / rpipico2w).
+# mqtt_tls_bench is the exception: it builds for the W board (rpipicow / rpipico2w); on the ESP32 with the Huge APP
+# partition table (3 MB of program: the deployment and SNOVA builds pass the default 1.2 MB; 1 MB of LittleFS).
 # ---------------------------------------------------------------------------
 BOARDS = {
     "rp2040": dict(
@@ -151,38 +152,38 @@ SKETCHES = [
     #     X25519MLKEM768 (+ the key-exchange sweep), one certificate type per firmware (every one the broker serves
     #     and wolfSSL has: not SLH-DSA or MAYO; SNOVA below), against ./run_all.sh --serve-broker on another machine.
     #     Needs WIFI_SSID, WIFI_PASS, BROKER in the environment. Rows: results/*_pico_<board>.csv in the host's columns.
-    S("mqtt_tls_bench", "MQTT/TLS RSA-2048 (wolfSSL)",   300, BOTH, 0, flags="-DWB_TLS -DWB_RSA2048 -DMT_SIG=RSA2048"),
-    S("mqtt_tls_bench", "MQTT/TLS RSA-3072 (wolfSSL)",   300, BOTH, 0, flags="-DWB_TLS -DWB_RSA3072 -DMT_SIG=RSA3072"),
-    S("mqtt_tls_bench", "MQTT/TLS ECDSA-P256 (wolfSSL)", 300, BOTH, 0, flags="-DWB_TLS -DWB_ECDSA_P256 -DMT_SIG=ECDSAP256"),
-    S("mqtt_tls_bench", "MQTT/TLS Ed25519 (wolfSSL)",    300, BOTH, 0, flags="-DWB_TLS -DWB_ED25519 -DMT_SIG=ED25519"),
-    S("mqtt_tls_bench", "MQTT/TLS ML-DSA-44 (wolfSSL)",  300, BOTH, 0, flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44"),
-    S("mqtt_tls_bench", "MQTT/TLS ML-DSA-65 (wolfSSL)",  300, BOTH, 0, flags="-DWB_TLS -DWB_MLDSA65 -DMT_SIG=MLDSA65"),
-    S("mqtt_tls_bench", "MQTT/TLS ML-DSA-87 (wolfSSL)",  300, BOTH, 0, flags="-DWB_TLS -DWB_MLDSA87 -DMT_SIG=MLDSA87"),
-    S("mqtt_tls_bench", "MQTT/TLS Falcon-512 (wolfSSL)", 300, BOTH, 0, flags="-DWB_TLS -DWB_FALCON512 -DMT_SIG=FALCON512"),
-    S("mqtt_tls_bench", "MQTT/TLS Falcon-1024 (wolfSSL)", 300, BOTH, 0, flags="-DWB_TLS -DWB_FALCON1024 -DMT_SIG=FALCON1024"),
+    S("mqtt_tls_bench", "MQTT/TLS RSA-2048 (wolfSSL)",   300, ALL3, 0, flags="-DWB_TLS -DWB_RSA2048 -DMT_SIG=RSA2048"),
+    S("mqtt_tls_bench", "MQTT/TLS RSA-3072 (wolfSSL)",   300, ALL3, 0, flags="-DWB_TLS -DWB_RSA3072 -DMT_SIG=RSA3072"),
+    S("mqtt_tls_bench", "MQTT/TLS ECDSA-P256 (wolfSSL)", 300, ALL3, 0, flags="-DWB_TLS -DWB_ECDSA_P256 -DMT_SIG=ECDSAP256"),
+    S("mqtt_tls_bench", "MQTT/TLS Ed25519 (wolfSSL)",    300, ALL3, 0, flags="-DWB_TLS -DWB_ED25519 -DMT_SIG=ED25519"),
+    S("mqtt_tls_bench", "MQTT/TLS ML-DSA-44 (wolfSSL)",  300, ALL3, 0, flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44"),
+    S("mqtt_tls_bench", "MQTT/TLS ML-DSA-65 (wolfSSL)",  300, ALL3, 0, flags="-DWB_TLS -DWB_MLDSA65 -DMT_SIG=MLDSA65"),
+    S("mqtt_tls_bench", "MQTT/TLS ML-DSA-87 (wolfSSL)",  300, ALL3, 0, flags="-DWB_TLS -DWB_MLDSA87 -DMT_SIG=MLDSA87"),
+    S("mqtt_tls_bench", "MQTT/TLS Falcon-512 (wolfSSL)", 300, ALL3, 0, flags="-DWB_TLS -DWB_FALCON512 -DMT_SIG=FALCON512"),
+    S("mqtt_tls_bench", "MQTT/TLS Falcon-1024 (wolfSSL)", 300, ALL3, 0, flags="-DWB_TLS -DWB_FALCON1024 -DMT_SIG=FALCON1024"),
     # round 3 SNOVA certificates (certs/round3, the round 3 broker from :20830): wolfSSL has no SNOVA, so
     # make_wolfssl_lib.sh puts it in Falcon-512's place (wolfssl_bench/wb_snova.c, liboqs main's SNOVA: lib=R3, the
     # same code as the SNOVA rows above). The run is on a stack for SNOVA's signing: 39 / 35 / 26 KB (level I K / B / S),
     # 59 / 51 / 49 KB (III), 92 / 79 / 76 KB (V) in QEMU (M0+), as the board's own peaks; + 8 KB for wolfSSL.
     # No sweep (-DMT_NO_SWEEP): a level V mTLS handshake is ~7 s of SNOVA, and the groups were swept with the others.
-    *[S("mqtt_tls_bench", f"MQTT/TLS SNOVA_{p} round 3 (wolfSSL+liboqs)", 600, BOTH, 0, lib=R3,
+    *[S("mqtt_tls_bench", f"MQTT/TLS SNOVA_{p} round 3 (wolfSSL+liboqs)", 600, ALL3, 0, lib=R3,
         flags=f"-DWB_TLS -DWB_SNOVA{c} -DMT_SIG=SNOVA{c} -DMT_NO_SWEEP -DMT_STACK_KB={kb}")
       for c, p, kb in (("1K", "I_K", 48), ("1B", "I_B", 44), ("1S", "I_S", 36), ("3K", "III_K", 68), ("3B", "III_B", 60),
                        ("3S", "III_S", 60), ("5K", "V_K", 104), ("5B", "V_B", 90), ("5S", "V_S", 88))],
     # the KEM exchange as MQTT messages through the broker's plain listener (the host's --kex; no certificate is used):
     # ML-KEM-512/768/1024, X25519, X25519MLKEM768 with wolfCrypt -> results/kem_exchange_*_pico_<board>. The second
     # builds wolfSSL's small Curve25519 code (CURVE25519_SMALL, the TLS firmware's until 1 Oct): the X25519 A/B.
-    S("mqtt_tls_bench", "MQTT KEM exchange (wolfSSL)", 300, BOTH, 0,
+    S("mqtt_tls_bench", "MQTT KEM exchange (wolfSSL)", 300, ALL3, 0,
       flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_KEX_ONLY"),
-    S("mqtt_tls_bench", "MQTT KEM exchange, small X25519 (wolfSSL)", 300, BOTH, 0,
+    S("mqtt_tls_bench", "MQTT KEM exchange, small X25519 (wolfSSL)", 300, ALL3, 0,
       flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_KEX_ONLY -DWB_SMALL_25519"),
     # deployment checks on certs/DEPLOY (gen_certs.sh --deploy <broker IP>): NTP dates, the CRL, the broker's IP, a signed
     # trust-anchor update, the KEM exchange over mTLS and signed, FCnt across a reboot (built with a LittleFS partition)
-    S("mqtt_tls_bench", "MQTT deployment checks (wolfSSL)", 600, BOTH, 0,
+    S("mqtt_tls_bench", "MQTT deployment checks (wolfSSL)", 600, ALL3, 0,
       flags="-DWB_TLS -DWB_MLDSA44 -DWB_CHECKS -DMT_DEPLOY -DMT_SIG=DEPLOY"),
     # the same checks (connect plain / -checked, CRL, name, dates, the refused certificates; the CRL's load time) for the
     # other certificate types, each under its own CA and CRL (DEPLOY_SIGS=all gen_certs.sh --deploy <broker IP>)
-    *[S("mqtt_tls_bench", f"MQTT deployment checks {name} (wolfSSL)", 600, BOTH, 0,
+    *[S("mqtt_tls_bench", f"MQTT deployment checks {name} (wolfSSL)", 600, ALL3, 0,
         flags=f"-DWB_TLS -DWB_{wb} -DWB_CHECKS -DMT_DEPLOY -DMT_DEPLOY_CHECKS -DMT_SIG=DEPLOY_{sig}")
       for name, wb, sig in (("RSA-2048", "RSA2048", "RSA2048"), ("RSA-3072", "RSA3072", "RSA3072"),
                             ("ECDSA-P256", "ECDSA_P256", "ECDSAP256"), ("Ed25519", "ED25519", "ED25519"),
@@ -369,8 +370,9 @@ def mqtt_blocks(txt):
             name = (ln[len("#watchdog "):].split(":")[0].split() + ["", ""])[:4]
             hung = next((b for b in reversed(blocks) if [b["stage"], b["mode"], b["aead"], b["dir"]] == name), None)
             if hung:
-                where = re.search(r"hung during (.+?) \(connection (-?\d+)\)", ln)
-                hung["err"] = (f"hung during {where[1]} after {len(hung['rows'])} recorded connections (watchdog reset)"
+                where = re.search(r"(hung|crashed) during (.+?) \(connection (-?\d+)\)", ln)
+                why = "a crash: panic reboot" if where and where[1] == "crashed" else "watchdog reset"
+                hung["err"] = (f"{where[1]} during {where[2]} after {len(hung['rows'])} recorded connections ({why})"
                                if where else f"hung after {len(hung['rows'])} recorded connections (watchdog reset)")
         elif cur is None:
             continue
@@ -702,14 +704,18 @@ def open_serial(port, tries, esp_reset=False):
             time.sleep(1)
     return None
 
-def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8, esp=False):
+def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8, esp=False, resume=False):
+    """resume (mqtt_tls_bench on the ESP32): a panic is the firmware's watchdog or a crash in one block; the board
+    reboots and goes on with the next block ('#watchdog'), so read on. The dump is logged, not parsed; two dumps
+    with no block started between them (a crash before the blocks, every boot) end the capture as a FAULT."""
     global STOP
     rows, sizes, txt = {}, None, []
     log = open(logpath, "w", encoding="utf-8")  # line by line: a hang or Ctrl-C still leaves the log
     ser = open_serial(port, 15, esp_reset=esp)
     if ser is None:
         print("    !! could not open serial", port); return rows, sizes, False, ""
-    saw_header = fault = False
+    saw_header = fault = in_dump = False
+    blocks_since_dump = None  # None: no dump yet
     mhz = None
     reconnects = 0
     last = time.time()
@@ -733,12 +739,27 @@ def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8, esp=Fals
             last = time.time(); continue
         if not line: continue
         last = time.time()
-        txt.append(line); print("    |", line); log.write(line + "\n"); log.flush()
+        print("    |", line); log.write(line + "\n"); log.flush()
+        dump = ("Guru Meditation" in line or "Backtrace:" in line or "stack overflow" in line.lower()
+                or "task_wdt" in line or "abort() was called" in line)
+        if resume and dump and not in_dump:
+            if blocks_since_dump == 0:
+                fault = True
+                print("    !! the board crashes before any block, at every boot; stopping"); break
+            in_dump, blocks_since_dump = True, 0
+        if resume and in_dump:
+            if "===" in line:  # the firmware's banner: the dump and the ROM's boot lines are over
+                in_dump = False
+            else:
+                continue
+        if resume and line.startswith("#block ") and blocks_since_dump is not None:
+            blocks_since_dump += 1
+        txt.append(line)
         if "===" in line and (" on RP" in line or " on ESP32" in line):  # board-agnostic banner (RP2040/RP2350/ESP32)
             saw_header = True
         # the ESP32's panic handler: "Guru Meditation Error", a stack canary / overflow, a watchdog reset
-        if ("MEMORY FAULT" in line or "HARDFAULTED" in line or "Guru Meditation" in line or "Backtrace:" in line
-                or "stack overflow" in line.lower() or "task_wdt" in line):
+        if not resume and ("MEMORY FAULT" in line or "HARDFAULTED" in line or "Guru Meditation" in line
+                           or "Backtrace:" in line or "stack overflow" in line.lower() or "task_wdt" in line):
             fault = True
         # an ESP32 reboots after a panic and runs into it again: the output never pauses, so the idle timeout
         # never fires. The first dump is the report; its last line is the ELF hash
@@ -802,12 +823,14 @@ def main():
     ap.add_argument("--tag", help="name this run apart from the default one, e.g. pi_broker (the Pico against the "
                     "Pi's brokers): results/*_pico_<board>_<tag>.*, logs in pico/logs_<tag>/")
     args = ap.parse_args()
+    global LOGDIR, RUN_TAG
+    esp = args.board in ESP_FAMILIES
     if args.tag:
-        global LOGDIR, RUN_TAG
         RUN_TAG, LOGDIR = f"_{args.tag}", os.path.join(HERE, f"logs_{args.tag}")
+    if esp and args.tag in (None, args.board):  # the ESP32's own logs_esp32/ (--tag esp32 = the default), and
+        RUN_TAG, LOGDIR = "", os.path.join(HERE, f"logs_{args.board}")  # results/*_pico_esp32.* (not _esp32_esp32)
 
     os.makedirs(LOGDIR, exist_ok=True)
-    esp = args.board in ESP_FAMILIES
     if esp:
         PORT_VIDS.clear(); PORT_VIDS.update(ESP_VIDS)
     initial_port = args.port or (list_ports() or [None])[0]
@@ -852,9 +875,7 @@ def main():
         if match and not any(m in norm(s["label"]) for m in match): continue
         if s["folder"] in skip:                      continue
         if esp and family not in s["boards"]:  # before the Wi-Fi check: these don't run whatever the environment
-            if s["folder"] == "mqtt_tls_bench":
-                why = f"mqtt_tls_bench (Stage 2, the pipeline) is not ported to {family}: Stage 1 only"
-            elif s["label"] in ESP_GATE:
+            if s["label"] in ESP_GATE:
                 why = ESP_GATE[s["label"]]
             elif s["ws_kb"] > board["block_kb"]:
                 why = f"won't fit {family}: needs {s['ws_kb']} KB, more than its largest free block (~{board['block_kb']} KB)"
@@ -892,7 +913,7 @@ def main():
     if any(s["folder"] == "sqisign_bench" for s in work):
         print("Preparing the SQIsign Arduino library (sqisign_bench/make_sqisign_lib.sh) ...")
         sh([BASH, os.path.join(SKETCH_DIR, "sqisign_bench", "make_sqisign_lib.sh")])
-    if esp and any(s["folder"] in ("ecdsa_bench", "rsa_bench") for s in work):
+    if esp and any(s["folder"] in ("ecdsa_bench", "rsa_bench", "mqtt_tls_bench") for s in work):
         print("Preparing the BearSSL Arduino library for the ESP32 (ecdsa_bench/make_bearssl_lib.sh) ...")
         sh([BASH, os.path.join(SKETCH_DIR, "ecdsa_bench", "make_bearssl_lib.sh")])
     if any(s["folder"] in ("wolfssl_bench", "mqtt_tls_bench") for s in work):
@@ -943,7 +964,9 @@ def main():
                 print("    !!", why); row(label, lib=lib_of(s), status=why); continue
             flags += f" -I{os.path.join(outdir, 'gen')}"
         build_fqbn = re.sub(r"^(rp2040:rp2040:rpipico2?)\b", r"\1w", fqbn) if wifi else fqbn
-        if "-DMT_DEPLOY" in flags:  # LittleFS (trust anchor, LoRaWAN state): a 64 KB flash filesystem
+        if wifi and esp:  # 3 MB of program, 1 MB of LittleFS (the deployment's trust anchor and LoRaWAN state)
+            build_fqbn += ":PartitionScheme=huge_app"
+        elif "-DMT_DEPLOY" in flags:  # LittleFS (trust anchor, LoRaWAN state): a 64 KB flash filesystem
             build_fqbn += ":flash=" + ("4194304_65536" if "rpipico2" in build_fqbn else "2097152_65536")
         cmd = ["arduino-cli","compile","--fqbn",build_fqbn,"--output-dir",outdir,"--libraries",COMPAT_LIBS]
         if esp and os.path.isdir(ESP_LIBS):
@@ -996,7 +1019,8 @@ def main():
 
         # mqtt_tls_bench: every watchdog reboot moves on to the next block, so allow one per block (83), not 8
         rows, sizes, fault, txt = capture(port, timeout, os.path.join(LOGDIR, key + ".log"),
-                                          no_timeout=args.no_timeout, max_reconnects=100 if wifi else 8, esp=esp)
+                                          no_timeout=args.no_timeout, max_reconnects=100 if wifi else 8, esp=esp,
+                                          resume=esp and wifi)
         sizes = (list(sizes or ()) + ["","","",""])[:4]
         g, sg, v = rows.get("keygen"), rows.get("sign"), rows.get("verify")
         started  = ">>>" in txt

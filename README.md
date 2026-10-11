@@ -1,7 +1,7 @@
 # IoT-PQC — post-quantum cryptography for IoT / LoRaWAN
 
 Benchmarks for everything this project compares, on a MacBook, a Raspberry Pi 4/5 and a Pico W / Pico 2 W
-(Stage 1 signatures also on an ESP32):
+(Stage 1, Stage 2 and the pipeline also on an ESP32):
 PQC signatures and key exchange, payload protection (real LoRaWAN AES-CTR + CMAC, AES-GCM, Ascon),
 TLS / mutual-TLS handshakes with PQ certificates, MQTT over them, and the full pipeline from PQ
 handshake to protected payload to MQTT broker. `./run_all.sh` runs all of it (section 0). Section 0.2 says what each
@@ -18,7 +18,7 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   ├── how_it_works.md            ← library map, test plan per device, each stage's calls, LoRaWAN / AES / Ascon
 │   ├── findings.md                ← what the benches found (numbered findings, sources, future work)
 │   ├── pico_build_notes.md        ← how each Pico sketch was ported / what failed and why
-│   └── esp32_build_notes.md       ← the ESP32 port of the Stage 1 sketches: what differs, what doesn't fit
+│   └── esp32_build_notes.md       ← the ESP32 port (Stage 1 sketches, mqtt_tls_bench): what differs, what doesn't fit
 ├── scripts/
 │   ├── gen_certs.sh               ← CA + server + client certificate per signature → certs/<SIG>/; --deploy <IP>:
 │   │                                certs/DEPLOY (CRL, revoked / expired certs, the signed trust-anchor update);
@@ -38,8 +38,8 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   ├── tls_sweep.sh               ← TLS / mTLS key-exchange sweep: MQTT connections to the broker's listeners
 │   ├── provenance.py              ← board name + versions record
 │   └── build_ascon.sh, build_timer.sh, build_wolfssl.sh
-├── pico/                          ← Pico W (RP2040) / Pico 2 W (RP2350), flashed from the Mac; Stage 1 also on an
-│   │                                ESP32 (--board esp32, docs/esp32_build_notes.md)
+├── pico/                          ← Pico W (RP2040) / Pico 2 W (RP2350), flashed from the Mac; also on an ESP32
+│   │                                (--board esp32, docs/esp32_build_notes.md)
 │   ├── run_benchmarks.py          ← compile, flash, read serial, merge into logs/results.csv
 │   ├── libraries/board_compat/    ← board_compat.h: the board calls (RNG, free stack / heap, CPU MHz, loop stack)
 │   │                                for arduino-pico and arduino-esp32; on the Pico, the same rp2040.* calls
@@ -64,7 +64,7 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 │   │                                the host's, on the Mac),
 │   │                                mqtt_parse_test.py (log → all_results.csv), qemu_liboqs (Keccak swap in QEMU)
 │   └── logs/, logs_<tag>/         ← results.csv (customer's form) + one .log per sketch; logs_<tag>: --tag runs
-│                                    (logs_esp32: the ESP32's Stage 1 run)
+│                                    (logs_esp32: the ESP32's runs)
 └── certs/   results/              ← made by the runs (gitignored)
 ```
 
@@ -207,20 +207,25 @@ $env:WIFI_SSID = "<your SSID>"; $env:WIFI_PASS = Read-Host -MaskInput "Wi-Fi pas
 python pico\run_benchmarks.py --test mqtt --tag pi_broker
 ```
 
-**ESP32 (Stage 1 signatures only)**, tested on an ESP32-WROOM-32UE (240 MHz, ~320 KB DRAM, no PSRAM) from
-Windows; the same commands work from the Mac or Linux. It needs the arduino-esp32 core, plus the arduino-pico one
-only for Pico builds. The runner flashes with esptool over the board's USB-serial bridge (CP210x, CH340, FTDI or
-native USB) and resets it through RTS before reading, so no button presses. Results go to `pico/logs_esp32/`.
-What differs from the Pico, and which sets don't fit in its memory (ML-DSA-87 through liboqs, MAYO, UOV-pkc,
-QR-UOV-1q7L10, SQIsign, FAEST, SDitH): [docs/esp32_build_notes.md](docs/esp32_build_notes.md).
+**ESP32**, tested on an ESP32-WROOM-32UE (240 MHz, ~320 KB DRAM, no PSRAM) from Windows; the same commands
+work from the Mac or Linux. It needs the arduino-esp32 core, plus the arduino-pico one only for Pico builds. The
+runner flashes with esptool over the board's USB-serial bridge (CP210x, CH340, FTDI or native USB) and resets it
+through RTS before reading, so no button presses. Stage 1 results go to `pico/logs_esp32/`. Stage 2, the pipeline,
+the key-exchange sweep, the KEM exchange and the deployment checks run the Pico W's `mqtt_tls_bench` over the
+ESP32's Wi-Fi, against the same brokers (`./run_all.sh --serve-broker`); its results go to
+`results/*_pico_esp32.*`. What differs from the Pico, and which Stage 1 sets don't fit in its memory (ML-DSA-87
+through liboqs, MAYO, UOV-pkc, QR-UOV-1q7L10, SQIsign, FAEST, SDitH): [docs/esp32_build_notes.md](docs/esp32_build_notes.md).
 
 ```powershell
 arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 arduino-cli core update-index; arduino-cli core install esp32:esp32@3.3.12; arduino-cli lib install Crypto
 pip install ninja                                        # only if winget's Ninja isn't on PATH: the liboqs build's CMake
-python pico\run_benchmarks.py --board esp32 --tag esp32 --list               # what runs, the COM port; nothing flashed
-python pico\run_benchmarks.py --board esp32 --tag esp32                      # every Stage 1 sketch that fits
-python pico\run_benchmarks.py --board esp32 --tag esp32 --only slhdsa_bench --match slh-dsa-sha2-128f
+python pico\run_benchmarks.py --board esp32 --list               # what runs, the COM port; nothing flashed
+python pico\run_benchmarks.py --board esp32 --test pqc            # every Stage 1 sketch that fits
+python pico\run_benchmarks.py --board esp32 --only slhdsa_bench --match slh-dsa-sha2-128f
+# Stage 2 + the pipeline over Wi-Fi (2.4 GHz), the broker on another machine; certs/ copied from it
+$env:WIFI_SSID = "<your SSID>"; $env:WIFI_PASS = Read-Host -MaskInput "Wi-Fi password"; $env:BROKER = "<broker IP>"   # PowerShell 7
+python pico\run_benchmarks.py --board esp32 --test mqtt --match mqtt/tls
 ```
 
 All results in one CSV: `run_all.sh` (and the Pico runner) finish by running `python3 scripts/collate_results.py`,
@@ -232,7 +237,8 @@ covers every stage's results, the Pico's and the QEMU counts. `results/` is giti
 Pico results: `pico/logs/results.csv` (the customer's form + a `Library` column; a re-run replaces
 only its own rows), one `.log` per sketch. The Pico W's MQTT runs (Stage 2 and the LoRaWAN / AES / Ascon
 pipeline, through the broker) go to `results/{mqtt_mtls,pipeline}_*_pico_<board>.*`, in the host's columns.
-ESP32 results: `pico/logs_esp32/results.csv`, the same columns (`Board` = `esp32`).
+ESP32 results: `pico/logs_esp32/results.csv`, the same columns (`Board` = `esp32`); its MQTT runs
+`results/{mqtt_mtls,pipeline}_*_pico_esp32.*`.
 
 ## 0.1  Commands, by what you want to run
 
@@ -406,7 +412,7 @@ python3 pico/run_benchmarks.py --lib liboqs --keccak xkcp    # liboqs 0.16 with 
 python3 pico/run_benchmarks.py --freq 133                    # the clock the RP2040 study used (default 200)
 python3 pico/run_benchmarks.py --opt O2                      # sketch + core at -O2 (default -Os)
 python3 pico/run_benchmarks.py --bootsel-wait 0                  # unattended: a hung board fails its flash, no wait
-python3 pico/run_benchmarks.py --board esp32 --tag esp32 --lib wolfssl   # the ESP32 (Stage 1 only; --port if several)
+python3 pico/run_benchmarks.py --board esp32 --lib wolfssl         # the ESP32 (logs_esp32/; --port if several)
 bash pico/tests/qemu_liboqs/run.sh             # no board: Keccak swap checked + instruction counts in QEMU
 ```
 
@@ -908,7 +914,7 @@ wrapper around mldsa-native, ML-DSA-87 only; `mldsa_bench` (ML-DSA-87) already r
 | `unable to find KEM "MLKEM512"` | OpenSSL 3.0–3.4 without oqs-provider. Upgrade to 3.5+ or install oqs-provider. |
 | `verify error: unable to get local issuer certificate` | Pass `-CAfile certs/<sig>/CA.crt` on the client. |
 | `source: no such file or directory: .venv/bin/activate` | No venv in the current folder yet — `python3 -m venv .venv` first. |
-| ESP32: a row is `FAULT` (`Guru Meditation Error` in its `.log`) | The board panicked, usually a stack overflow: that set doesn't fit (the runner stops reading at the end of the first panic dump, as the board then panics on every boot). The sets that don't fit are listed in docs/esp32_build_notes.md. |
+| ESP32: a row is `FAULT` (`Guru Meditation Error` in its `.log`) | The board panicked, usually a stack overflow: that set doesn't fit (the runner stops reading at the end of the first panic dump, as the board then panics on every boot). The sets that don't fit are listed in docs/esp32_build_notes.md. `mqtt_tls_bench` is different: a panic (its 8 s watchdog, or a crash) reboots it into the next block, and the block that stopped says `hung during` / `crashed during <step>`; only a crash before any block, at every boot, is a `FAULT`. |
 | ESP32: `OUT OF MEMORY: big stack ...` | The big-stack sketches (QR-UOV, UOV, liboqs) allocate their stack on the heap, and its largest free block (~110 KB on a WROOM-32) is smaller than the set needs. |
 | Windows: `SNOVA patch: N of 12 Falcon-512 constants found` | An old CRLF checkout of wolfSSL in `~/.cache/iot-pqc/wolfssl-src`. `make_wolfssl_lib.sh` now checks it out again with LF by itself; delete the folder if it still fails. |
 | `bash: ./scripts/gen_certs.sh: bad interpreter` | Windows line endings. `tr -d '\r' < gen_certs.sh > tmp && mv tmp gen_certs.sh`. |

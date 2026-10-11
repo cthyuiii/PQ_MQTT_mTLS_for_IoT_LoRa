@@ -1,3 +1,4 @@
+#if defined(__arm__)  /* the Pico's Ascon (ASCON_C_SOURCE.txt); the ESP32 builds esp32/ instead */
 	.arch armv6-m
 	.eabi_attribute 20, 1
 	.eabi_attribute 21, 1
@@ -244,3 +245,4 @@ P:
 	pop	{r4, r5, r6, r7, pc}
 	.size	P, .-P
 	.ident	"GCC: (15:10.3-2021.07-4) 10.3.1 20210621 (release)"
+#endif

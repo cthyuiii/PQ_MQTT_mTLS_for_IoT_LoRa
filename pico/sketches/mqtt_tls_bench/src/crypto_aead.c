@@ -1,3 +1,4 @@
+#if defined(__arm__)  // the Pico's Ascon (ASCON_C_SOURCE.txt); the ESP32 builds esp32/ instead
 #include "crypto_aead.h"
 
 #include <string.h>
@@ -54,4 +55,5 @@ int crypto_aead_decrypt(unsigned char* m, unsigned long long* mlen,
   return result;
 }
 
+#endif
 #endif

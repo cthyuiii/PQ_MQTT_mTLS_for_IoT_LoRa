@@ -50,12 +50,31 @@
 //   and refuse blocks only, for any certificate type (-DWB_<ALG>): the trust-anchor update, the signed KEM exchange
 //   and FCnt in flash stay in the ML-DSA-44 firmware. The refuse lines also give the CRL's load time (crl_load_us:
 //   wolfSSL verifies the CRL's signature with the CA when it is loaded, once per block's context) and its size.
+//   ESP32 (arduino-esp32, -32 / -32UE; board_compat.h): the same blocks and rows. Its replacements for the Pico's
+//   hardware: the task watchdog (8 s, a panic reboot) for the RP2040's watchdog, RTC memory that survives that reboot
+//   for its scratch registers (a crash also reboots and moves on to the next block: '#watchdog <block>: crashed
+//   during <step>'), ESP-IDF's shared-stack call on a heap block for the stack-pointer switch, configTime() for NTP,
+//   LittleFS on the spiffs partition (run_benchmarks.py builds with the Huge APP table), BearSSL as a library
+//   (ecdsa_bench/make_bearssl_lib.sh) and ascon-c's ESP32 C code (src/esp32/) for the M0 assembly. Wi-Fi power save
+//   is off (WiFi.setSleep(false)).
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <wolfssl.h>
 #include <wolfssl/ssl.h>
+#include <board_compat.h>
+#if defined(ARDUINO_ARCH_ESP32)
+#include <esp_task_wdt.h>
+#include <esp_system.h>
+#include <esp_timer.h>
+#include <esp_heap_caps.h>
+#include <esp_expression_with_stack.h>
+#include <bootloader_random.h>
+#include <freertos/semphr.h>
+#include <time.h>
+#else
 #include <hardware/structs/watchdog.h>  // scratch registers survive a watchdog reboot: which block hung
+#endif
 #include "mt_secrets.h"
 #include "lora_aead.h"
 #ifdef MT_KEX_ONLY  // + HQC-1 through liboqs 0.16 (kem_wolf.h)
@@ -78,7 +97,9 @@
 #define X25519_BUILD ""
 #endif
 
-#if defined(__ARM_ARCH_6M__)
+#if defined(ARDUINO_ARCH_ESP32)
+#define CHIP BOARD_CHIP
+#elif defined(__ARM_ARCH_6M__)
 #define CHIP "RP2040"
 #else
 #define CHIP "RP2350"
@@ -161,6 +182,14 @@ enum { N_BLOCKS = 3 + 3 * NP * 2 };
 #else
 enum { N_BLOCKS = 3 + 3 * NP * 2 + 2 * N_GROUPS };
 #endif
+// the watchdog's scratch registers (RP2040 / RP2350), which survive its reboot; on the ESP32, RTC memory that a watchdog,
+// panic or software reset keeps (RTC_NOINIT: not cleared at boot)
+#if defined(ARDUINO_ARCH_ESP32)
+static RTC_NOINIT_ATTR uint32_t wd_scratch[4];
+#define WD_SCRATCH wd_scratch
+#else
+#define WD_SCRATCH watchdog_hw->scratch
+#endif
 static const uint32_t RESUME_MAGIC = 0x4D515454;  // watchdog scratch[1]: scratch[0] holds a valid block index
 static const uint32_t REBOOT_MAGIC = 0x46434E54;  // the same, after the deployment firmware's own reboot (fcnt)
 // the step in progress (scratch[2]) and the connection (scratch[3], < 0 = warm-up): a reboot reports where it hung
@@ -168,14 +197,36 @@ static const char *const STEPS[] = {"setup", "TCP connect", "TLS handshake", "MQ
                                     "PUBLISH / echo", "TLS close", "TCP close", "serial output", "key pair",
                                     "decapsulation", "flash"};
 enum { S_SETUP, S_TCP, S_TLS, S_MQTT, S_SUB, S_PUB, S_TLSCLOSE, S_TCPCLOSE, S_SERIAL, S_KEYGEN, S_DECAPS, S_FLASH };
-#define STEP(x) (watchdog_hw->scratch[2] = (x))
+#define STEP(x) (WD_SCRATCH[2] = (x))
 // SNOVA signs in one liboqs call (wolfssl_bench/wb_snova.c): 4.4-4.9 s at level V, twice that when it retries, past the
 // 8 s watchdog. A timer feeds the watchdog during the signature, at most 10 times (20 s), so a real hang still resets.
+#if defined(ARDUINO_ARCH_ESP32)
+// the task watchdog is fed only by the task it watches: during the signature it watches a user ("snova") instead,
+// which a timer feeds, at most 10 times as on the Pico
+static esp_timer_handle_t sn_timer;
+static esp_task_wdt_user_handle_t sn_user;
+static volatile int sn_feeds;
+static void sn_feed(void *) { if (sn_feeds > 0) { sn_feeds--; esp_task_wdt_reset_user(sn_user); } }
+extern "C" void wb_snova_sign_begin(void) {
+  static const esp_timer_create_args_t a = {sn_feed, nullptr, ESP_TIMER_TASK, "sn_feed", true};
+  if (!sn_timer) esp_timer_create(&a, &sn_timer);
+  esp_task_wdt_add_user("snova", &sn_user);
+  esp_task_wdt_delete(NULL);
+  sn_feeds = 10;
+  esp_timer_start_periodic(sn_timer, 2000000);
+}
+extern "C" void wb_snova_sign_end(void) {
+  esp_timer_stop(sn_timer);
+  esp_task_wdt_add(NULL);
+  esp_task_wdt_delete_user(sn_user);
+}
+#else
 static repeating_timer_t sn_timer;
 static volatile int sn_feeds;
-static bool sn_feed(repeating_timer_t *) { if (sn_feeds > 0) { sn_feeds--; rp2040.wdt_reset(); } return true; }
+static bool sn_feed(repeating_timer_t *) { if (sn_feeds > 0) { sn_feeds--; board_wdt_reset(); } return true; }
 extern "C" void wb_snova_sign_begin(void) { sn_feeds = 10; add_repeating_timer_ms(2000, sn_feed, nullptr, &sn_timer); }
-extern "C" void wb_snova_sign_end(void) { cancel_repeating_timer(&sn_timer); rp2040.wdt_reset(); }
+extern "C" void wb_snova_sign_end(void) { cancel_repeating_timer(&sn_timer); board_wdt_reset(); }
+#endif
 
 // ---- big painted stack + stack-pointer switch, as liboqs_bench (validated on both boards) ----
 #ifndef MT_STACK_KB  // -DMT_STACK_KB: SNOVA's signing needs 26-92 KB (run_benchmarks.py)
@@ -185,9 +236,29 @@ extern "C" void wb_snova_sign_end(void) { cancel_repeating_timer(&sn_timer); rp2
 #define MT_STACK_KB 16
 #endif
 #endif
+static const size_t STK_N = MT_STACK_KB * 1024u;
+#if defined(ARDUINO_ARCH_ESP32)
+// Xtensa (windowed registers): no stack-pointer switch by hand. ESP-IDF's esp_execute_shared_stack_function runs the
+// block on the buffer in the same task; the buffer is a heap block (static DRAM is capped well below the largest
+// stacks), taken in setup() before Wi-Fi splits the heap. It fills the buffer with 0xA5 before each call, over any
+// paint of ours: the scan looks for that fill.
+#define STK_PAT 0xA5
+static uint8_t *g_stk;
+static int (*g_stk_fn)(void);
+static int g_stk_ret;
+static void g_stk_tramp(void) { g_stk_ret = g_stk_fn(); }
+static int run_on_stack(void *, int (*fn)(void)) {
+  static SemaphoreHandle_t lock = xSemaphoreCreateMutex();
+  g_stk_fn = fn;
+  esp_execute_shared_stack_function(lock, g_stk, STK_N, g_stk_tramp);
+  return g_stk_ret;
+}
+#else
 #define STK_PAT 0x5A
 static uint8_t g_stk[MT_STACK_KB * 1024u] __attribute__((aligned(16)));
-#if defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)
+#endif
+#if defined(ARDUINO_ARCH_ESP32)
+#elif defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)
 __attribute__((naked, noinline)) static int run_on_stack(void *new_top, int (*fn)(void)) {  // M33
   __asm volatile(
     "mrs  r2, msplim       \n"
@@ -215,16 +286,38 @@ __attribute__((naked, noinline)) static int run_on_stack(void *new_top, int (*fn
 }
 #endif
 static uint32_t stack_peak() {
-  uint32_t i = 0; while (i < sizeof g_stk && g_stk[i] == STK_PAT) i++;
-  return sizeof g_stk - i;
+  uint32_t i = 0; while (i < STK_N && g_stk[i] == STK_PAT) i++;
+  return STK_N - i;
+}
+
+// the 8 s watchdog: the RP2040's longest; on the ESP32 the task watchdog on this task, a panic (and reboot) when it fires
+static void wdt_begin() {
+#if defined(ARDUINO_ARCH_ESP32)
+  esp_task_wdt_config_t c = {8000, 0, true};  // timeout_ms, idle_core_mask (none: only this task), trigger_panic
+  if (esp_task_wdt_reconfigure(&c) != ESP_OK) esp_task_wdt_init(&c);
+  esp_task_wdt_add(NULL);
+#else
+  rp2040.wdt_begin(8000);
+#endif
+}
+// 0: a normal boot, 1: the watchdog rebooted the board, 2 (ESP32): a crash (panic) did; 3: the firmware's own reboot
+static int boot_cause() {
+#if defined(ARDUINO_ARCH_ESP32)
+  esp_reset_reason_t r = esp_reset_reason();
+  if (r == ESP_RST_TASK_WDT || r == ESP_RST_INT_WDT || r == ESP_RST_WDT) return 1;
+  if (r == ESP_RST_PANIC) return 2;
+  return r == ESP_RST_SW ? 3 : 0;
+#else
+  return rp2040.getResetReason() == RP2040::WDT_RESET ? 1 : 3;  // 3: the REBOOT_MAGIC check decides, as before
+#endif
 }
 
 #ifdef MT_KEX_ONLY
 static void oqs_rng(uint8_t *out, size_t n) { wb_rand_block(out, (unsigned)n); }  // liboqs (HQC-1): the same hardware RNG
 #endif
 extern "C" int wb_rand_block(unsigned char *out, unsigned int n) {
-  while (n >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(out, &r, 4); out += 4; n -= 4; }
-  if (n) { uint32_t r = rp2040.hwrand32(); memcpy(out, &r, n); }
+  while (n >= 4) { uint32_t r = board_hwrand32(); memcpy(out, &r, 4); out += 4; n -= 4; }
+  if (n) { uint32_t r = board_hwrand32(); memcpy(out, &r, n); }
   return 0;
 }
 
@@ -304,15 +397,15 @@ static const char *label(const Block &b) {  // "connect TLS", "pipeline mTLS lor
 }
 
 static int raw_send(Conn *c, const uint8_t *b, int n) {
-  rp2040.wdt_reset();
+  board_wdt_reset();
   int r = (int)c->cl.write(b, n);
   if (r > 0) { c->tx += r; c->io[0]++; }
   return r;
 }
 static int raw_recv(Conn *c, uint8_t *b, int n) {  // 0 = closed, -1 = 10 s silence (the host's SO_RCVTIMEO)
-  rp2040.wdt_reset();  // also with the data already here: SNOVA level V verifies twice (2 x 3.5 s) between waits
+  board_wdt_reset();  // also with the data already here: SNOVA level V verifies twice (2 x 3.5 s) between waits
   for (uint32_t t0 = millis(); !c->cl.available();) {
-    rp2040.wdt_reset();
+    board_wdt_reset();
     if (!c->cl.connected()) return 0;
     if (millis() - t0 > 10000) return -1;
   }
@@ -500,8 +593,8 @@ static const char *kem_exchange(Conn *c) {
   STEP(S_SUB);
   if (!subscribe(c, ct_topic)) e = "mqtt subscribe failed: no SUBACK";
   for (int x = 0; x < MT_KEX_WARMUP + MT_KEX_ITERS && !e; x++) {
-    rp2040.wdt_reset();
-    watchdog_hw->scratch[3] = (uint32_t)(x - MT_KEX_WARMUP);
+    board_wdt_reset();
+    WD_SCRATCH[3] = (uint32_t)(x - MT_KEX_WARMUP);
     STEP(S_KEYGEN);
     uint32_t t0 = micros();
     if (kw_keypair(&s, pk)) { e = "key pair failed"; break; }
@@ -569,9 +662,9 @@ static const char *one_connection(WOLFSSL_CTX *ctx, uint16_t port, int iter, int
   static const uint8_t disconnect_pkt[] = {0xE0, 0};
   static uint8_t connect_pkt[32];
   static int connect_len = connect_packet(connect_pkt, "pqc-timer", 60);  // the host's 23-byte CONNECT
-  rp2040.wdt_reset();
-  watchdog_hw->scratch[3] = (uint32_t)iter;
-  int free_heap = rp2040.getFreeHeap();
+  board_wdt_reset();
+  WD_SCRATCH[3] = (uint32_t)iter;
+  int free_heap = board_free_heap();
   Conn c;
   const char *e = nullptr;
   uint32_t t0 = micros(), t1 = 0, t2 = 0, t3 = 0, hs_tx = 0, hs_rx = 0, hs_w = 0, hs_r = 0;
@@ -819,12 +912,12 @@ static void bench_block(const Block &b) {
   if (ctx) wolfSSL_CTX_free(ctx);
 #ifdef MT_DEPLOY
   if (fc && !b.group && !e) {  // the FCnt test: reboot now, the next block reports how FCnt resumed
-    watchdog_hw->scratch[3] = fcnt;
-    watchdog_hw->scratch[1] = REBOOT_MAGIC;  // scratch[0] = this block (setup() carries on with the next)
+    WD_SCRATCH[3] = fcnt;
+    WD_SCRATCH[1] = REBOOT_MAGIC;  // scratch[0] = this block (setup() carries on with the next)
     Serial.println("#reboot the deployment firmware reboots itself: FCnt must resume from flash");
     Serial.flush();
     delay(200);
-    rp2040.reboot();
+    board_reboot();
   }
 #endif
 }
@@ -837,8 +930,14 @@ static int run_block() {
 
 #ifdef MT_DEPLOY
 static bool ntp_ok() {  // certificate and CRL dates need the time: NTP before any handshake
+#if defined(ARDUINO_ARCH_ESP32)
+  configTime(0, 0, NTP_SERVER);
+  for (uint32_t t0 = millis(); time(nullptr) < 1700000000 && millis() - t0 < 30000;) delay(100);
+  if (time(nullptr) < 1700000000) return false;
+#else
   NTP.begin(NTP_SERVER);
   if (!NTP.waitSet(30000)) return false;
+#endif
   Serial.printf("#time %lu (NTP %s): certificate and CRL dates are checked\n", (unsigned long)time(nullptr), NTP_SERVER);
   return true;
 }
@@ -848,6 +947,17 @@ void setup() {
   Serial.begin(115200);
   while (!Serial) delay(10);
   delay(200);
+#if defined(ARDUINO_ARCH_ESP32)
+  // esp_random() is true random only while the radio runs: the keys made before Wi-Fi starts take the bootloader's
+  // entropy source (the SAR ADC), switched off again before Wi-Fi needs the ADC
+  bootloader_random_enable();
+  g_stk = (uint8_t *)heap_caps_aligned_alloc(16, STK_N, MALLOC_CAP_8BIT);  // first: before Wi-Fi splits the heap
+  if (!g_stk) {
+    Serial.printf("#fatal OUT OF MEMORY: the %u B block stack; largest free block %u B\n", (unsigned)STK_N,
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    return;
+  }
+#endif
   wolfSSL_SetAllocators(wb_malloc, wb_free, wb_realloc);
   wolfSSL_Init();
 #ifdef MT_KEX_ONLY
@@ -856,23 +966,23 @@ void setup() {
 #endif
   Serial.printf("=== MQTT / TLS 1.3 / mTLS, " STR(MT_SIG) " certificates, X25519MLKEM768 (wolfSSL %s) on " CHIP " ===\n",
                 LIBWOLFSSL_VERSION_STRING);
-  Serial.printf("CPU clock: %lu MHz\n", (unsigned long)(F_CPU / 1000000u));
-  int first = 0;  // after a watchdog reset: report the block that hung, carry on with the next one
-  if (rp2040.getResetReason() == RP2040::WDT_RESET && watchdog_hw->scratch[1] == RESUME_MAGIC &&
-      watchdog_hw->scratch[0] < N_BLOCKS) {
-    first = watchdog_hw->scratch[0] + 1;
-    uint32_t step = watchdog_hw->scratch[2];
-    Serial.printf("#watchdog %s: hung during %s (connection %ld); no progress for 8 s, the board rebooted; "
-                  "continuing with the next block\n", label(plan(first - 1)),
-                  step < sizeof STEPS / sizeof *STEPS ? STEPS[step] : "?", (long)(int32_t)watchdog_hw->scratch[3]);
-  } else if (watchdog_hw->scratch[1] == REBOOT_MAGIC && watchdog_hw->scratch[0] < N_BLOCKS) {
-    first = watchdog_hw->scratch[0] + 1;
+  Serial.printf("CPU clock: %lu MHz\n", (unsigned long)board_cpu_mhz());
+  int first = 0, cause = boot_cause();  // after a watchdog reset (or crash): report the block, go on with the next
+  if ((cause == 1 || cause == 2) && WD_SCRATCH[1] == RESUME_MAGIC && WD_SCRATCH[0] < N_BLOCKS) {
+    first = WD_SCRATCH[0] + 1;
+    uint32_t step = WD_SCRATCH[2];
+    Serial.printf("#watchdog %s: %s during %s (connection %ld); %s, the board rebooted; "
+                  "continuing with the next block\n", label(plan(first - 1)), cause == 1 ? "hung" : "crashed",
+                  step < sizeof STEPS / sizeof *STEPS ? STEPS[step] : "?", (long)(int32_t)WD_SCRATCH[3],
+                  cause == 1 ? "no progress for 8 s" : "a crash (panic)");
+  } else if (cause == 3 && WD_SCRATCH[1] == REBOOT_MAGIC && WD_SCRATCH[0] < N_BLOCKS) {
+    first = WD_SCRATCH[0] + 1;
 #ifdef MT_DEPLOY_FULL
-    last_before_reboot = watchdog_hw->scratch[3];
+    last_before_reboot = WD_SCRATCH[3];
 #endif
     Serial.printf("#rebooted on purpose after %s; continuing with the next block\n", label(plan(first - 1)));
   }
-  watchdog_hw->scratch[1] = 0;
+  WD_SCRATCH[1] = 0;
   Serial.printf("#config iterations=%d warmup=%d pipe_iterations=%d messages=%d payload_B=%d schemes=%d "
                 "sweep_iterations=%d sweep_warmup=%d groups=%d kex_iterations=%d kex_warmup=%d blocks=%d\n", MT_ITERS,
                 MT_WARMUP, MT_PIPE_ITERS, MT_MSGS, MT_PAYLOAD, (int)NP, MT_SWEEP_ITERS, MT_SWEEP_WARMUP,
@@ -880,11 +990,16 @@ void setup() {
   kat_ok = la_kat();  // before the session keys: the vectors bring their own
   Serial.printf("#kat LoRaWAN / AES-CMAC / Ascon known-answer checks: %s\n", kat_ok ? "OK" : "FAIL");
 #ifdef MT_DEPLOY_FULL  // keys, DevAddr and FCnt from flash; new ones (saved) on the first boot
-  bool fs = LittleFS.begin(), restored = fs && lora_load();
+#if defined(ARDUINO_ARCH_ESP32)
+  bool fs = LittleFS.begin(true);  // the spiffs partition; formatted on the first boot
+#else
+  bool fs = LittleFS.begin();
+#endif
+  bool restored = fs && lora_load();
   if (!restored) {
-    for (int i = 0; i < 32; i++) k_app[i] = rp2040.hwrand32();
-    for (int i = 0; i < 16; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
-    for (int i = 0; i < 4; i++) devaddr[i] = rp2040.hwrand32();
+    for (int i = 0; i < 32; i++) k_app[i] = board_hwrand32();
+    for (int i = 0; i < 16; i++) { k_nwk[i] = board_hwrand32(); k_nwk2[i] = board_hwrand32(); }
+    for (int i = 0; i < 4; i++) devaddr[i] = board_hwrand32();
     fcnt = 0;
   }
   boot_fcnt = fcnt;
@@ -893,11 +1008,17 @@ void setup() {
                 devaddr[0], devaddr[1], devaddr[2], devaddr[3], (unsigned long)fcnt, (unsigned long)fcnt_reserved,
                 !fs ? " (no flash filesystem: build with a LittleFS partition)" : saved ? "" : " (SAVE FAILED)");
 #else
-  for (int i = 0; i < 32; i++) k_app[i] = rp2040.hwrand32();
-  for (int i = 0; i < 16; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
+  for (int i = 0; i < 32; i++) k_app[i] = board_hwrand32();
+  for (int i = 0; i < 16; i++) { k_nwk[i] = board_hwrand32(); k_nwk2[i] = board_hwrand32(); }
 #endif
+#if defined(ARDUINO_ARCH_ESP32)
+  bootloader_random_disable();  // Wi-Fi's RF now feeds esp_random()
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+#else
   WiFi.mode(WIFI_STA);
   WiFi.noLowPowerMode();
+#endif
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   for (uint32_t t0 = millis(); WiFi.status() != WL_CONNECTED && millis() - t0 < 30000;) delay(100);
   if (WiFi.status() != WL_CONNECTED) Serial.println("#fatal Wi-Fi: cannot join (2.4 GHz only; check WIFI_SSID / WIFI_PASS)");
@@ -909,18 +1030,25 @@ void setup() {
     Serial.printf("#wifi rssi=%ld dBm channel=%d ip=%s broker=%s\n", (long)WiFi.RSSI(),
                   WiFi.channel(), WiFi.localIP().toString().c_str(), broker.toString().c_str());
 #ifndef MT_DEPLOY_FULL
-    for (int i = 0; i < 4; i++) devaddr[i] = rp2040.hwrand32();
+    for (int i = 0; i < 4; i++) devaddr[i] = board_hwrand32();
 #endif
-    rp2040.wdt_begin(8000);  // the RP2040's longest; reset per connection and inside every socket wait
+    wdt_begin();  // reset per connection and inside every socket wait
     snprintf(topic, sizeof topic, "pqc/pipe/pico-%02x%02x%02x%02x", devaddr[0], devaddr[1], devaddr[2], devaddr[3]);
     for (cur_block = first; cur_block < N_BLOCKS; cur_block++) {
-      watchdog_hw->scratch[0] = cur_block; watchdog_hw->scratch[1] = RESUME_MAGIC; STEP(S_SETUP);
-      memset(g_stk, STK_PAT, sizeof g_stk);
-      run_on_stack(g_stk + sizeof g_stk, run_block);
+      WD_SCRATCH[0] = cur_block; WD_SCRATCH[1] = RESUME_MAGIC; STEP(S_SETUP);
+      memset(g_stk, STK_PAT, STK_N);
+      run_on_stack(g_stk + STK_N, run_block);
     }
-    watchdog_hw->scratch[1] = 0;
+    WD_SCRATCH[1] = 0;
   }
   Serial.println("=== done ===");
 }
 
-void loop() { rp2040.wdt_reset(); delay(1000); }
+void loop() {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (esp_task_wdt_status(NULL) == ESP_OK) board_wdt_reset();  // only once setup() has joined it (not after #fatal)
+#else
+  board_wdt_reset();
+#endif
+  delay(1000);
+}
