@@ -68,9 +68,17 @@ BOARDS = {
         fqbn   = "esp32:esp32:esp32",
         label  = None,
         sram_kb= 320,
+        block_kb= 108,                      # the largest free heap block (110,580 B): every stack must fit in it
     ),
 }
 ESP_FAMILIES = {"esp32"}
+# why a set doesn't run on the ESP32, where the size alone doesn't say (the sets' notes compare with the Pico's SRAM)
+ESP_GATE = {
+    "ML-DSA-87 (liboqs)": "faulted on a 96 KB stack (IllegalInstruction); mldsa_bench runs ML-DSA-87 as REDUCE_RAM",
+    "ML-DSA-87": "overflows a 106 KB loop stack, about the largest free block; the REDUCE_RAM row runs it",
+    "UOV-Is-pkc round 3 (liboqs)": "its secret key alone (348,704 B) is larger than the largest free block (~108 KB)",
+    "UOV-Ip-pkc round 3 (liboqs)": "its secret key alone (237,896 B) is larger than the largest free block (~108 KB)",
+}
 # USB vendor IDs of the serial ports to look for: Raspberry Pi (the Pico's own USB); main() adds the ESP32 boards'
 # bridges (Silicon Labs CP210x, WCH CH340 / CH9102, FTDI, Espressif's own USB-JTAG) for --board esp32
 PORT_VIDS = {0x2E8A}
@@ -828,7 +836,7 @@ def main():
     drive  = board["label"]  # its BOOTSEL drive's label (None: an ESP32, flashed over serial)
     print(f"\nBoard: {board['name']}")
     print(f"  -> FQBN {fqbn} | " + (f"serial {initial_port} (esptool)" if esp else f"BOOTSEL drive {drive}")
-          + f" | SRAM {board['sram_kb']} KB\n")
+          + f" | SRAM {board['sram_kb']} KB" + (f", largest free block ~{board['block_kb']} KB" if esp else "") + "\n")
 
     only = set(args.only.split(",")) if args.only else None
     libs = [x.strip().lower() for x in args.lib.split(",")] if args.lib else None
@@ -843,6 +851,16 @@ def main():
         if args.test and test_of(s) not in args.test.split(","):    continue
         if match and not any(m in norm(s["label"]) for m in match): continue
         if s["folder"] in skip:                      continue
+        if esp and family not in s["boards"]:  # before the Wi-Fi check: these don't run whatever the environment
+            if s["folder"] == "mqtt_tls_bench":
+                why = f"mqtt_tls_bench (Stage 2, the pipeline) is not ported to {family}: Stage 1 only"
+            elif s["label"] in ESP_GATE:
+                why = ESP_GATE[s["label"]]
+            elif s["ws_kb"] > board["block_kb"]:
+                why = f"won't fit {family}: needs {s['ws_kb']} KB, more than its largest free block (~{board['block_kb']} KB)"
+            else:
+                why = f"not enabled for {family}"
+            gated.append((s, why)); continue
         missing = [k for k in MQTT_ENV if not os.environ.get(k)] if s["folder"] == "mqtt_tls_bench" else []
         if s["boards"] and missing:  # exported in THIS shell; BROKER = the ./run_all.sh --serve-broker machine
             gated.append((s, "missing from the environment: " + ", ".join(missing))); continue

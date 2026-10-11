@@ -95,7 +95,7 @@ records the versions each run actually used.
 | | toolchain / SDK | pqt-gcc 5.0.0-9576866 = GCC 16.1.0, newlib 4.6.0; Pico SDK 2.3.0; BearSSL as bundled in the core |
 | | other | rweather Crypto 0.4.0 (Ed25519 sketch); XKCP commit `4affab4` (optional Keccak) |
 | ESP32 | Arduino | arduino-cli 1.5.1; arduino-esp32 core `esp32:esp32` 3.3.12 (ESP-IDF 5.5), FQBN `esp32:esp32:esp32` |
-| | other | BearSSL `earlephilhower/bearssl-esp8266` `aca1383` (the commit arduino-pico 6.1.1 pins; `make_bearssl_lib.sh`); liboqs 0.16.0 and wolfSSL 5.9.4 as on the Pico, built with the core's Xtensa GCC |
+| | other | BearSSL `earlephilhower/bearssl-esp8266` `aca1383` (the commit arduino-pico 6.1.1 pins; `make_bearssl_lib.sh`); liboqs 0.16.0, liboqs main (the round 3 SNOVA / MQOM sets) and wolfSSL 5.9.4 as on the Pico, built with the core's Xtensa GCC |
 | Checks | QEMU | 11.1.1 (`pico/tests/qemu_liboqs`) |
 | Pi | everything | recorded by `versions_<tag>.json` at run time (Pi OS Trixie: OpenSSL 3.5.x, Python 3.13) |
 
