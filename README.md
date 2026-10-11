@@ -16,7 +16,8 @@ PQ_MQTT_mTLS_for_IoT_LoRa/
 ├── docs/
 │   ├── how_it_works.md            ← library map, test plan per device, each stage's calls, LoRaWAN / AES / Ascon
 │   ├── findings.md                ← what the benches found (numbered findings, sources, future work)
-│   └── pico_build_notes.md        ← how each Pico sketch was ported / what failed and why
+│   ├── pico_build_notes.md        ← how each Pico sketch was ported / what failed and why
+│   └── esp32_build_notes.md       ← the ESP32 port of the Stage 1 sketches: what differs, what doesn't fit
 ├── scripts/
 │   ├── gen_certs.sh               ← CA + server + client certificate per signature → certs/<SIG>/; --deploy <IP>:
 │   │                                certs/DEPLOY (CRL, revoked / expired certs, the signed trust-anchor update);
