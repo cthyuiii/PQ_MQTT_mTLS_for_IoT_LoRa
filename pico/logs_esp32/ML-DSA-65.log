@@ -1,0 +1,40 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+  iter 1/20 k=26037us s=56673us v=25555us
+  iter 2/20 k=25681us s=119662us v=25519us
+  iter 3/20 k=25687us s=107401us v=25522us
+  iter 4/20 k=25679us s=61929us v=25523us
+  iter 5/20 k=25684us s=32845us v=25521us
+  iter 6/20 k=25688us s=50463us v=25526us
+  iter 7/20 k=25690us s=58467us v=25519us
+  iter 8/20 k=25683us s=32847us v=25520us
+  iter 9/20 k=25690us s=40565us v=25523us
+  iter 10/20 k=25685us s=130432us v=25522us
+  iter 11/20 k=25684us s=57979us v=25520us
+  iter 12/20 k=25689us s=40850us v=25521us
+  iter 13/20 k=25684us s=68639us v=25522us
+  iter 14/20 k=25682us s=50254us v=25523us
+  iter 15/20 k=25688us s=59837us v=25523us
+  iter 16/20 k=25689us s=40855us v=25522us
+  iter 17/20 k=25684us s=41690us v=25518us
+  iter 18/20 k=25689us s=32847us v=25519us
+  iter 19/20 k=25691us s=51055us v=25518us
+  iter 20/20 k=25687us s=32844us v=25519us
+=== ML-DSA-65 (mldsa-native ref) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1952 sk=4032 sig=3309 sigMax=3309
+ML-DSA-65(mldsa-native)  keygen  n=20  mean=25703us/25.703ms  median=25687us/25.687ms  std=76us/0.076ms  min=25679us  max=26037us  mean_cyc=6168720  median_cyc=6164880  ops/s=38.9060
+ML-DSA-65(mldsa-native)  sign  n=20  mean=58406us/58.406ms  median=50759us/50.759ms  std=27815us/27.815ms  min=32844us  max=130432us  mean_cyc=14017440  median_cyc=12182160  ops/s=17.1215
+ML-DSA-65(mldsa-native)  verify  n=20  mean=25522us/25.522ms  median=25521us/25.521ms  std=7us/0.007ms  min=25518us  max=25555us  mean_cyc=6125280  median_cyc=6125040  ops/s=39.1819
+verify OK: 20/20
+free stack: 26748 bytes   free heap: 228924 bytes
+=== done (repeats in ~5s) ===

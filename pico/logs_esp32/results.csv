@@ -1,0 +1,4 @@
+Board,Algorithm,pk,sk,sigMax,sig,keygen_mean_us,keygen_median_us,keygen_std_us,keygen_mean_cyc,keygen_median_cyc,keygen_ops_s,sign_mean_us,sign_median_us,sign_std_us,sign_mean_cyc,sign_median_cyc,sign_ops_s,verify_mean_us,verify_median_us,verify_std_us,verify_mean_cyc,verify_median_cyc,verify_ops_s,status,Library
+esp32,ML-DSA-44,1312,2560,2420,2420,14742,14715,136,3538080,3531600,67.8334,39693,30365,21342,9526320,7287600,25.1934,15205,15204,8,3649200,3648960,65.7678,OK,mldsa-native
+esp32,ML-DSA-65,1952,4032,3309,3309,25703,25687,76,6168720,6164880,38.906,58406,50759,27815,14017440,12182160,17.1215,25522,25521,7,6125280,6125040,39.1819,OK,mldsa-native
+esp32,ML-DSA-87 (REDUCE_RAM),2592,4896,4627,4627,43735,43764,245,10496400,10503360,22.865,217953,134234,174727,52308720,32216160,4.5881,43989,43988,7,10557360,10557120,22.733,OK,mldsa-native

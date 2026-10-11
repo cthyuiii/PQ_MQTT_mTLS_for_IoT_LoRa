@@ -1,0 +1,882 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+E (141) esp_core_`fW}���͡� Core dump data check failed:
+Calculated checksum='ab456a96'
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x006cc2e8  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x00237332  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x000145d1  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x000a543c  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x007cde6e  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x00192b67  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41cb  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0050b77a  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x00307b3d  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0075415a  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x003992fe  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0008efcd  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x00499995  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0044c210  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x002627ca  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x002f7666  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0004a4bb  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x004ee186  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x004a8edc  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x003cd253  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x00488077  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x004941a2  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0003dcf2  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41cb  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x000768ba  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x000c63e3  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x00743eed  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x000e20fc  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0067debb  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x000298a2  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x005dd9ba  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0016058d  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0009d393  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x00248ec8  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x00552a23  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x001cb662  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x007713d1  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x003caad0  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x003ae618  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x0066dae3  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x006f7bf8  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631
+ets Jul 29 2019 12:21:46
+rst:0x10 (RTCWDT_RTC_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+Guru Meditation Error: Core  1 panic'ed (Unhandled debug exception).
+Debug exception reason: Stack canary watchpoint triggered (loopTask)
+Core  1 register dump:
+PC      : 0x400f19ae  PS      : 0x00060d36  A0      : 0x800d3545  A1      : 0x3ffe4140
+A2      : 0x00000018  A3      : 0x00000000  A4      : 0x3ffe41c8  A5      : 0x00000348
+A6      : 0x3fffeb80  A7      : 0x00000000  A8      : 0x003c2d35  A9      : 0x3ffe46e0
+A10     : 0x3ffe4680  A11     : 0xc001be83  A12     : 0x007fe000  A13     : 0x00000019
+A14     : 0x3ffe44c8  A15     : 0x00000000  SAR     : 0x00000018  EXCCAUSE: 0x00000001
+EXCVADDR: 0x00000000  LBEG    : 0x40084e92  LEND    : 0x40084e9d  LCOUNT  : 0x00000000
+Backtrace: 0x400f19ab:0x3ffe4140 0x400d3542:0x3ffe4160 0x400d3c0e:0x3ffe4500 0x400d3fbc:0x3ffe4630 0x400d458e:0x3fffebf0 0x400d1b06:0x3fffedd0 0x400d7248:0x3fffee20 0x400880ed:0x3fffee40
+ELF file SHA256: 3ec3f2631

@@ -61,7 +61,21 @@ BOARDS = {
         label  = "RP2350",                    # Pico 2 mounts as RP2350, NOT RPI-RP2
         sram_kb= 520,
     ),
+    # ESP32 (arduino-esp32 core esp32:esp32): flashed over its USB-serial bridge by esptool (arduino-cli upload),
+    # no BOOTSEL drive, so no auto-detect: pass --board esp32. Sketches use pico/libraries/board_compat.
+    "esp32": dict(
+        name   = "ESP32  (ESP32-WROOM-32 / -32UE, Xtensa LX6 dual core, 320 KB DRAM)",
+        fqbn   = "esp32:esp32:esp32",
+        label  = None,
+        sram_kb= 320,
+    ),
 }
+ESP_FAMILIES = {"esp32"}
+# USB vendor IDs of the serial ports to look for: Raspberry Pi (the Pico's own USB); main() adds the ESP32 boards'
+# bridges (Silicon Labs CP210x, WCH CH340 / CH9102, FTDI, Espressif's own USB-JTAG) for --board esp32
+PORT_VIDS = {0x2E8A}
+ESP_VIDS = {0x10C4, 0x1A86, 0x0403, 0x303A}
+COMPAT_LIBS = os.path.join(HERE, "libraries")  # board_compat.h, on every build
 
 # ---------------------------------------------------------------------------
 # Capability matrix.
@@ -204,9 +218,14 @@ SKETCHES = [
     S("rsa_bench", "RSA-3072/SHA-384", 1800, BOTH, 16, flags="-DPICO_VARIANT_3072"),  # consider --no-timeout
     S("rsa_bench", "RSA-4096/SHA-512", 3600, BOTH, 24, flags="-DPICO_VARIANT_4096"),  # keygen MANY minutes; use --no-timeout
     # --- ML-DSA / Falcon (lattice) ---
-    S("mldsa_bench",    "ML-DSA-44",             90,  BOTH,  50, flags="-DPICO_VARIANT_44"),
-    S("mldsa_bench",    "ML-DSA-65",             90,  BOTH,  70, flags="-DPICO_VARIANT_65"),
+    # ESP32: the sketch reserves a 96 KB loop task stack (BOARD_LOOP_STACK); ML-DSA-44 peaked at 45 KB of it
+    S("mldsa_bench",    "ML-DSA-44",             90,  BOTH + ("esp32",),  50, flags="-DPICO_VARIANT_44"),
+    S("mldsa_bench",    "ML-DSA-65",             90,  BOTH + ("esp32",),  70, flags="-DPICO_VARIANT_65"),
     S("mldsa_bench",    "ML-DSA-87",            120,  BOTH, 100, flags="-DPICO_VARIANT_87"),
+    # the ESP32 (WROOM-32): the default build overflows a 106 KB loop stack, the largest block it has (~108 KB);
+    # mldsa-native's reduced-RAM build (s1 / s2 / t0 read from sk, not copied) is a different configuration: own row
+    S("mldsa_bench",    "ML-DSA-87 (REDUCE_RAM)", 120, ("esp32",), 0,
+      flags="-DPICO_VARIANT_87 -DMLD_CONFIG_REDUCE_RAM"),
     S("falcon_bench",  "Falcon-512",           150,  BOTH,  40, flags="-DPICO_VARIANT_512"),  # soft-float on M0+, FPU on M33
     S("falcon_bench", "Falcon-1024",          240,  BOTH,  80, flags="-DPICO_VARIANT_1024"),
     # --- HAWK (lattice/NTRU): withdrawn by its team from the NIST process (round 3, 2026) ---
@@ -491,10 +510,10 @@ def sh(cmd, **kw):
     print("  $", " ".join(cmd)); return subprocess.run(cmd, **kw)
 
 def list_ports():
-    """the Pico's USB serial ports (Raspberry Pi's USB vendor ID): /dev/cu.usbmodem* (macOS), /dev/ttyACM* (Linux), COMn"""
+    """the board's USB serial ports (by PORT_VIDS): /dev/cu.usbmodem* (macOS), /dev/ttyACM* (Linux), COMn"""
     try:
         from serial.tools import list_ports as lp
-        return sorted(p.device for p in lp.comports() if p.vid == 0x2E8A)
+        return sorted(p.device for p in lp.comports() if p.vid in PORT_VIDS)
     except ImportError:
         return sorted(glob.glob("/dev/cu.usbmodem*") + glob.glob("/dev/ttyACM*"))
 
@@ -538,7 +557,7 @@ def bootsel_drive(label):
 def mounted_bootsel():
     """Return (family, drive) for whichever board's BOOTSEL drive is mounted, else (None, None)."""
     for fam, b in BOARDS.items():
-        if (vol := bootsel_drive(b["label"])):
+        if b["label"] and (vol := bootsel_drive(b["label"])):
             return fam, vol
     return None, None
 
@@ -653,23 +672,29 @@ def _g(line, pat, cast=int, default=""):
 
 STOP = False  # Ctrl-C during a capture: keep what arrived, then finish (results, collate) without the rest
 
-def open_serial(port, tries):
-    """the board's serial port (port, else the first one listed), retrying once a second; None if it never opens"""
+def open_serial(port, tries, esp_reset=False):
+    """the board's serial port (port, else the first one listed), retrying once a second; None if it never opens.
+    esp_reset: pulse EN through the bridge's RTS line (the ESP32 auto-reset circuit, DTR released so IO0 stays high
+    and it boots the sketch): the ESP32's UART doesn't wait for the port, so this starts the report from the top"""
     import serial
     for _ in range(tries):
         try:
             p = port if port in list_ports() else (list_ports() or [port])[0]
+            if esp_reset:
+                ser = serial.Serial(p, 115200, timeout=2)
+                ser.dtr = False; ser.rts = True; time.sleep(0.1); ser.rts = False
+                return ser
             ser = serial.Serial(p, 115200, timeout=2, dsrdtr=True); ser.dtr = True
             return ser
         except Exception:
             time.sleep(1)
     return None
 
-def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8):
+def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8, esp=False):
     global STOP
     rows, sizes, txt = {}, None, []
-    log = open(logpath, "w")  # line by line: a hang or Ctrl-C still leaves the log
-    ser = open_serial(port, 15)
+    log = open(logpath, "w", encoding="utf-8")  # line by line: a hang or Ctrl-C still leaves the log
+    ser = open_serial(port, 15, esp_reset=esp)
     if ser is None:
         print("    !! could not open serial", port); return rows, sizes, False, ""
     saw_header = fault = False
@@ -697,10 +722,16 @@ def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8):
         if not line: continue
         last = time.time()
         txt.append(line); print("    |", line); log.write(line + "\n"); log.flush()
-        if "===" in line and " on RP" in line:        # board-agnostic banner match (RP2040 / RP2350)
+        if "===" in line and (" on RP" in line or " on ESP32" in line):  # board-agnostic banner (RP2040/RP2350/ESP32)
             saw_header = True
-        if "MEMORY FAULT" in line or "HARDFAULTED" in line:
+        # the ESP32's panic handler: "Guru Meditation Error", a stack canary / overflow, a watchdog reset
+        if ("MEMORY FAULT" in line or "HARDFAULTED" in line or "Guru Meditation" in line or "Backtrace:" in line
+                or "stack overflow" in line.lower() or "task_wdt" in line):
             fault = True
+        # an ESP32 reboots after a panic and runs into it again: the output never pauses, so the idle timeout
+        # never fires. The first dump is the report; its last line is the ELF hash
+        if esp and fault and line.startswith("ELF file SHA256"):
+            break
         if line.startswith("CPU clock: "):
             mhz = _g(line, r"CPU clock: (\d+)")
         if "sizes:" in line.lower():
@@ -726,6 +757,8 @@ def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8):
     return rows, sizes, fault, "\n".join(txt)
 
 def main():
+    # a board's raw bytes (boot ROM noise, a panic) must not stop the run on a cp1252 Windows console
+    sys.stdout.reconfigure(errors="replace")
     ap = argparse.ArgumentParser()
     ap.add_argument("--port")
     ap.add_argument("--board", choices=list(BOARDS), help="force a board family, skip auto-detect")
@@ -760,23 +793,36 @@ def main():
         RUN_TAG, LOGDIR = f"_{args.tag}", os.path.join(HERE, f"logs_{args.tag}")
 
     os.makedirs(LOGDIR, exist_ok=True)
+    esp = args.board in ESP_FAMILIES
+    if esp:
+        PORT_VIDS.clear(); PORT_VIDS.update(ESP_VIDS)
     initial_port = args.port or (list_ports() or [None])[0]
 
     # ---- detect (or accept) the board ----
     family = args.board or detect_board(initial_port)
     if not family:
-        print("\n!! Could not identify the board. Put it in BOOTSEL (or pass --board rp2040|rp2350) and retry.")
+        print("\n!! Could not identify the board. Put it in BOOTSEL (or pass --board rp2040|rp2350|esp32) and retry.")
+        sys.exit(1)
+    if esp and not initial_port:
+        print("\n!! No ESP32 serial port found (CP210x / CH340 / FTDI / Espressif USB). Install the bridge's driver, "
+              "or pass --port COMn.")
         sys.exit(1)
     board  = BOARDS[family]
     fqbn   = args.fqbn or board["fqbn"]
-    menu = [f"opt={dict(O='Optimize', O2='Optimize2', O3='Optimize3', Ofast='Fast')[args.opt]}"] if args.opt else []
-    menu += [f"freq={args.freq}"] if args.freq else []
+    if esp:  # arduino-esp32's board menu: CPUFreq; the optimisation level is not a menu there
+        if args.opt:
+            print("!! --opt is an arduino-pico menu; ignored on the ESP32"); args.opt = None
+        menu = [f"CPUFreq={args.freq}"] if args.freq else []
+    else:
+        menu = [f"opt={dict(O='Optimize', O2='Optimize2', O3='Optimize3', Ofast='Fast')[args.opt]}"] if args.opt else []
+        menu += [f"freq={args.freq}"] if args.freq else []
     if menu:
         fqbn += ":" + ",".join(menu)
     tag = (f" -{args.opt}" if args.opt else "") + (f" @{args.freq}MHz" if args.freq else "")
-    drive  = board["label"]  # its BOOTSEL drive's label
+    drive  = board["label"]  # its BOOTSEL drive's label (None: an ESP32, flashed over serial)
     print(f"\nBoard: {board['name']}")
-    print(f"  -> FQBN {fqbn} | BOOTSEL drive {drive} | SRAM {board['sram_kb']} KB\n")
+    print(f"  -> FQBN {fqbn} | " + (f"serial {initial_port} (esptool)" if esp else f"BOOTSEL drive {drive}")
+          + f" | SRAM {board['sram_kb']} KB\n")
 
     only = set(args.only.split(",")) if args.only else None
     libs = [x.strip().lower() for x in args.lib.split(",")] if args.lib else None
@@ -872,7 +918,7 @@ def main():
         build_fqbn = re.sub(r"^(rp2040:rp2040:rpipico2?)\b", r"\1w", fqbn) if wifi else fqbn
         if "-DMT_DEPLOY" in flags:  # LittleFS (trust anchor, LoRaWAN state): a 64 KB flash filesystem
             build_fqbn += ":flash=" + ("4194304_65536" if "rpipico2" in build_fqbn else "2097152_65536")
-        cmd = ["arduino-cli","compile","--fqbn",build_fqbn,"--output-dir",outdir]
+        cmd = ["arduino-cli","compile","--fqbn",build_fqbn,"--output-dir",outdir,"--libraries",COMPAT_LIBS]
         if flags:
             cmd += ["--build-path", os.path.join(outdir, "build"),
                     "--build-property", f"compiler.c.extra_flags={flags}",
@@ -891,7 +937,14 @@ def main():
             row(label, lib=lib_of(s), status="COMPILE_FAIL"); continue
 
         port = args.port or (list_ports() or [None])[0]
-        if not args.no_upload:
+        if esp and not args.no_upload:  # esptool over the bridge; it resets into the bootloader and back by itself
+            r = sh(["arduino-cli", "upload", "-p", port, "--fqbn", build_fqbn, "--input-dir", outdir])
+            if r.returncode != 0:
+                row(label, lib=lib_of(s), status="UPLOAD_FAIL: esptool (hold BOOT while it says 'Connecting...')")
+                continue
+            if wifi:  # the firmware holds the Wi-Fi password and the client key
+                shutil.rmtree(outdir, ignore_errors=True)
+        elif not args.no_upload:
             uf2 = (glob.glob(os.path.join(outdir, "*.uf2")) or [None])[0]
             if not uf2:
                 print("    !! no .uf2 produced"); row(label, lib=lib_of(s), status="NO_UF2"); continue
@@ -914,7 +967,7 @@ def main():
 
         # mqtt_tls_bench: every watchdog reboot moves on to the next block, so allow one per block (83), not 8
         rows, sizes, fault, txt = capture(port, timeout, os.path.join(LOGDIR, key + ".log"),
-                                          no_timeout=args.no_timeout, max_reconnects=100 if wifi else 8)
+                                          no_timeout=args.no_timeout, max_reconnects=100 if wifi else 8, esp=esp)
         sizes = (list(sizes or ()) + ["","","",""])[:4]
         g, sg, v = rows.get("keygen"), rows.get("sign"), rows.get("verify")
         started  = ">>>" in txt
@@ -927,7 +980,7 @@ def main():
         elif started and not any_iter:status = "STUCK_NO_PROGRESS(likely mem/stack)"
         elif started or any_iter:     status = "PARTIAL"
         else:                         status = "NO_OUTPUT"
-        if not wifi and status != "OK" and in_bootsel(drive):  # liboqs_bench's watchdog / fault handler took it there
+        if not wifi and not esp and status != "OK" and in_bootsel(drive):  # liboqs_bench's watchdog / fault handler took it there
             status += " - hung: the board reset itself into BOOTSEL"
         if wifi:
             blocks = mqtt_blocks(txt)
