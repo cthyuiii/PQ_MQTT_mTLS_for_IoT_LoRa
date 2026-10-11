@@ -76,6 +76,7 @@ ESP_FAMILIES = {"esp32"}
 PORT_VIDS = {0x2E8A}
 ESP_VIDS = {0x10C4, 0x1A86, 0x0403, 0x303A}
 COMPAT_LIBS = os.path.join(HERE, "libraries")  # board_compat.h, on every build
+ESP_LIBS = WOLF_LIBS + "-esp32"  # libraries the ESP32 builds need and its core lacks (BearSSL: make_bearssl_lib.sh)
 
 # ---------------------------------------------------------------------------
 # Capability matrix.
@@ -87,6 +88,7 @@ COMPAT_LIBS = os.path.join(HERE, "libraries")  # board_compat.h, on every build
 # Missing folders are skipped automatically, so unbuilt entries are harmless.
 # ---------------------------------------------------------------------------
 BOTH = ("rp2040", "rp2350")
+ALL3 = BOTH + ("esp32",)  # ported to board_compat and run on an ESP32 (WROOM-32)
 
 def S(folder, label, timeout, boards, ws_kb, tier="ok", note="", flags="", lib=""):
     # flags: extra -D compile defines (e.g. parameter-set selection) passed to arduino-cli.
@@ -125,18 +127,18 @@ SKETCHES = [
     #     ports below (same wolfSSL release as the Pi). One algorithm per firmware (-DWB_*), small-mem
     #     ML-DSA/SLH-DSA, Cortex-M asm for ECDSA/RSA; the log's "peak heap" line is the RAM working set.
     #     Compile-checked for both boards; not yet run on hardware (ws_kb unknown until the first run).
-    S("wolfssl_bench", "ML-DSA-44 (wolfSSL)",           120, BOTH, 0, flags="-DWB_MLDSA44"),
-    S("wolfssl_bench", "ML-DSA-65 (wolfSSL)",           150, BOTH, 0, flags="-DWB_MLDSA65"),
-    S("wolfssl_bench", "ML-DSA-87 (wolfSSL)",           180, BOTH, 0, flags="-DWB_MLDSA87"),
-    S("wolfssl_bench", "SLH-DSA-SHA2-128f (wolfSSL)",   600, BOTH, 0, flags="-DWB_SLHDSA_SHA2_128F -DWB_ITERS=5"),
-    S("wolfssl_bench", "SLH-DSA-SHA2-128s (wolfSSL)",  3600, BOTH, 0, flags="-DWB_SLHDSA_SHA2_128S -DWB_ITERS=3"),
-    S("wolfssl_bench", "SLH-DSA-SHAKE-128f (wolfSSL)",  600, BOTH, 0, flags="-DWB_SLHDSA_SHAKE_128F -DWB_ITERS=5"),
-    S("wolfssl_bench", "ECDSA-P256 (wolfSSL)",          120, BOTH, 0, flags="-DWB_ECDSA_P256"),
-    S("wolfssl_bench", "Ed25519 (wolfSSL)",             120, BOTH, 0, flags="-DWB_ED25519"),
-    S("wolfssl_bench", "RSA-2048 (wolfSSL)",           1800, BOTH, 0, flags="-DWB_RSA2048 -DWB_ITERS=5"),
+    S("wolfssl_bench", "ML-DSA-44 (wolfSSL)",           120, ALL3, 0, flags="-DWB_MLDSA44"),
+    S("wolfssl_bench", "ML-DSA-65 (wolfSSL)",           150, ALL3, 0, flags="-DWB_MLDSA65"),
+    S("wolfssl_bench", "ML-DSA-87 (wolfSSL)",           180, ALL3, 0, flags="-DWB_MLDSA87"),
+    S("wolfssl_bench", "SLH-DSA-SHA2-128f (wolfSSL)",   600, ALL3, 0, flags="-DWB_SLHDSA_SHA2_128F -DWB_ITERS=5"),
+    S("wolfssl_bench", "SLH-DSA-SHA2-128s (wolfSSL)",  3600, ALL3, 0, flags="-DWB_SLHDSA_SHA2_128S -DWB_ITERS=3"),
+    S("wolfssl_bench", "SLH-DSA-SHAKE-128f (wolfSSL)",  600, ALL3, 0, flags="-DWB_SLHDSA_SHAKE_128F -DWB_ITERS=5"),
+    S("wolfssl_bench", "ECDSA-P256 (wolfSSL)",          120, ALL3, 0, flags="-DWB_ECDSA_P256"),
+    S("wolfssl_bench", "Ed25519 (wolfSSL)",             120, ALL3, 0, flags="-DWB_ED25519"),
+    S("wolfssl_bench", "RSA-2048 (wolfSSL)",           1800, ALL3, 0, flags="-DWB_RSA2048 -DWB_ITERS=5"),
     # wolfSSL's own Falcon (5.9.4, experimental; floating point emulated in integers on the M0+): the TLS client's code
-    S("wolfssl_bench", "Falcon-512 (wolfSSL)",          900, BOTH, 0, flags="-DWB_FALCON512 -DWB_ITERS=5"),
-    S("wolfssl_bench", "Falcon-1024 (wolfSSL)",        1800, BOTH, 0, flags="-DWB_FALCON1024 -DWB_ITERS=5"),
+    S("wolfssl_bench", "Falcon-512 (wolfSSL)",          900, ALL3, 0, flags="-DWB_FALCON512 -DWB_ITERS=5"),
+    S("wolfssl_bench", "Falcon-1024 (wolfSSL)",        1800, ALL3, 0, flags="-DWB_FALCON1024 -DWB_ITERS=5"),
     # --- Stage 2 + pipeline on the Pico W / Pico 2 W (Wi-Fi FQBN): MQTT over plain / TLS 1.3 / mTLS, wolfSSL,
     #     X25519MLKEM768 (+ the key-exchange sweep), one certificate type per firmware (every one the broker serves
     #     and wolfSSL has: not SLH-DSA or MAYO; SNOVA below), against ./run_all.sh --serve-broker on another machine.
@@ -181,15 +183,17 @@ SKETCHES = [
     # --- liboqs 0.16 bare-metal (portable C): the same code the Pi/Mac run via oqs-provider and the host liboqs stage.
     #     One algorithm per firmware (-DLB_ALG=<liboqs id>); reports peak stack per op (painted big stack,
     #     -DLB_STACK_KB, default 160 KB RP2040 / 400 KB RP2350).
-    S("liboqs_bench", "ML-DSA-44 (liboqs)",            120, BOTH, 0, flags="-DLB_ALG=ml_dsa_44"),
-    S("liboqs_bench", "ML-DSA-65 (liboqs)",            150, BOTH, 0, flags="-DLB_ALG=ml_dsa_65"),
+    S("liboqs_bench", "ML-DSA-44 (liboqs)",            120, ALL3, 0, flags="-DLB_ALG=ml_dsa_44"),
+    S("liboqs_bench", "ML-DSA-65 (liboqs)",            150, ALL3, 0, flags="-DLB_ALG=ml_dsa_65"),
+    # not on the ESP32: it faulted (corrupted return address) on a 96 KB big stack, and mldsa-native's build of the
+    # same set overflows 106 KB, about the largest block a WROOM-32 has (the Pico gives it 160 KB)
     S("liboqs_bench", "ML-DSA-87 (liboqs)",            180, BOTH, 0, flags="-DLB_ALG=ml_dsa_87"),
-    S("liboqs_bench", "Falcon-512 (liboqs)",           300, BOTH, 0, flags="-DLB_ALG=falcon_512"),
-    S("liboqs_bench", "Falcon-1024 (liboqs)",          600, BOTH, 0, flags="-DLB_ALG=falcon_1024"),
-    S("liboqs_bench", "SLH-DSA-SHA2-128f (liboqs)",    900, BOTH, 0, flags="-DLB_ALG=slh_dsa_pure_sha2_128f -DLB_ITERS=3"),
-    S("liboqs_bench", "SLH-DSA-SHA2-128s (liboqs)",   3600, BOTH, 0, flags="-DLB_ALG=slh_dsa_pure_sha2_128s -DLB_ITERS=2"),
-    S("liboqs_bench", "SLH-DSA-SHAKE-128f (liboqs)",   900, BOTH, 0, flags="-DLB_ALG=slh_dsa_pure_shake_128f -DLB_ITERS=3"),
-    S("liboqs_bench", "SLH-DSA-SHAKE-128s (liboqs)",  3600, BOTH, 0, flags="-DLB_ALG=slh_dsa_pure_shake_128s -DLB_ITERS=2"),
+    S("liboqs_bench", "Falcon-512 (liboqs)",           300, ALL3, 0, flags="-DLB_ALG=falcon_512"),
+    S("liboqs_bench", "Falcon-1024 (liboqs)",          600, ALL3, 0, flags="-DLB_ALG=falcon_1024"),
+    S("liboqs_bench", "SLH-DSA-SHA2-128f (liboqs)",    900, ALL3, 0, flags="-DLB_ALG=slh_dsa_pure_sha2_128f -DLB_ITERS=3"),
+    S("liboqs_bench", "SLH-DSA-SHA2-128s (liboqs)",   3600, ALL3, 0, flags="-DLB_ALG=slh_dsa_pure_sha2_128s -DLB_ITERS=2"),
+    S("liboqs_bench", "SLH-DSA-SHAKE-128f (liboqs)",   900, ALL3, 0, flags="-DLB_ALG=slh_dsa_pure_shake_128f -DLB_ITERS=3"),
+    S("liboqs_bench", "SLH-DSA-SHAKE-128s (liboqs)",  3600, ALL3, 0, flags="-DLB_ALG=slh_dsa_pure_shake_128s -DLB_ITERS=2"),
     # --- NIST round 3 MAYO / SNOVA / MQOM / UOV: liboqs main (lib=R3), memory-optimised builds. Round 3 changed
     #     MAYO-1/2 and UOV-Ip, gave SNOVA new sets (v, o, q, l, r, m1) and MQOM v3. Same code as the round3 stage.
     #     MAYO stack, this library's M0+ code in QEMU: MAYO-1 keygen / sign / verify 158 / 236 / 225 KB, MAYO-2
@@ -199,61 +203,61 @@ SKETCHES = [
       note="verify needs 363 KB of stack: more than the RP2040's 264 KB of RAM"),
     S("liboqs_bench", "MAYO-3 round 3 (liboqs)",       600, (), 504, tier="infeasible", lib=R3, flags="-DLB_ALG=mayo_3",
       note="verify needs 504 KB stack (MAYO-3 is unchanged in round 3)."),
-    *[S("liboqs_bench", f"SNOVA_{p} round 3 (liboqs)", 1200, BOTH, 0, lib=R3, flags=f"-DLB_ALG=snova_SNOVA_{p}")
+    *[S("liboqs_bench", f"SNOVA_{p} round 3 (liboqs)", 1200, ALL3, 0, lib=R3, flags=f"-DLB_ALG=snova_SNOVA_{p}")
       for p in ("I_K", "I_B", "I_S", "III_K", "III_B", "III_S", "V_K", "V_B", "V_S")],  # memopt: < 120 KB even at level V
-    *[S("liboqs_bench", f"MQOM3-{p} round 3 (liboqs)", 2400, BOTH, 0, lib=R3, flags=f"-DLB_ALG=mqom_mqom3_{p}")
+    *[S("liboqs_bench", f"MQOM3-{p} round 3 (liboqs)", 2400, ALL3, 0, lib=R3, flags=f"-DLB_ALG=mqom_mqom3_{p}")
       for p in ("cat1_gf16_fast_ct", "cat1_gf16_short_ct", "cat1_gf2_shorter_ct")],
     # UOV secret keys are 238-349 KB: RAM for them only on RP2350, and only with a small big-stack
     S("liboqs_bench", "UOV-Is-pkc round 3 (liboqs)",  1800, ("rp2350",), 0, lib=R3, flags="-DLB_ALG=uov_ov_Is_pkc -DLB_STACK_KB=48"),
     S("liboqs_bench", "UOV-Ip-pkc round 3 (liboqs)",  1800, ("rp2350",), 0, lib=R3, flags="-DLB_ALG=uov_ov_Ip_pkc -DLB_STACK_KB=48"),
     # --- classical baselines (BearSSL) - small, run on every board ---
-    S("ecdsa_bench", "ECDSA-P256 (BearSSL)",  90,  BOTH,   8, flags="-DPICO_VARIANT_p256"),
-    S("ecdsa_bench", "ECDSA-P384 (BearSSL)",  90,  BOTH,   8, flags="-DPICO_VARIANT_p384"),
-    S("ecdsa_bench", "ECDSA-P521 (BearSSL)", 120,  BOTH,   8, flags="-DPICO_VARIANT_p521"),
+    S("ecdsa_bench", "ECDSA-P256 (BearSSL)",  90,  ALL3,   8, flags="-DPICO_VARIANT_p256"),
+    S("ecdsa_bench", "ECDSA-P384 (BearSSL)",  90,  ALL3,   8, flags="-DPICO_VARIANT_p384"),
+    S("ecdsa_bench", "ECDSA-P521 (BearSSL)", 120,  ALL3,   8, flags="-DPICO_VARIANT_p521"),
     # Ed25519 needs the rweather "Crypto" library installed (arduino-cli lib install Crypto);
     # it COMPILE_FAILs until then. Ed448 uses a self-contained OpenSSL Goldilocks port in src/.
-    S("ed25519_bench",    "Ed25519",                90,  BOTH,  10),
-    S("ed448_bench",      "Ed448 (RFC 8032)",       90,  BOTH,  10),
-    S("rsa_bench", "RSA-2048/SHA-256", 1200, BOTH, 12, flags="-DPICO_VARIANT_2048"),  # keygen is a long silent block
-    S("rsa_bench", "RSA-3072/SHA-384", 1800, BOTH, 16, flags="-DPICO_VARIANT_3072"),  # consider --no-timeout
-    S("rsa_bench", "RSA-4096/SHA-512", 3600, BOTH, 24, flags="-DPICO_VARIANT_4096"),  # keygen MANY minutes; use --no-timeout
+    S("ed25519_bench",    "Ed25519",                90,  ALL3,  10),
+    S("ed448_bench",      "Ed448 (RFC 8032)",       90,  ALL3,  10),
+    S("rsa_bench", "RSA-2048/SHA-256", 1200, ALL3, 12, flags="-DPICO_VARIANT_2048"),  # keygen is a long silent block
+    S("rsa_bench", "RSA-3072/SHA-384", 1800, ALL3, 16, flags="-DPICO_VARIANT_3072"),  # consider --no-timeout
+    S("rsa_bench", "RSA-4096/SHA-512", 3600, ALL3, 24, flags="-DPICO_VARIANT_4096"),  # keygen MANY minutes; use --no-timeout
     # --- ML-DSA / Falcon (lattice) ---
     # ESP32: the sketch reserves a 96 KB loop task stack (BOARD_LOOP_STACK); ML-DSA-44 peaked at 45 KB of it
-    S("mldsa_bench",    "ML-DSA-44",             90,  BOTH + ("esp32",),  50, flags="-DPICO_VARIANT_44"),
-    S("mldsa_bench",    "ML-DSA-65",             90,  BOTH + ("esp32",),  70, flags="-DPICO_VARIANT_65"),
+    S("mldsa_bench",    "ML-DSA-44",             90,  ALL3,  50, flags="-DPICO_VARIANT_44"),
+    S("mldsa_bench",    "ML-DSA-65",             90,  ALL3,  70, flags="-DPICO_VARIANT_65"),
     S("mldsa_bench",    "ML-DSA-87",            120,  BOTH, 100, flags="-DPICO_VARIANT_87"),
     # the ESP32 (WROOM-32): the default build overflows a 106 KB loop stack, the largest block it has (~108 KB);
     # mldsa-native's reduced-RAM build (s1 / s2 / t0 read from sk, not copied) is a different configuration: own row
     S("mldsa_bench",    "ML-DSA-87 (REDUCE_RAM)", 120, ("esp32",), 0,
       flags="-DPICO_VARIANT_87 -DMLD_CONFIG_REDUCE_RAM"),
-    S("falcon_bench",  "Falcon-512",           150,  BOTH,  40, flags="-DPICO_VARIANT_512"),  # soft-float on M0+, FPU on M33
-    S("falcon_bench", "Falcon-1024",          240,  BOTH,  80, flags="-DPICO_VARIANT_1024"),
+    S("falcon_bench",  "Falcon-512",           150,  ALL3,  40, flags="-DPICO_VARIANT_512"),  # soft-float on M0+, FPU on M33
+    S("falcon_bench", "Falcon-1024",          240,  ALL3,  80, flags="-DPICO_VARIANT_1024"),
     # --- HAWK (lattice/NTRU): withdrawn by its team from the NIST process (round 3, 2026) ---
-    S("hawk_bench",    "HAWK-512",             120,  BOTH,  40, flags="-DPICO_VARIANT_512"),
-    S("hawk_bench",   "HAWK-1024",            150,  BOTH,  60, flags="-DPICO_VARIANT_1024"),
+    S("hawk_bench",    "HAWK-512",             120,  ALL3,  40, flags="-DPICO_VARIANT_512"),
+    S("hawk_bench",   "HAWK-1024",            150,  ALL3,  60, flags="-DPICO_VARIANT_1024"),
     # --- QR-UOV round 3 (spec v3.0): the package's reference code, SHAKE PRG; -DQRUOV_PARAM_<set> picks the set and the
     #     big stack is the host-measured peak + margin. All five level 1 sets fit the RP2040 now (round 2: cat1 only).
-    *[S("qruov_bench", f"QR-UOV-{p} round 3", t, BOTH, kb, flags=f"-DQRUOV_PARAM_{p} -DPRG_IS_AES=0 -DBIG_STACK_BYTES={kb * 1024}u")
+    *[S("qruov_bench", f"QR-UOV-{p} round 3", t, ALL3 if kb <= 104 else BOTH, kb, flags=f"-DQRUOV_PARAM_{p} -DPRG_IS_AES=0 -DBIG_STACK_BYTES={kb * 1024}u")
       for p, t, kb in (("1q127L3", 120, 48), ("1q31L3", 120, 48), ("1q127L10", 180, 88), ("1q31L10", 240, 104),
                        ("1q7L10", 300, 160))],
     # UOV-Ip round 3 classic (liboqs main, lib=R3): keygen needs ~600 KB, so uov_bench/make_uov_keys.sh makes the pair on
     # the host and it is baked into flash; sign / verify read it there (XIP) with 12 / 5.3 KB of stack: both boards.
-    S("uov_bench",        "UOV-Ip round 3 (sign/vrfy)", 300, BOTH, 12, lib=R3,
+    S("uov_bench",        "UOV-Ip round 3 (sign/vrfy)", 300, ALL3, 12, lib=R3,
       note="keygen on the host (both keys need ~600 KB of RAM); sign + verify only"),
     # --- SLH-DSA 'f' (fast) ---
-    S("slhdsa_bench",  "SLH-DSA-SHA2-128f",  240, BOTH, 20, flags="-DPICO_VARIANT_sha2_128f"),
-    S("slhdsa_bench", "SLH-DSA-SHAKE-128f", 240, BOTH, 20, flags="-DPICO_VARIANT_shake_128f"),
-    S("slhdsa_bench",  "SLH-DSA-SHA2-192f",  300, BOTH, 25, flags="-DPICO_VARIANT_sha2_192f"),
-    S("slhdsa_bench", "SLH-DSA-SHAKE-192f", 300, BOTH, 25, flags="-DPICO_VARIANT_shake_192f"),
-    S("slhdsa_bench",  "SLH-DSA-SHA2-256f",  420, BOTH, 30, flags="-DPICO_VARIANT_sha2_256f"),
-    S("slhdsa_bench", "SLH-DSA-SHAKE-256f", 420, BOTH, 30, flags="-DPICO_VARIANT_shake_256f"),
+    S("slhdsa_bench",  "SLH-DSA-SHA2-128f",  240, ALL3, 20, flags="-DPICO_VARIANT_sha2_128f"),
+    S("slhdsa_bench", "SLH-DSA-SHAKE-128f", 240, ALL3, 20, flags="-DPICO_VARIANT_shake_128f"),
+    S("slhdsa_bench",  "SLH-DSA-SHA2-192f",  300, ALL3, 25, flags="-DPICO_VARIANT_sha2_192f"),
+    S("slhdsa_bench", "SLH-DSA-SHAKE-192f", 300, ALL3, 25, flags="-DPICO_VARIANT_shake_192f"),
+    S("slhdsa_bench",  "SLH-DSA-SHA2-256f",  420, ALL3, 30, flags="-DPICO_VARIANT_sha2_256f"),
+    S("slhdsa_bench", "SLH-DSA-SHAKE-256f", 420, ALL3, 30, flags="-DPICO_VARIANT_shake_256f"),
     # --- SLH-DSA 's' (small sig, minutes/sign) ---
-    S("slhdsa_bench",  "SLH-DSA-SHA2-128s",  600,  BOTH, 20, flags="-DPICO_VARIANT_sha2_128s"),
-    S("slhdsa_bench", "SLH-DSA-SHAKE-128s", 600,  BOTH, 20, flags="-DPICO_VARIANT_shake_128s"),
-    S("slhdsa_bench",  "SLH-DSA-SHA2-192s",  900,  BOTH, 25, flags="-DPICO_VARIANT_sha2_192s"),
-    S("slhdsa_bench", "SLH-DSA-SHAKE-192s", 900,  BOTH, 25, flags="-DPICO_VARIANT_shake_192s"),
-    S("slhdsa_bench",  "SLH-DSA-SHA2-256s", 1500,  BOTH, 30, flags="-DPICO_VARIANT_sha2_256s"),
-    S("slhdsa_bench", "SLH-DSA-SHAKE-256s",1500,  BOTH, 30, flags="-DPICO_VARIANT_shake_256s"),
+    S("slhdsa_bench",  "SLH-DSA-SHA2-128s",  600,  ALL3, 20, flags="-DPICO_VARIANT_sha2_128s"),
+    S("slhdsa_bench", "SLH-DSA-SHAKE-128s", 600,  ALL3, 20, flags="-DPICO_VARIANT_shake_128s"),
+    S("slhdsa_bench",  "SLH-DSA-SHA2-192s",  900,  ALL3, 25, flags="-DPICO_VARIANT_sha2_192s"),
+    S("slhdsa_bench", "SLH-DSA-SHAKE-192s", 900,  ALL3, 25, flags="-DPICO_VARIANT_shake_192s"),
+    S("slhdsa_bench",  "SLH-DSA-SHA2-256s", 1500,  ALL3, 30, flags="-DPICO_VARIANT_sha2_256s"),
+    S("slhdsa_bench", "SLH-DSA-SHAKE-256s",1500,  ALL3, 30, flags="-DPICO_VARIANT_shake_256s"),
     # --- SQIsign round 3 (the-sqisign "third-round version"): ref build, 32-bit field arithmetic (no GMP), as a
     #     precompiled library (sqisign_bench/make_sqisign_lib.sh; its KATs match the official ones). No heap; the big
     #     stack is the host-measured peak + margin. Signing takes minutes on the M0+: few iterations, long timeouts.
@@ -759,6 +763,8 @@ def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8, esp=Fals
 def main():
     # a board's raw bytes (boot ROM noise, a panic) must not stop the run on a cp1252 Windows console
     sys.stdout.reconfigure(errors="replace")
+    # the venv's Scripts dir (pip's ninja for the library builders' CMake on Windows) for the scripts this runs
+    os.environ["PATH"] = os.path.dirname(sys.executable) + os.pathsep + os.environ.get("PATH", "")
     ap = argparse.ArgumentParser()
     ap.add_argument("--port")
     ap.add_argument("--board", choices=list(BOARDS), help="force a board family, skip auto-detect")
@@ -868,6 +874,9 @@ def main():
     if any(s["folder"] == "sqisign_bench" for s in work):
         print("Preparing the SQIsign Arduino library (sqisign_bench/make_sqisign_lib.sh) ...")
         sh([BASH, os.path.join(SKETCH_DIR, "sqisign_bench", "make_sqisign_lib.sh")])
+    if esp and any(s["folder"] in ("ecdsa_bench", "rsa_bench") for s in work):
+        print("Preparing the BearSSL Arduino library for the ESP32 (ecdsa_bench/make_bearssl_lib.sh) ...")
+        sh([BASH, os.path.join(SKETCH_DIR, "ecdsa_bench", "make_bearssl_lib.sh")])
     if any(s["folder"] in ("wolfssl_bench", "mqtt_tls_bench") for s in work):
         print("Preparing the wolfSSL Arduino library (wolfssl_bench/make_wolfssl_lib.sh) ...")
         sh([BASH, os.path.join(SKETCH_DIR, "wolfssl_bench", "make_wolfssl_lib.sh")])
@@ -919,12 +928,14 @@ def main():
         if "-DMT_DEPLOY" in flags:  # LittleFS (trust anchor, LoRaWAN state): a 64 KB flash filesystem
             build_fqbn += ":flash=" + ("4194304_65536" if "rpipico2" in build_fqbn else "2097152_65536")
         cmd = ["arduino-cli","compile","--fqbn",build_fqbn,"--output-dir",outdir,"--libraries",COMPAT_LIBS]
+        if esp and os.path.isdir(ESP_LIBS):
+            cmd += ["--libraries", ESP_LIBS]
+        if s["folder"] == "uov_bench":  # the host-made key pair (make_uov_keys.sh); before flags go into cmd
+            flags += f" -I{os.path.join(os.path.dirname(WOLF_LIBS), 'uov-r3')}"
         if flags:
             cmd += ["--build-path", os.path.join(outdir, "build"),
                     "--build-property", f"compiler.c.extra_flags={flags}",
                     "--build-property", f"compiler.cpp.extra_flags={flags}"]
-        if s["folder"] == "uov_bench":  # the host-made key pair (make_uov_keys.sh)
-            flags += f" -I{os.path.join(os.path.dirname(WOLF_LIBS), 'uov-r3')}"
         if s["folder"] in ("wolfssl_bench", "liboqs_bench", "mqtt_tls_bench", "sqisign_bench", "uov_bench"):
             cmd += ["--libraries", libraries(s)]
         if wifi:  # time the handshake's own crypto per connection: wolfSSL's calls go through hs_timing.c

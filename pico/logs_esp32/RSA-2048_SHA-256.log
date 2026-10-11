@@ -1,0 +1,25 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+=== RSA-2048 PKCS#1v1.5/SHA-256 (BearSSL, classical baseline) on ESP32 ===
+CPU clock: 240 MHz
+[iter 1/3] keygen(slow)...
+ 23196526us (ok=1)  sign... 582704us  verify... 16530us  ok=1
+[iter 2/3] keygen(slow)...
+ 6919420us (ok=1)  sign... 582667us  verify... 16487us  ok=1
+[iter 3/3] keygen(slow)...
+ 37652579us (ok=1)  sign... 582115us  verify... 16507us  ok=1
+RSA-2048  keygen  n=3  mean=22589508us/22589.508ms  median=23196526us/23196.525ms  std=12554100us/12554.100ms  min=6919420us  max=37652579us  mean_cyc=1126514624  median_cyc=1272198944  ops/s=0.0443
+RSA-2048  sign  n=3  mean=582495us/582.495ms  median=582667us/582.667ms  std=269us/0.269ms  min=582115us  max=582704us  mean_cyc=139798800  median_cyc=139840080  ops/s=1.7168
+RSA-2048  verify  n=3  mean=16508us/16.508ms  median=16507us/16.507ms  std=17us/0.017ms  min=16487us  max=16530us  mean_cyc=3961920  median_cyc=3961680  ops/s=60.5767
+sizes: pk=256 (n) e=3  sigMax=256 sig=256
+verify OK: 3/3
+free stack: 44596 bytes   free heap: 288372 bytes
+=== done (repeats in ~5s) ===

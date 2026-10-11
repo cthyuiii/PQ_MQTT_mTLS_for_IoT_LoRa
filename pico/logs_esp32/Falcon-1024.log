@@ -1,0 +1,40 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+  iter 1/20 k=2921098us s=797825us v=12782us
+  iter 2/20 k=4017557us s=796389us v=12767us
+  iter 3/20 k=7392904us s=795749us v=12769us
+  iter 4/20 k=3900392us s=803420us v=12764us
+  iter 5/20 k=2777692us s=803629us v=12772us
+  iter 6/20 k=6335496us s=802956us v=12762us
+  iter 7/20 k=4906440us s=802524us v=12772us
+  iter 8/20 k=2471563us s=802069us v=12767us
+  iter 9/20 k=3190897us s=802599us v=12774us
+  iter 10/20 k=2930385us s=801589us v=12762us
+  iter 11/20 k=2435589us s=803229us v=12768us
+  iter 12/20 k=3828950us s=802429us v=12764us
+  iter 13/20 k=7247178us s=801721us v=12770us
+  iter 14/20 k=6253192us s=802725us v=12766us
+  iter 15/20 k=4818190us s=802129us v=12768us
+  iter 16/20 k=3838667us s=802197us v=12765us
+  iter 17/20 k=2588647us s=801124us v=12772us
+  iter 18/20 k=3523124us s=801295us v=12764us
+  iter 19/20 k=3843401us s=802451us v=12773us
+  iter 20/20 k=2435484us s=801727us v=12766us
+=== Falcon-1024 (PQClean clean) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1793 sk=2305 sig=1273 sigMax=1462 (variable)
+Falcon-1024  keygen  n=20  mean=4082842us/4082.842ms  median=3833808us/3833.808ms  std=1548201us/1548.201ms  min=2435484us  max=7392904us  mean_cyc=979882080  median_cyc=920113920  ops/s=0.2449
+Falcon-1024  sign  n=20  mean=801488us/801.488ms  median=802163us/802.163ms  std=2156us/2.156ms  min=795749us  max=803629us  mean_cyc=192357120  median_cyc=192519120  ops/s=1.2477
+Falcon-1024  verify  n=20  mean=12768us/12.768ms  median=12767us/12.767ms  std=4us/0.004ms  min=12762us  max=12782us  mean_cyc=3064320  median_cyc=3064080  ops/s=78.3208
+verify OK: 20/20
+free stack: 17788 bytes   free heap: 228564 bytes
+=== done (repeats in ~5s) ===

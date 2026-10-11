@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10 big stack=96 KB
+  iter 1/10 k=378283us s=801889us v=348391us
+  iter 2/10 k=378253us s=659862us v=348388us
+  iter 3/10 k=378246us s=654615us v=348396us
+  iter 4/10 k=378256us s=1009853us v=348387us
+  iter 5/10 k=378237us s=586514us v=348386us
+  iter 6/10 k=378251us s=445599us v=348394us
+  iter 7/10 k=378240us s=446806us v=348389us
+  iter 8/10 k=378242us s=519288us v=348387us
+  iter 9/10 k=378218us s=445587us v=348389us
+  iter 10/10 k=378251us s=727665us v=348388us
+=== ML-DSA-65 (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1952 sk=4032 sig=3309 sigMax=3309
+ML-DSA-65(liboqs)  keygen  n=10  mean=378247us/378.247ms  median=378248us/378.248ms  std=15us/0.015ms  min=378218us  max=378283us  mean_cyc=90779280  median_cyc=90779520  ops/s=2.6438
+ML-DSA-65(liboqs)  sign  n=10  mean=629767us/629.767ms  median=620564us/620.564ms  std=173375us/173.375ms  min=445587us  max=1009853us  mean_cyc=151144080  median_cyc=148935360  ops/s=1.5879
+ML-DSA-65(liboqs)  verify  n=10  mean=348389us/348.389ms  median=348388us/348.388ms  std=3us/0.003ms  min=348386us  max=348396us  mean_cyc=83613360  median_cyc=83613120  ops/s=2.8704
+verify OK: 10/10
+peak stack: keygen=49280 sign=74352 verify=45168 / 98304 bytes
+free heap: 222304 bytes
+=== done (repeats in ~5s) ===

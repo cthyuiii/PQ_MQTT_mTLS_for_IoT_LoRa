@@ -1,0 +1,40 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+  iter 1/20 k=1071344us s=43222us v=28456us
+  iter 2/20 k=3072838us s=43228us v=28404us
+  iter 3/20 k=1959276us s=43223us v=28470us
+  iter 4/20 k=1061653us s=43232us v=28406us
+  iter 5/20 k=1056710us s=43226us v=28461us
+  iter 6/20 k=1784930us s=43229us v=28417us
+  iter 7/20 k=1061457us s=43227us v=28451us
+  iter 8/20 k=3078749us s=43229us v=28419us
+  iter 9/20 k=1056721us s=43227us v=28452us
+  iter 10/20 k=1104881us s=43217us v=28426us
+  iter 11/20 k=1061391us s=43216us v=28463us
+  iter 12/20 k=2030657us s=43223us v=28422us
+  iter 13/20 k=3783056us s=43216us v=28461us
+  iter 14/20 k=1056475us s=43232us v=28433us
+  iter 15/20 k=1085560us s=43230us v=28473us
+  iter 16/20 k=1080674us s=43217us v=28424us
+  iter 17/20 k=1056721us s=43221us v=28456us
+  iter 18/20 k=1871368us s=43220us v=28421us
+  iter 19/20 k=3198333us s=43232us v=28464us
+  iter 20/20 k=1833162us s=43233us v=28432us
+=== HAWK-1024 (NIST ref, lattice) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=2440 sk=360 sigMax=1221 sig=1221
+HAWK-1024  keygen  n=20  mean=1718297us/1718.297ms  median=1095220us/1095.220ms  std=865534us/865.534ms  min=1056475us  max=3783056us  mean_cyc=412391280  median_cyc=262852800  ops/s=0.5820
+HAWK-1024  sign  n=20  mean=43225us/43.225ms  median=43226us/43.226ms  std=5us/0.005ms  min=43216us  max=43233us  mean_cyc=10374000  median_cyc=10374240  ops/s=23.1348
+HAWK-1024  verify  n=20  mean=28440us/28.440ms  median=28442us/28.442ms  std=21us/0.021ms  min=28404us  max=28473us  mean_cyc=6825600  median_cyc=6826080  ops/s=35.1617
+verify OK: 20/20
+free stack: 57652 bytes   free heap: 249052 bytes
+=== done (repeats in ~5s) ===

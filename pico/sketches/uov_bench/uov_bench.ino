@@ -7,18 +7,23 @@
 //   (the M0+ build in QEMU). Serial @115200.
 
 #include <Arduino.h>
+#include <board_compat.h>
 #include <liboqs.h>
+#if !defined(ARDUINO_ARCH_ESP32)
 #include <pico/bootrom.h>
+#endif
 #include <string.h>
 #include "uov_keys.h"  // const uov_pk[], uov_sk[]: they stay in flash
 #define UOV_LABEL "UOV-Ip round 3"
 
 // a crash drops to BOOTSEL: the runner reports it at once and can flash the next sketch
+#if !defined(ARDUINO_ARCH_ESP32)  // the ESP32's panic handler reports a fault and reboots
 extern "C" void isr_hardfault(void) { reset_usb_boot(0, 0); }
+#endif
 
 static void rng(uint8_t *x, size_t n) {
-  while (n >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(x, &r, 4); x += 4; n -= 4; }
-  if (n) { uint32_t r = rp2040.hwrand32(); memcpy(x, &r, n); }
+  while (n >= 4) { uint32_t r = board_hwrand32(); memcpy(x, &r, 4); x += 4; n -= 4; }
+  if (n) { uint32_t r = board_hwrand32(); memcpy(x, &r, n); }
 }
 
 #define BIG_STACK_BYTES (32u * 1024u)
@@ -43,7 +48,7 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   uint64_t vsum = 0;
   for (int i = 0; i < n; i++) { int64_t d = (int64_t)t[i] - (int64_t)mean; vsum += (uint64_t)(d * d); }
   uint32_t sd = (uint32_t)sqrtf((float)(vsum / (n > 0 ? n : 1)));
-  uint32_t mhz = F_CPU / 1000000u;
+  uint32_t mhz = board_cpu_mhz();
   float ops = (mean > 0) ? (1000000.0f / (float)mean) : 0.0f;
   Serial.print(UOV_LABEL "  "); Serial.print(op);
   Serial.print(F("  n=")); Serial.print(n);
@@ -72,8 +77,8 @@ static void run_report() {
     Serial.print(F(" s=")); Serial.print(ts[i]); Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
   }
   Serial.println();
-  Serial.println(F("=== " UOV_LABEL " (liboqs main, classic, keys in flash) on RP [big-stack] ==="));
-  Serial.print(F("CPU clock: ")); Serial.print(F_CPU / 1000000u); Serial.println(F(" MHz")); Serial.flush();
+  Serial.println(F("=== " UOV_LABEL " (liboqs main, classic, keys in flash) on " BOARD_FAMILY " [big-stack] ==="));
+  Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz")); Serial.flush();
   Serial.print(F("sizes: pk=")); Serial.print((long)UOV_PK_BYTES);
   Serial.print(F(" sk=")); Serial.print((long)UOV_SK_BYTES);
   Serial.print(F(" sigMax=")); Serial.print((long)UOV_SIG_BYTES); Serial.print(F(" sig=")); Serial.println((long)g_sl);
@@ -84,7 +89,7 @@ static void run_report() {
   Serial.print(F("tampered messages accepted: ")); Serial.println(bad);
   Serial.print(F("big-stack peak: sign=")); Serial.print(speak); Serial.print(F(" verify=")); Serial.print(vpeak);
   Serial.print(F(" / ")); Serial.print(BIG_STACK_BYTES); Serial.println(F(" bytes"));
-  Serial.print(F("free heap: ")); Serial.print(rp2040.getFreeHeap()); Serial.println(F(" bytes"));
+  Serial.print(F("free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));
   Serial.println(F("=== done (repeats in ~5s) ==="));
 }
 

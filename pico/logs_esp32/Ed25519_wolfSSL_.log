@@ -1,0 +1,42 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+  iter 1/20 k=356655us s=361377us v=747942us
+  iter 2/20 k=356204us s=361300us v=747888us
+  iter 3/20 k=356204us s=361300us v=747888us
+  iter 4/20 k=356209us s=361299us v=747889us
+  iter 5/20 k=356205us s=361299us v=747889us
+  iter 6/20 k=356205us s=361304us v=747883us
+  iter 7/20 k=356209us s=361300us v=747888us
+  iter 8/20 k=356204us s=361299us v=747887us
+  iter 9/20 k=356205us s=361302us v=747888us
+  iter 10/20 k=356205us s=361300us v=747888us
+  iter 11/20 k=356204us s=361304us v=747884us
+  iter 12/20 k=356204us s=361299us v=747888us
+  iter 13/20 k=356204us s=361299us v=747888us
+  iter 14/20 k=356209us s=361300us v=747888us
+  iter 15/20 k=356205us s=361299us v=747887us
+  iter 16/20 k=356208us s=361299us v=747888us
+  iter 17/20 k=356204us s=361298us v=747888us
+  iter 18/20 k=356205us s=361303us v=747888us
+  iter 19/20 k=356205us s=361300us v=747888us
+  iter 20/20 k=356205us s=361304us v=747889us
+=== Ed25519 (wolfSSL 5.9.4) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=32 sk=32 sig=64 sigMax=64
+Ed25519(wolfSSL)  keygen  n=20  mean=356227us/356.227ms  median=356205us/356.205ms  std=98us/0.098ms  min=356204us  max=356655us  mean_cyc=85494480  median_cyc=85489200  ops/s=2.8072
+Ed25519(wolfSSL)  sign  n=20  mean=361304us/361.304ms  median=361300us/361.300ms  std=16us/0.016ms  min=361298us  max=361377us  mean_cyc=86712960  median_cyc=86712000  ops/s=2.7678
+Ed25519(wolfSSL)  verify  n=20  mean=747890us/747.890ms  median=747888us/747.888ms  std=11us/0.011ms  min=747883us  max=747942us  mean_cyc=179493600  median_cyc=179493120  ops/s=1.3371
+verify OK: 20/20
+sign errors (signed again): 0
+peak heap (wolfSSL allocations): keygen=352 sign=352 verify=352 bytes
+free stack: 30692 bytes   free heap: 305504 bytes
+=== done (repeats in ~5s) ===

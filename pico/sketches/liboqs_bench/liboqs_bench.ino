@@ -9,18 +9,25 @@
 //   "STACK OVERFLOW" (peak reached the big stack's end - raise -DLB_STACK_KB or the board can't).
 
 #include <Arduino.h>
-#include <hardware/watchdog.h>
+#include <board_compat.h>
 #include <liboqs.h>
-#include <pico/bootrom.h>
 #include <string.h>
+#if !defined(ARDUINO_ARCH_ESP32)
+#include <hardware/watchdog.h>
+#include <pico/bootrom.h>
+#endif
 
 // A hang that stops interrupts (a stack overflow into the core's data, a fault) also stops USB, so the runner's
 // 1200-baud reset can't reach the board for the next sketch. A fault, or the watchdog (fed from a timer interrupt, so
 // a long computation keeps it fed), sends the board to BOOTSEL instead: the runner records this sketch as hung and
 // flashes the next one.
+// The ESP32 needs none of this: it is flashed over its USB-serial bridge, which a hang doesn't reach, and its panic
+// handler prints the fault and reboots (the runner records FAULT).
+#if !defined(ARDUINO_ARCH_ESP32)
 extern "C" void isr_hardfault(void) { reset_usb_boot(0, 0); }
 static repeating_timer_t g_wdt_feed;
 static bool wdt_feed(repeating_timer_t *) { watchdog_update(); return true; }
+#endif
 
 #ifndef LB_ALG
 #error "build with -DLB_ALG=<liboqs signature id>, e.g. -DLB_ALG=ml_dsa_44 (see run_benchmarks.py)"
@@ -30,7 +37,12 @@ static bool wdt_feed(repeating_timer_t *) { watchdog_update(); return true; }
 #ifndef LB_ITERS
 #define LB_ITERS 10
 #endif
-#if defined(__ARM_ARCH_6M__)
+#if defined(ARDUINO_ARCH_ESP32)
+#define CHIP BOARD_CHIP
+#ifndef LB_STACK_KB
+#define LB_STACK_KB 96   // a heap block: ~110 KB is the largest a WROOM-32 has free at boot
+#endif
+#elif defined(__ARM_ARCH_6M__)
 #define CHIP "RP2040"
 #ifndef LB_STACK_KB
 #define LB_STACK_KB 160
@@ -43,15 +55,41 @@ static bool wdt_feed(repeating_timer_t *) { watchdog_update(); return true; }
 #endif
 
 static void rng(uint8_t *out, size_t n) {
-  while (n >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(out, &r, 4); out += 4; n -= 4; }
-  if (n) { uint32_t r = rp2040.hwrand32(); memcpy(out, &r, n); }
+  while (n >= 4) { uint32_t r = board_hwrand32(); memcpy(out, &r, 4); out += 4; n -= 4; }
+  if (n) { uint32_t r = board_hwrand32(); memcpy(out, &r, n); }
 }
 
 // ---- big SRAM stack + stack-pointer switch: validated on both boards ----
 #define BIG_STACK_BYTES (LB_STACK_KB * 1024u)
-static uint8_t g_bigstk[BIG_STACK_BYTES] __attribute__((aligned(16)));
+#if defined(ARDUINO_ARCH_ESP32)
+#define STK_PAT 0xA5  // esp_execute_shared_stack_function fills the whole stack with 0xA5 (FreeRTOS's fill byte)
+                      // before each call, over any paint of ours: the high-water scan looks for its fill
+#else
 #define STK_PAT 0x5A
-#if defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)
+#endif
+#if defined(ARDUINO_ARCH_ESP32)
+// ESP32: as bigstack.h (qruov_bench): the big stack is a heap block (static DRAM is capped near 136 KB), and ESP-IDF's
+// esp_execute_shared_stack_function runs fn on it (Xtensa's register windows rule out a hand-written SP switch)
+#include <esp_heap_caps.h>
+#include <esp_expression_with_stack.h>
+#include <freertos/semphr.h>
+static uint8_t *g_bigstk;
+static int (*g_bs_fn)(void);
+static int g_bs_ret;
+static void bs_trampoline(void) { g_bs_ret = g_bs_fn(); }
+static int run_on_stack(void *new_top, int (*fn)(void)) {
+  (void)new_top;
+  static SemaphoreHandle_t lock = NULL;
+  if (!lock) lock = xSemaphoreCreateMutex();
+  g_bs_fn = fn;
+  esp_execute_shared_stack_function(lock, g_bigstk, BIG_STACK_BYTES, bs_trampoline);
+  return g_bs_ret;
+}
+#else
+static uint8_t g_bigstk[BIG_STACK_BYTES] __attribute__((aligned(16)));
+#endif
+#if defined(ARDUINO_ARCH_ESP32)
+#elif defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)
 __attribute__((naked, noinline)) static int run_on_stack(void *new_top, int (*fn)(void)) {  // M33
   __asm volatile(
     "mrs  r2, msplim       \n"
@@ -112,7 +150,7 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   uint32_t median = (n & 1) ? srt[n / 2] : (uint32_t)(((uint64_t)srt[n / 2 - 1] + srt[n / 2]) >> 1);
   uint64_t vsum = 0;
   for (int i = 0; i < n; i++) { int64_t d = (int64_t)t[i] - (int64_t)mean; vsum += (uint64_t)(d * d); }
-  uint32_t sd = (uint32_t)sqrtf((float)(vsum / n)), mhz = F_CPU / 1000000u;
+  uint32_t sd = (uint32_t)sqrtf((float)(vsum / n)), mhz = board_cpu_mhz();
   Serial.print(sig->method_name); Serial.print(F("(liboqs)  ")); Serial.print(op);
   Serial.print(F("  n=")); Serial.print(n);
   Serial.print(F("  mean=")); Serial.print(mean); Serial.print(F("us/")); Serial.print(mean / 1000.0f, 3); Serial.print(F("ms"));
@@ -134,11 +172,21 @@ static void run_report() {
     sk = (uint8_t *)malloc(sig->length_secret_key);
     sm = (uint8_t *)malloc(sig->length_signature);
   }
+#if defined(ARDUINO_ARCH_ESP32)
+  if (!g_bigstk) g_bigstk = (uint8_t *)heap_caps_aligned_alloc(16, BIG_STACK_BYTES, MALLOC_CAP_8BIT);
+  if (!g_bigstk) {
+    Serial.print(F("=== ")); Serial.print(sig->method_name); Serial.println(F(" (liboqs) on " CHIP " ==="));
+    Serial.print(F("!! OUT OF MEMORY: big stack ")); Serial.print(BIG_STACK_BYTES); Serial.print(F(" B, largest free block "));
+    Serial.print((unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)); Serial.println(F(" B"));
+    Serial.println(F("=== done (runtime memory failure) ==="));
+    return;
+  }
+#endif
   if (!pk || !sk || !sm) {
     Serial.print(F("=== ")); Serial.print(sig->method_name); Serial.println(F(" (liboqs) on " CHIP " ==="));
     Serial.print(F("!! OUT OF MEMORY: pk+sk+sig = "));
     Serial.print((unsigned long)(sig->length_public_key + sig->length_secret_key + sig->length_signature));
-    Serial.print(F(" B, free heap ")); Serial.print(rp2040.getFreeHeap()); Serial.println(F(" B"));
+    Serial.print(F(" B, free heap ")); Serial.print(board_free_heap()); Serial.println(F(" B"));
     Serial.println(F("=== done (runtime memory failure) ==="));
     return;
   }
@@ -156,7 +204,7 @@ static void run_report() {
   Serial.println();
   Serial.print(F("=== ")); Serial.print(sig->method_name);
   Serial.print(F(" (liboqs " OQS_VERSION_TEXT ", portable C) on " CHIP " ==="));  Serial.println();
-  Serial.print(F("CPU clock: ")); Serial.print(F_CPU / 1000000u); Serial.println(F(" MHz"));
+  Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz"));
   Serial.print(F("sizes: pk=")); Serial.print((unsigned)sig->length_public_key);
   Serial.print(F(" sk=")); Serial.print((unsigned)sig->length_secret_key);
   Serial.print(F(" sig=")); Serial.print((unsigned)sm_len);
@@ -169,14 +217,16 @@ static void run_report() {
   Serial.print(F(" verify=")); Serial.print(peak[2]); Serial.print(F(" / ")); Serial.print(BIG_STACK_BYTES); Serial.println(F(" bytes"));
   if (peak[0] >= BIG_STACK_BYTES || peak[1] >= BIG_STACK_BYTES || peak[2] >= BIG_STACK_BYTES)
     Serial.println(F("!! STACK OVERFLOW: peak hit the big stack's end - numbers are not trustworthy"));
-  Serial.print(F("free heap: ")); Serial.print(rp2040.getFreeHeap()); Serial.println(F(" bytes"));
+  Serial.print(F("free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));
   Serial.println(F("=== done (repeats in ~5s) ==="));
 }
 
 void setup() {
+#if !defined(ARDUINO_ARCH_ESP32)
   if (watchdog_enable_caused_reboot()) reset_usb_boot(0, 0);  // the last run hung: wait in BOOTSEL for the next flash
   watchdog_enable(5000, true);
   add_repeating_timer_ms(1000, wdt_feed, nullptr, &g_wdt_feed);
+#endif
   Serial.begin(115200);
   while (!Serial) delay(10);
   delay(200);

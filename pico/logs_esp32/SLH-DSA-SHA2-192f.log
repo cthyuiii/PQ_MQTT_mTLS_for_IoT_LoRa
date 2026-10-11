@@ -1,0 +1,30 @@
+0x1 (POWERON_RESET),boot:�ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10
+  iter 1/10 k=364135us s=19014720us v=802383us
+  iter 2/10 k=363987us s=19014462us v=811519us
+  iter 3/10 k=363992us s=19014858us v=814301us
+  iter 4/10 k=363990us s=19014781us v=806606us
+  iter 5/10 k=363987us s=19014703us v=816421us
+  iter 6/10 k=363979us s=19014759us v=817159us
+  iter 7/10 k=363989us s=19014744us v=802342us
+  iter 8/10 k=363987us s=19014679us v=810081us
+  iter 9/10 k=363973us s=19014995us v=817160us
+  iter 10/10 k=363980us s=19015172us v=799574us
+=== SLH-DSA-SHA2-192f (PQClean, FIPS 205) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=48 sk=96 sigMax=35664 sig=35664
+SLH-DSA-SHA2-192f  keygen  n=10  mean=363999us/363.999ms  median=363987us/363.987ms  std=45us/0.045ms  min=363973us  max=364135us  mean_cyc=87359760  median_cyc=87356880  ops/s=2.7473
+SLH-DSA-SHA2-192f  sign  n=10  mean=19014787us/19014.787ms  median=19014751us/19014.752ms  std=181us/0.181ms  min=19014462us  max=19015172us  mean_cyc=268581584  median_cyc=268572944  ops/s=0.0526
+SLH-DSA-SHA2-192f  verify  n=10  mean=809754us/809.754ms  median=810800us/810.800ms  std=6331us/6.331ms  min=799574us  max=817160us  mean_cyc=194340960  median_cyc=194592000  ops/s=1.2349
+verify OK: 10/10
+free stack: 43116 bytes   free heap: 253524 bytes
+=== done (repeats in ~5s) ===

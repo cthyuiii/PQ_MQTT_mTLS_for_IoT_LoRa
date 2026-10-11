@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10 big stack=96 KB
+  iter 1/10 k=8163888us s=698030us v=47470us
+  iter 2/10 k=24427839us s=698434us v=47465us
+  iter 3/10 k=12146314us s=697153us v=47475us
+  iter 4/10 k=10491168us s=697416us v=47466us
+  iter 5/10 k=2809056us s=697845us v=47468us
+  iter 6/10 k=33000104us s=698407us v=47469us
+  iter 7/10 k=11576343us s=698064us v=47472us
+  iter 8/10 k=12161402us s=697918us v=47468us
+  iter 9/10 k=4852011us s=695948us v=47464us
+  iter 10/10 k=6706368us s=698286us v=47472us
+=== Falcon-1024 (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1793 sk=2305 sig=1268 sigMax=1462
+Falcon-1024(liboqs)  keygen  n=10  mean=12633449us/12633.449ms  median=11033755us/11033.755ms  std=8787787us/8787.787ms  min=2809056us  max=33000104us  mean_cyc=3032027760  median_cyc=2648101200  ops/s=0.0792
+Falcon-1024(liboqs)  sign  n=10  mean=697750us/697.750ms  median=697974us/697.974ms  std=715us/0.715ms  min=695948us  max=698434us  mean_cyc=167460000  median_cyc=167513760  ops/s=1.4332
+Falcon-1024(liboqs)  verify  n=10  mean=47468us/47.468ms  median=47468us/47.468ms  std=3us/0.003ms  min=47464us  max=47475us  mean_cyc=11392320  median_cyc=11392320  ops/s=21.0668
+verify OK: 10/10
+peak stack: keygen=35200 sign=84848 verify=9264 / 98304 bytes
+free heap: 225852 bytes
+=== done (repeats in ~5s) ===

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Cross-compile liboqs (bare-metal: OQS_EMBEDDED_BUILD) for both Pico CPUs with arduino-pico's own
-# GCC, and package it as a precompiled Arduino library:
-#   $IOT_PQC_CACHE/arduino-libs/liboqs/src/{cortex-m0plus,cortex-m33}/liboqs.a + headers
+# GCC, and for the ESP32 with arduino-esp32's, and package it as a precompiled Arduino library:
+#   $IOT_PQC_CACHE/arduino-libs/liboqs/src/{cortex-m0plus,cortex-m33,esp32}/liboqs.a + headers
+# Each target is built when its core's toolchain is installed (arduino-cli core install rp2040:rp2040 / esp32:esp32).
 # liboqs has no Cortex-M code, so this is its portable C (OQS_PERMIT_UNSUPPORTED_ARCHITECTURE) -
 # the same sources the Pi/Mac reach through oqs-provider and the host liboqs stage.
 #   LIBOQS_KECCAK=xkcp  also writes $IOT_PQC_CACHE/arduino-libs-xkcp/liboqs: the same library with its
@@ -38,10 +39,22 @@ for d in "$HOME"/Library/Arduino15/packages/rp2040/tools/pqt-gcc/*/bin \
 done
 X="" GEN=()   # Windows (Git Bash): the toolchain's .exe names, and Ninja (CMake's default there is Visual Studio)
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) X=.exe GEN=(-G Ninja) ;; esac
-[ -n "$GCC" ] || { echo "[-] arduino-pico toolchain not found: arduino-cli core install rp2040:rp2040"; exit 1; }
+XGCC=""  # arduino-esp32's Xtensa toolchain (the ESP32 / WROOM-32 target)
+for d in "$HOME"/Library/Arduino15/packages/esp32/tools/esp-x32/*/bin \
+         "$HOME"/.arduino15/packages/esp32/tools/esp-x32/*/bin \
+         "$HOME"/AppData/Local/Arduino15/packages/esp32/tools/esp-x32/*/bin; do
+    [ -x "$d/xtensa-esp32-elf-gcc$X" ] && XGCC="$d"
+done
+TARGETS="${GCC:+cortex-m0plus cortex-m33}${XGCC:+ esp32}"
+[ -n "$TARGETS" ] || { echo "[-] no toolchain found: arduino-cli core install rp2040:rp2040 (Pico) or esp32:esp32"; exit 1; }
+[ -z "${LIBOQS_KECCAK:-}" ] || [ -n "$GCC" ] || { echo "[-] LIBOQS_KECCAK=xkcp is ARM assembler: needs rp2040:rp2040"; exit 1; }
+# Windows: CMake's Ninja generator; ninja from PATH, else the repo's .venv (pip install ninja)
+if [ ${#GEN[@]} -gt 0 ] && ! command -v ninja >/dev/null 2>&1 && [ -x "$HERE/../../../.venv/Scripts/ninja.exe" ]; then
+    GEN+=(-DCMAKE_MAKE_PROGRAM="$(cd "$HERE/../../../.venv/Scripts" && pwd -W)/ninja.exe")
+fi
 
 STAMP="$LIB/.iot-pqc-build"   # skip when the liboqs checkout and algorithm list are unchanged
-WANT="$(git -C "$SRC" rev-parse HEAD 2>/dev/null) $("$GCC/arm-none-eabi-gcc" -dumpversion) $GCC $ALGS"  # a new core / compiler rebuilds
+WANT="$(git -C "$SRC" rev-parse HEAD 2>/dev/null) ${GCC:+$("$GCC/arm-none-eabi-gcc$X" -dumpversion) $GCC} ${XGCC:+$("$XGCC/xtensa-esp32-elf-gcc$X" -dumpversion) $XGCC} $ALGS"  # a new core / compiler rebuilds
 xkcp_variant() {  # derive arduino-libs-xkcp/liboqs from the stock library
     local X="$CACHE/arduino-libs-xkcp/liboqs"
     rm -rf "$X" && mkdir -p "$(dirname "$X")" && cp -R "$LIB" "$X"
@@ -56,17 +69,24 @@ if [ "$(cat "$STAMP" 2>/dev/null)" = "$WANT" ]; then
     exit 0
 fi
 rm -rf "$LIB" && mkdir -p "$LIB/src"
-for MCU in cortex-m0plus cortex-m33; do
+for MCU in $TARGETS; do
     case $MCU in   # must match arduino-pico's boards.txt toolchain options, or the link fails
         cortex-m0plus) CPU="-mcpu=cortex-m0plus -mthumb -march=armv6-m" ;;
         cortex-m33)    CPU="-mcpu=cortex-m33 -mthumb -march=armv8-m.main+fp+dsp -mfloat-abi=softfp -mcmse" ;;
+        # arduino-esp32's code generation for every sketch (its flags/c_flags): long calls, the core's PSRAM cache
+        # workaround and no hardware atomics, so liboqs rows and the sketches' rows come from the same compiler setup
+        esp32) CPU="-mlongcalls -mdisable-hardware-atomics -mfix-esp32-psram-cache-issue -mfix-esp32-psram-cache-strategy=memw -fno-jump-tables -fno-tree-switch-conversion -fstrict-volatile-bitfields" ;;
+    esac
+    case $MCU in
+        esp32) CC="$XGCC/xtensa-esp32-elf-gcc$X" AR="$XGCC/xtensa-esp32-elf-ar$X" RANLIB="$XGCC/xtensa-esp32-elf-ranlib$X" ;;
+        *)     CC="$GCC/arm-none-eabi-gcc$X" AR="$GCC/arm-none-eabi-ar$X" RANLIB="$GCC/arm-none-eabi-ranlib$X" ;;
     esac
     B="$CACHE/liboqs-build-$MCU${LIBOQS_ROUND:+-r$LIBOQS_ROUND}"
     rm -rf "$B"
     cmake -Wno-dev ${GEN[@]+"${GEN[@]}"} -S "$SRC" -B "$B" -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_SYSTEM_NAME=Generic -DCMAKE_SYSTEM_PROCESSOR="$MCU" \
-        -DCMAKE_C_COMPILER="$GCC/arm-none-eabi-gcc$X" -DCMAKE_AR="$GCC/arm-none-eabi-ar$X" \
-        -DCMAKE_RANLIB="$GCC/arm-none-eabi-ranlib$X" -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+        -DCMAKE_C_COMPILER="$CC" -DCMAKE_AR="$AR" \
+        -DCMAKE_RANLIB="$RANLIB" -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
         -DCMAKE_C_FLAGS="$CPU -Os -ffunction-sections -fdata-sections" \
         -DOQS_EMBEDDED_BUILD=ON -DOQS_PERMIT_UNSUPPORTED_ARCHITECTURE=ON -DOQS_USE_OPENSSL=OFF \
         -DOQS_DIST_BUILD=OFF -DOQS_OPT_TARGET=generic -DBUILD_SHARED_LIBS=OFF -DOQS_BUILD_ONLY_LIB=ON \
@@ -81,15 +101,15 @@ name=liboqs
 version=$(grep -oE 'OQS_VERSION_TEXT "[^"]+"' "$B/include/oqs/oqsconfig.h" | cut -d'"' -f2)
 author=Open Quantum Safe
 maintainer=IoT-PQC (generated by pico/sketches/liboqs_bench/make_liboqs_lib.sh)
-sentence=liboqs cross-compiled for RP2040 / RP2350, bare-metal
+sentence=liboqs cross-compiled for RP2040 / RP2350 / ESP32, bare-metal
 paragraph=
 category=Other
 url=https://openquantumsafe.org
-architectures=rp2040
+architectures=rp2040,esp32
 precompiled=true
 ldflags=-loqs
 EOF
 echo "$WANT" > "$STAMP"
-echo "[+] liboqs $(grep '^version=' "$LIB/library.properties" | cut -d= -f2) for cortex-m0plus + cortex-m33 -> $LIB"
+echo "[+] liboqs $(grep '^version=' "$LIB/library.properties" | cut -d= -f2) for $TARGETS -> $LIB"
 [ "${LIBOQS_KECCAK:-}" = xkcp ] && xkcp_variant
 exit 0

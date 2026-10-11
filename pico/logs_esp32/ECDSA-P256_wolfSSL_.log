@@ -1,0 +1,42 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+  iter 1/20 k=94355us s=104500us v=189901us
+  iter 2/20 k=94209us s=104333us v=189799us
+  iter 3/20 k=94199us s=104328us v=189804us
+  iter 4/20 k=94203us s=104336us v=189783us
+  iter 5/20 k=94209us s=104343us v=189796us
+  iter 6/20 k=94213us s=104335us v=189795us
+  iter 7/20 k=94207us s=104331us v=189813us
+  iter 8/20 k=94203us s=104335us v=189796us
+  iter 9/20 k=94205us s=104333us v=189811us
+  iter 10/20 k=94210us s=104339us v=189800us
+  iter 11/20 k=94205us s=104335us v=189795us
+  iter 12/20 k=94207us s=104333us v=189797us
+  iter 13/20 k=94207us s=104326us v=189802us
+  iter 14/20 k=94198us s=104336us v=189814us
+  iter 15/20 k=94200us s=104336us v=189809us
+  iter 16/20 k=94212us s=104326us v=189799us
+  iter 17/20 k=94202us s=104325us v=189788us
+  iter 18/20 k=94197us s=104325us v=189789us
+  iter 19/20 k=94212us s=104339us v=189790us
+  iter 20/20 k=94207us s=104331us v=189807us
+=== ECDSA-P256 (wolfSSL 5.9.4) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=64 sk=32 sig=72 sigMax=141
+ECDSA-P256(wolfSSL)  keygen  n=20  mean=94213us/94.213ms  median=94207us/94.207ms  std=32us/0.032ms  min=94197us  max=94355us  mean_cyc=22611120  median_cyc=22609680  ops/s=10.6142
+ECDSA-P256(wolfSSL)  sign  n=20  mean=104341us/104.341ms  median=104334us/104.334ms  std=36us/0.036ms  min=104325us  max=104500us  mean_cyc=25041840  median_cyc=25040160  ops/s=9.5840
+ECDSA-P256(wolfSSL)  verify  n=20  mean=189804us/189.804ms  median=189799us/189.799ms  std=23us/0.023ms  min=189783us  max=189901us  mean_cyc=45552960  median_cyc=45551760  ops/s=5.2686
+verify OK: 20/20
+sign errors (signed again): 0
+peak heap (wolfSSL allocations): keygen=1476 sign=2088 verify=2452 bytes
+free stack: 31516 bytes   free heap: 304640 bytes
+=== done (repeats in ~5s) ===

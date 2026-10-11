@@ -1,0 +1,27 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=5
+  iter 1/5 k=2896672us s=902333us v=8688us
+  iter 2/5 k=9413337us s=902230us v=8579us
+  iter 3/5 k=3243844us s=900000us v=8668us
+  iter 4/5 k=2924184us s=899464us v=8671us
+  iter 5/5 k=2806511us s=902063us v=8668us
+=== Falcon-1024 (wolfSSL 5.9.4) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1793 sk=2305 sig=1275 sigMax=1280
+Falcon-1024(wolfSSL)  keygen  n=5  mean=4256909us/4256.909ms  median=2924184us/2924.184ms  std=2582444us/2582.444ms  min=2806511us  max=9413337us  mean_cyc=1021658160  median_cyc=701804160  ops/s=0.2349
+Falcon-1024(wolfSSL)  sign  n=5  mean=901218us/901.218ms  median=902063us/902.063ms  std=1228us/1.228ms  min=899464us  max=902333us  mean_cyc=216292320  median_cyc=216495120  ops/s=1.1096
+Falcon-1024(wolfSSL)  verify  n=5  mean=8654us/8.654ms  median=8668us/8.668ms  std=38us/0.038ms  min=8579us  max=8688us  mean_cyc=2076960  median_cyc=2080320  ops/s=115.5535
+verify OK: 5/5
+sign errors (signed again): 0
+peak heap (wolfSSL allocations): keygen=40968 sign=116208 verify=8192 bytes
+free stack: 30788 bytes   free heap: 300168 bytes
+=== done (repeats in ~5s) ===

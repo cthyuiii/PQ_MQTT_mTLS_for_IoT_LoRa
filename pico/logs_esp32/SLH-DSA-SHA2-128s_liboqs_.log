@@ -1,0 +1,23 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=2 big stack=96 KB
+  iter 1/2 k=5727819us s=43747975us v=45887us
+  iter 2/2 k=5727545us s=43748773us v=44406us
+=== SLH_DSA_PURE_SHA2_128S (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=32 sk=64 sig=7856 sigMax=7856
+SLH_DSA_PURE_SHA2_128S(liboqs)  keygen  n=2  mean=5727682us/5727.682ms  median=5727682us/5727.682ms  std=137us/0.137ms  min=5727545us  max=5727819us  mean_cyc=1374643680  median_cyc=1374643680  ops/s=0.1746
+SLH_DSA_PURE_SHA2_128S(liboqs)  sign  n=2  mean=43748374us/43748.375ms  median=43748374us/43748.375ms  std=399us/0.399ms  min=43747975us  max=43748773us  mean_cyc=1909675168  median_cyc=1909675168  ops/s=0.0229
+SLH_DSA_PURE_SHA2_128S(liboqs)  verify  n=2  mean=45146us/45.146ms  median=45146us/45.146ms  std=740us/0.740ms  min=44406us  max=45887us  mean_cyc=10835040  median_cyc=10835040  ops/s=22.1504
+verify OK: 2/2
+peak stack: keygen=4320 sign=4528 verify=4464 / 98304 bytes
+free heap: 224436 bytes
+=== done (repeats in ~5s) ===

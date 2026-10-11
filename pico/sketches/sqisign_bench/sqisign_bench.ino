@@ -5,6 +5,7 @@
 //   KB, no heap): I 73 / 102 / 39, III 97 / 136 / 62, V 131 / 185 / 82. Serial @115200.
 
 #include <Arduino.h>
+#include <board_compat.h>
 #include <string.h>
 #include <pico/bootrom.h>
 // a crash (e.g. past the big stack) drops to BOOTSEL: the runner reports it at once and can flash the next sketch
@@ -16,8 +17,8 @@ extern "C" {
 }
 
 extern "C" int randombytes(unsigned char *x, unsigned long long xlen) {
-  while (xlen >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(x, &r, 4); x += 4; xlen -= 4; }
-  if (xlen) { uint32_t r = rp2040.hwrand32(); for (unsigned long long i = 0; i < xlen; i++) x[i] = (uint8_t)(r >> (8 * i)); }
+  while (xlen >= 4) { uint32_t r = board_hwrand32(); memcpy(x, &r, 4); x += 4; xlen -= 4; }
+  if (xlen) { uint32_t r = board_hwrand32(); for (unsigned long long i = 0; i < xlen; i++) x[i] = (uint8_t)(r >> (8 * i)); }
   return 0;
 }
 
@@ -52,7 +53,7 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   uint64_t vsum = 0;
   for (int i = 0; i < n; i++) { int64_t d = (int64_t)t[i] - (int64_t)mean; vsum += (uint64_t)(d * d); }
   uint32_t sd = (uint32_t)sqrtf((float)(vsum / (n > 0 ? n : 1)));
-  uint32_t mhz = F_CPU / 1000000u;
+  uint32_t mhz = board_cpu_mhz();
   float ops = (mean > 0) ? (1000000.0f / (float)mean) : 0.0f;
   print_label(); Serial.print("  "); Serial.print(op);
   Serial.print(F("  n=")); Serial.print(n);
@@ -83,8 +84,8 @@ static void run_report() {
     Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
   }
   Serial.println();
-  Serial.print(F("=== ")); print_label(); Serial.println(F(" (SQIsign round 3, ref, 32-bit radix) on RP [big-stack] ==="));
-  Serial.print(F("CPU clock: ")); Serial.print(F_CPU / 1000000u); Serial.println(F(" MHz")); Serial.flush();
+  Serial.print(F("=== ")); print_label(); Serial.println(F(" (SQIsign round 3, ref, 32-bit radix) on " BOARD_FAMILY " [big-stack] ==="));
+  Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz")); Serial.flush();
   Serial.print(F("sizes: pk=")); Serial.print((long)CRYPTO_PUBLICKEYBYTES);
   Serial.print(F(" sk=")); Serial.print((long)CRYPTO_SECRETKEYBYTES);
   Serial.print(F(" sigMax=")); Serial.print((long)CRYPTO_BYTES); Serial.print(F(" sig=")); Serial.println((long)(g_smlen - 32));
@@ -94,7 +95,7 @@ static void run_report() {
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
   Serial.print(F("big-stack peak: keygen=")); Serial.print(kpeak); Serial.print(F(" sign=")); Serial.print(speak);
   Serial.print(F(" verify=")); Serial.print(vpeak); Serial.print(F(" / ")); Serial.print(BIG_STACK_BYTES); Serial.println(F(" bytes"));
-  Serial.print(F("free heap: ")); Serial.print(rp2040.getFreeHeap()); Serial.println(F(" bytes"));
+  Serial.print(F("free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));
   Serial.println(F("=== done (repeats in ~5s) ==="));
 }
 

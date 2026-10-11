@@ -5,6 +5,7 @@
 //   Host-verified (open=OK). MPCitH = compute-heavy; n low. Board: "Raspberry Pi Pico W". Serial @115200.
 
 #include <Arduino.h>
+#include <board_compat.h>
 
 #include <string.h>
 
@@ -15,8 +16,8 @@ extern "C" {
 }
 
 extern "C" void randombytes(uint8_t *x, size_t xlen) {
-  while (xlen >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(x, &r, 4); x += 4; xlen -= 4; }
-  if (xlen) { uint32_t r = rp2040.hwrand32(); for (size_t i = 0; i < xlen; i++) x[i] = (uint8_t)(r >> (8 * i)); }
+  while (xlen >= 4) { uint32_t r = board_hwrand32(); memcpy(x, &r, 4); x += 4; xlen -= 4; }
+  if (xlen) { uint32_t r = board_hwrand32(); for (size_t i = 0; i < xlen; i++) x[i] = (uint8_t)(r >> (8 * i)); }
 }
 
 #define ITERS 1
@@ -35,7 +36,7 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   uint64_t vsum = 0;
   for (int i = 0; i < n; i++) { int64_t d = (int64_t)t[i] - (int64_t)mean; vsum += (uint64_t)(d * d); }
   uint32_t sd = (uint32_t)sqrtf((float)(vsum / (n > 0 ? n : 1)));
-  uint32_t mhz = F_CPU / 1000000u;
+  uint32_t mhz = board_cpu_mhz();
   float ops = (mean > 0) ? (1000000.0f / (float)mean) : 0.0f;
   Serial.print("FAEST-128f  "); Serial.print(op);
   Serial.print(F("  n=")); Serial.print(n);
@@ -63,8 +64,8 @@ static void run_report() {
     Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
   }
   Serial.println();
-  Serial.println(F("=== FAEST-128f (ref, pure-C AES, MPCitH) on RP2040 ==="));
-  Serial.print(F("CPU clock: ")); Serial.print(F_CPU / 1000000u); Serial.println(F(" MHz")); Serial.flush();
+  Serial.println(F("=== FAEST-128f (ref, pure-C AES, MPCitH) on " BOARD_CHIP " ==="));
+  Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz")); Serial.flush();
   Serial.print(F("sizes: pk=")); Serial.print(CRYPTO_PUBLICKEYBYTES);
   Serial.print(F(" sk=")); Serial.print(CRYPTO_SECRETKEYBYTES);
   Serial.print(F(" sigMax=")); Serial.print(CRYPTO_BYTES); Serial.print(F(" sig=")); Serial.println((int)(smlen - 32));
@@ -72,8 +73,8 @@ static void run_report() {
   report_op("sign",   ts, ITERS);
   report_op("verify", tv, ITERS);
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
-  Serial.print(F("free stack: ")); Serial.print(rp2040.getFreeStack());
-  Serial.print(F(" bytes   free heap: ")); Serial.print(rp2040.getFreeHeap()); Serial.println(F(" bytes"));
+  Serial.print(F("free stack: ")); Serial.print(board_free_stack());
+  Serial.print(F(" bytes   free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));
   Serial.println(F("=== done (repeats in ~5s) ==="));
 }
 

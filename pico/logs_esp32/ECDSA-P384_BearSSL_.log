@@ -1,0 +1,40 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+=== ECDSA-P384 (BearSSL, classical baseline) on ESP32 ===
+CPU clock: 240 MHz
+  iter 1/20 k=282662us s=312849us v=564954us
+  iter 2/20 k=282515us s=312922us v=564961us
+  iter 3/20 k=282641us s=312767us v=564951us
+  iter 4/20 k=282479us s=312803us v=564925us
+  iter 5/20 k=282519us s=312765us v=565108us
+  iter 6/20 k=282509us s=312783us v=564997us
+  iter 7/20 k=282496us s=312776us v=564940us
+  iter 8/20 k=282541us s=312803us v=564892us
+  iter 9/20 k=282511us s=312749us v=564903us
+  iter 10/20 k=282500us s=312734us v=564948us
+  iter 11/20 k=282593us s=312780us v=565050us
+  iter 12/20 k=282534us s=312771us v=565022us
+  iter 13/20 k=282534us s=312755us v=564926us
+  iter 14/20 k=282531us s=312795us v=564899us
+  iter 15/20 k=282530us s=312803us v=564922us
+  iter 16/20 k=282487us s=312821us v=564936us
+  iter 17/20 k=282490us s=312742us v=564947us
+  iter 18/20 k=282544us s=312770us v=565023us
+  iter 19/20 k=282479us s=312701us v=564936us
+  iter 20/20 k=282504us s=312780us v=564990us
+sizes: pk=96 sk=48 sigMax=96 sig=96
+ECDSA-P384  keygen  n=20  mean=282529us/282.529ms  median=282517us/282.517ms  std=48us/0.048ms  min=282479us  max=282662us  mean_cyc=67806960  median_cyc=67804080  ops/s=3.5395
+ECDSA-P384  sign  n=20  mean=312783us/312.783ms  median=312778us/312.778ms  std=44us/0.044ms  min=312701us  max=312922us  mean_cyc=75067920  median_cyc=75066720  ops/s=3.1971
+ECDSA-P384  verify  n=20  mean=564961us/564.961ms  median=564947us/564.947ms  std=53us/0.053ms  min=564892us  max=565108us  mean_cyc=135590640  median_cyc=135587280  ops/s=1.7700
+verify OK: 20/20
+free stack: 27716 bytes   free heap: 305700 bytes
+=== done (repeats in ~5s) ===

@@ -1,0 +1,40 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+  iter 1/20 k=1197620us s=368033us v=6272us
+  iter 2/20 k=1158878us s=364148us v=6256us
+  iter 3/20 k=1034938us s=365158us v=6254us
+  iter 4/20 k=910438us s=364120us v=6256us
+  iter 5/20 k=945868us s=365803us v=6258us
+  iter 6/20 k=3572565us s=365692us v=6252us
+  iter 7/20 k=1425519us s=366906us v=6255us
+  iter 8/20 k=1159094us s=364851us v=6257us
+  iter 9/20 k=1017169us s=365067us v=6253us
+  iter 10/20 k=1886107us s=365860us v=6254us
+  iter 11/20 k=2524709us s=364846us v=6253us
+  iter 12/20 k=1532144us s=365574us v=6254us
+  iter 13/20 k=1282942us s=362924us v=6252us
+  iter 14/20 k=1017326us s=366283us v=6252us
+  iter 15/20 k=1550132us s=366069us v=6256us
+  iter 16/20 k=2437176us s=365019us v=6253us
+  iter 17/20 k=1372216us s=365482us v=6253us
+  iter 18/20 k=1371667us s=364967us v=6253us
+  iter 19/20 k=1390111us s=365436us v=6256us
+  iter 20/20 k=1159107us s=365549us v=6256us
+=== Falcon-512 (PQClean clean) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=897 sk=1281 sig=654 sigMax=752 (variable)
+Falcon-512  keygen  n=20  mean=1497286us/1497.286ms  median=1327304us/1327.304ms  std=642305us/642.305ms  min=910438us  max=3572565us  mean_cyc=359348640  median_cyc=318552960  ops/s=0.6679
+Falcon-512  sign  n=20  mean=365389us/365.389ms  median=365459us/365.459ms  std=1034us/1.034ms  min=362924us  max=368033us  mean_cyc=87693360  median_cyc=87710160  ops/s=2.7368
+Falcon-512  verify  n=20  mean=6255us/6.255ms  median=6254us/6.254ms  std=4us/0.004ms  min=6252us  max=6272us  mean_cyc=1501200  median_cyc=1500960  ops/s=159.8721
+verify OK: 20/20
+free stack: 21964 bytes   free heap: 268060 bytes
+=== done (repeats in ~5s) ===

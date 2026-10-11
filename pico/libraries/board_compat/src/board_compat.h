@@ -7,6 +7,7 @@
 #if defined(ARDUINO_ARCH_RP2040)
 
 #define BOARD_CHIP "RP2040"  // the banners said RP2040 on both RP families; the runner matches " on RP"
+#define BOARD_FAMILY "RP"    // the big-stack sketches' banners: "on RP" for both RP families
 static inline uint32_t board_hwrand32(void) { return rp2040.hwrand32(); }
 static inline int board_free_stack(void) { return rp2040.getFreeStack(); }
 static inline int board_free_heap(void) { return rp2040.getFreeHeap(); }
@@ -30,6 +31,7 @@ static inline uint32_t board_cpu_mhz(void) { return F_CPU / 1000000u; }
 #else
 #define BOARD_CHIP "ESP32 (other)"
 #endif
+#define BOARD_FAMILY BOARD_CHIP
 // esp_random(): the hardware RNG; true random while Wi-Fi / BT runs, else seeded by the bootloader's entropy
 static inline uint32_t board_hwrand32(void) { return esp_random(); }
 // the loop task's high-water mark: the LEAST free stack so far (rp2040.getFreeStack() is the free stack now)

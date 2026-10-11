@@ -1,0 +1,25 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=3
+  iter 1/3 k=14496156us s=110472079us v=98171us
+  iter 2/3 k=14495993us s=110472113us v=106429us
+  iter 3/3 k=14496038us s=110472195us v=103415us
+=== SLH-DSA-SHA2-128s (wolfSSL 5.9.4) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=32 sk=64 sig=7856 sigMax=7856
+SLH-DSA-SHA2-128s(wolfSSL)  keygen  n=3  mean=14496062us/14496.062ms  median=14496038us/14496.038ms  std=68us/0.068ms  min=14495993us  max=14496156us  mean_cyc=3479054880  median_cyc=3479049120  ops/s=0.0690
+SLH-DSA-SHA2-128s(wolfSSL)  sign  n=3  mean=110472129us/110472.125ms  median=110472113us/110472.109ms  std=48us/0.048ms  min=110472079us  max=110472195us  mean_cyc=743507184  median_cyc=743503344  ops/s=0.0091
+SLH-DSA-SHA2-128s(wolfSSL)  verify  n=3  mean=102671us/102.671ms  median=103415us/103.415ms  std=3412us/3.412ms  min=98171us  max=106429us  mean_cyc=24641040  median_cyc=24819600  ops/s=9.7398
+verify OK: 3/3
+sign errors (signed again): 0
+peak heap (wolfSSL allocations): keygen=608 sign=736 verify=256 bytes
+free stack: 30548 bytes   free heap: 296360 bytes
+=== done (repeats in ~5s) ===

@@ -7,13 +7,17 @@
 //   Library: pico/sketches/wolfssl_bench/make_wolfssl_lib.sh (same wolfSSL release as the Pi build).
 
 #include <Arduino.h>
+#include <board_compat.h>
+BOARD_LOOP_STACK(32 * 1024);  // ESP32 only: loop() is a FreeRTOS task, 8 KB by default (big buffers: heap)
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/memory.h>
 #include <wolfssl/wolfcrypt/random.h>
 #include <wolfssl/wolfcrypt/sha256.h>
 #include <string.h>
 
-#if defined(__ARM_ARCH_6M__)
+#if defined(ARDUINO_ARCH_ESP32)
+#define CHIP BOARD_CHIP
+#elif defined(__ARM_ARCH_6M__)
 #define CHIP "RP2040"
 #else
 #define CHIP "RP2350"
@@ -23,8 +27,8 @@
 #endif
 
 extern "C" int wb_rand_block(unsigned char *out, unsigned int n) {
-  while (n >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(out, &r, 4); out += 4; n -= 4; }
-  if (n) { uint32_t r = rp2040.hwrand32(); memcpy(out, &r, n); }
+  while (n >= 4) { uint32_t r = board_hwrand32(); memcpy(out, &r, 4); out += 4; n -= 4; }
+  if (n) { uint32_t r = board_hwrand32(); memcpy(out, &r, n); }
   return 0;
 }
 
@@ -213,7 +217,7 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   uint32_t median = (n & 1) ? srt[n / 2] : (uint32_t)(((uint64_t)srt[n / 2 - 1] + srt[n / 2]) >> 1);
   uint64_t vsum = 0;
   for (int i = 0; i < n; i++) { int64_t d = (int64_t)t[i] - (int64_t)mean; vsum += (uint64_t)(d * d); }
-  uint32_t sd = (uint32_t)sqrtf((float)(vsum / n)), mhz = F_CPU / 1000000u;
+  uint32_t sd = (uint32_t)sqrtf((float)(vsum / n)), mhz = board_cpu_mhz();
   Serial.print(LABEL "(wolfSSL)  "); Serial.print(op);
   Serial.print(F("  n=")); Serial.print(n);
   Serial.print(F("  mean=")); Serial.print(mean); Serial.print(F("us/")); Serial.print(mean / 1000.0f, 3); Serial.print(F("ms"));
@@ -257,7 +261,7 @@ static void run_report() {
   }
   Serial.println();
   Serial.print(F("=== " LABEL " (")); Serial.print(lib_name()); Serial.println(F(") on " CHIP " ==="));
-  Serial.print(F("CPU clock: ")); Serial.print(F_CPU / 1000000u); Serial.println(F(" MHz"));
+  Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz"));
   Serial.print(F("sizes: pk=")); Serial.print(pk_len); Serial.print(F(" sk=")); Serial.print(sk_len);
   Serial.print(F(" sig=")); Serial.print(sig_len); Serial.print(F(" sigMax=")); Serial.println(sig_max);
   report_op("keygen", tk, WB_ITERS);
@@ -268,8 +272,8 @@ static void run_report() {
   Serial.print(F("peak heap (wolfSSL allocations): keygen=")); Serial.print((unsigned)peak[0]);
   Serial.print(F(" sign=")); Serial.print((unsigned)peak[1]); Serial.print(F(" verify=")); Serial.print((unsigned)peak[2]);
   Serial.println(F(" bytes"));
-  Serial.print(F("free stack: ")); Serial.print(rp2040.getFreeStack());
-  Serial.print(F(" bytes   free heap: ")); Serial.print(rp2040.getFreeHeap()); Serial.println(F(" bytes"));
+  Serial.print(F("free stack: ")); Serial.print(board_free_stack());
+  Serial.print(F(" bytes   free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));
   Serial.println(F("=== done (repeats in ~5s) ==="));
 }
 

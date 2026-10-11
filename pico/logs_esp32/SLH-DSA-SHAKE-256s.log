@@ -1,0 +1,28 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+=== SLH-DSA-SHAKE-256s (PQClean, FIPS 205, SLOW 's' variant) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=64 sk=128 sigMax=29792 sig=29792
+[iter 1/3] keygen...
+ 40022504us  sign(slow)...
+ 477252946us  verify... 656739us  ok=1
+[iter 2/3] keygen...
+ 40022214us  sign(slow)...
+ 477252764us  verify... 643748us  ok=1
+[iter 3/3] keygen...
+ 40022235us  sign(slow)...
+ 477252888us  verify... 652379us  ok=1
+SLH-DSA-SHAKE-256s  keygen  n=3  mean=40022317us/40022.316ms  median=40022235us/40022.234ms  std=132us/0.132ms  min=40022214us  max=40022504us  mean_cyc=1015421488  median_cyc=1015401808  ops/s=0.0250
+SLH-DSA-SHAKE-256s  sign  n=3  mean=477252866us/477252.875ms  median=477252888us/477252.906ms  std=75us/0.075ms  min=477252764us  max=477252946us  mean_cyc=2871538144  median_cyc=2871543424  ops/s=0.0021
+SLH-DSA-SHAKE-256s  verify  n=3  mean=650955us/650.955ms  median=652379us/652.379ms  std=5398us/5.398ms  min=643748us  max=656739us  mean_cyc=156229200  median_cyc=156570960  ops/s=1.5362
+verify OK: 3/3
+free stack: 39868 bytes   free heap: 259708 bytes
+=== done (repeats in ~5s) ===

@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running QR-UOV-q127L10v540m60, ITERS=10
+  iter 1/10 k=8479011us s=2290944us v=2189302us
+  iter 2/10 k=8478705us s=2290840us v=2189255us
+  iter 3/10 k=8478709us s=2290837us v=2189249us
+  iter 4/10 k=8478704us s=2290817us v=2189254us
+  iter 5/10 k=8478687us s=2290801us v=2189240us
+  iter 6/10 k=8478706us s=2290818us v=2189250us
+  iter 7/10 k=8478709us s=2290818us v=2189259us
+  iter 8/10 k=8478693us s=2290800us v=2189248us
+  iter 9/10 k=8478708us s=2290843us v=2189252us
+  iter 10/10 k=8478702us s=2290804us v=2189247us
+=== QR-UOV-q127L10v540m60 (QR-UOV round 3 ref, SHAKE PRG) on ESP32 [big-stack] ===
+CPU clock: 240 MHz
+sizes: pk=11041 sk=32 sigMax=541 sig=541
+QR-UOV-q127L10v540m60  keygen  n=10  mean=8478733us/8478.733ms  median=8478705us/8478.705ms  std=92us/0.092ms  min=8478687us  max=8479011us  mean_cyc=2034895920  median_cyc=2034889200  ops/s=0.1179
+QR-UOV-q127L10v540m60  sign  n=10  mean=2290832us/2290.832ms  median=2290818us/2290.818ms  std=40us/0.040ms  min=2290800us  max=2290944us  mean_cyc=549799680  median_cyc=549796320  ops/s=0.4365
+QR-UOV-q127L10v540m60  verify  n=10  mean=2189255us/2189.255ms  median=2189251us/2189.251ms  std=16us/0.016ms  min=2189240us  max=2189302us  mean_cyc=525421200  median_cyc=525420240  ops/s=0.4568
+verify OK: 10/10
+big-stack peak: keygen=57472 sign=60912 verify=52576 / 90112 bytes
+free heap: 228656 bytes
+=== done (repeats in ~5s) ===

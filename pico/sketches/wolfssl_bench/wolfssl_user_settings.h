@@ -20,6 +20,16 @@
 #define SINGLE_THREADED
 #define WOLFSSL_SMALL_STACK
 #define WOLFSSL_IGNORE_FILE_WARN
+/* ESP32 (arduino-esp32): settings.h's Arduino-ESP32 defaults turn the cache-resistant code off (WC_NO_CACHE_RESISTANT),
+   the Pico's Arduino-ARM branch doesn't (and sp_c32.c's small RSA then misses addr_mask). Skip those defaults, keep
+   their socket headers (WOLFSSL_LWIP: wolfio.h's types, no crypto) and set what the ARM branch sets: one wolfSSL
+   configuration on both boards. */
+#if defined(ARDUINO) && defined(ESP32)
+    #define NO_ARDUINO_DEFAULT
+    #define WOLFSSL_LWIP
+    #define NO_WOLFSSL_DIR
+    #define WOLFSSL_NO_CURRDIR
+#endif
 #ifdef WB_CHECKS  /* mqtt_tls_bench -DMT_DEPLOY: what a deployed client checks besides the chain */
     #define WB_ASN_TIME            /* certificate and CRL dates, on time() set by NTP (needs make_wolfssl_lib.sh's patch) */
     #define HAVE_CRL               /* revocation lists (wolfSSL_CTX_LoadCRLBuffer) */

@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10 big stack=96 KB
+  iter 1/10 k=213595us s=225446us v=199055us
+  iter 2/10 k=213557us s=458829us v=199053us
+  iter 3/10 k=205716us s=817239us v=199052us
+  iter 4/10 k=213562us s=225465us v=199047us
+  iter 5/10 k=213549us s=225450us v=199050us
+  iter 6/10 k=213566us s=756044us v=199050us
+  iter 7/10 k=213546us s=284861us v=199053us
+  iter 8/10 k=213571us s=225453us v=199053us
+  iter 9/10 k=205725us s=1228661us v=199050us
+  iter 10/10 k=213571us s=404718us v=199048us
+=== ML-DSA-44 (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1312 sk=2560 sig=2420 sigMax=2420
+ML-DSA-44(liboqs)  keygen  n=10  mean=211995us/211.995ms  median=213559us/213.559ms  std=3137us/3.137ms  min=205716us  max=213595us  mean_cyc=50878800  median_cyc=51254160  ops/s=4.7171
+ML-DSA-44(liboqs)  sign  n=10  mean=485216us/485.216ms  median=344789us/344.789ms  std=324580us/324.580ms  min=225446us  max=1228661us  mean_cyc=116451840  median_cyc=82749360  ops/s=2.0609
+ML-DSA-44(liboqs)  verify  n=10  mean=199051us/199.051ms  median=199051us/199.051ms  std=2us/0.002ms  min=199047us  max=199055us  mean_cyc=47772240  median_cyc=47772240  ops/s=5.0238
+verify OK: 10/10
+peak stack: keygen=31872 sign=49760 verify=29760 / 98304 bytes
+free heap: 224992 bytes
+=== done (repeats in ~5s) ===

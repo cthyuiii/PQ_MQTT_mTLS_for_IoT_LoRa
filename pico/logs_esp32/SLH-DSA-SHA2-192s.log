@@ -1,0 +1,28 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+=== SLH-DSA-SHA2-192s (PQClean, FIPS 205, SLOW 's' variant) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=48 sk=96 sigMax=16224 sig=16224
+[iter 1/3] keygen...
+ 23195261us  sign(slow)...
+ 525179082us  verify... 399048us  ok=1
+[iter 2/3] keygen...
+ 23194559us  sign(slow)...
+ 525521115us  verify... 401154us  ok=1
+[iter 3/3] keygen...
+ 23195151us  sign(slow)...
+ 525174817us  verify... 401155us  ok=1
+SLH-DSA-SHA2-192s  keygen  n=3  mean=23194990us/23194.990ms  median=23195151us/23195.152ms  std=308us/0.308ms  min=23194559us  max=23195261us  mean_cyc=1271830304  median_cyc=1271868944  ops/s=0.0431
+SLH-DSA-SHA2-192s  sign  n=3  mean=525291671us/525291.687ms  median=525179082us/525179.062ms  std=162250us/162.250ms  min=525174817us  max=525521115us  mean_cyc=1515949456  median_cyc=1488928096  ops/s=0.0019
+SLH-DSA-SHA2-192s  verify  n=3  mean=400452us/400.452ms  median=401154us/401.154ms  std=993us/0.993ms  min=399048us  max=401155us  mean_cyc=96108480  median_cyc=96276960  ops/s=2.4972
+verify OK: 3/3
+free stack: 42828 bytes   free heap: 273076 bytes
+=== done (repeats in ~5s) ===

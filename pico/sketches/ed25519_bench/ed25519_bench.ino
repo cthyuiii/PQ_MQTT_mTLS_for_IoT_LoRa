@@ -10,6 +10,9 @@
 //   Board: "Raspberry Pi Pico". Serial Monitor @115200.
 
 #include <Arduino.h>
+#include <board_compat.h>
+BOARD_LOOP_STACK(32 * 1024);  // ESP32 only: loop() is a FreeRTOS task, 8 KB by default
+#include <board_compat.h>
 #include <Ed25519.h>          // from the "Crypto" library (rweather/arduinolibs)
 
 #define ITERS 20
@@ -18,8 +21,8 @@ static uint8_t msg[32] = {0};
 static uint32_t tk[ITERS], ts[ITERS], tv[ITERS];
 
 static void fill_random(uint8_t *p, size_t n) {           // Ed25519 private key = 32 random bytes
-  while (n >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(p, &r, 4); p += 4; n -= 4; }
-  if (n) { uint32_t r = rp2040.hwrand32(); for (size_t i = 0; i < n; i++) p[i] = (uint8_t)(r >> (8 * i)); }
+  while (n >= 4) { uint32_t r = board_hwrand32(); memcpy(p, &r, 4); p += 4; n -= 4; }
+  if (n) { uint32_t r = board_hwrand32(); for (size_t i = 0; i < n; i++) p[i] = (uint8_t)(r >> (8 * i)); }
 }
 
 static void report_op(const char *op, const uint32_t *t, int n) {
@@ -32,7 +35,7 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   uint64_t vsum = 0;
   for (int i = 0; i < n; i++) { int64_t d = (int64_t)t[i] - (int64_t)mean; vsum += (uint64_t)(d * d); }
   uint32_t sd = (uint32_t)sqrtf((float)(vsum / (n > 0 ? n : 1)));
-  uint32_t mhz = F_CPU / 1000000u;
+  uint32_t mhz = board_cpu_mhz();
   float ops = (mean > 0) ? (1000000.0f / (float)mean) : 0.0f;
   Serial.print("Ed25519  "); Serial.print(op);
   Serial.print(F("  n=")); Serial.print(n);
@@ -65,14 +68,14 @@ static void run_report() {
     Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
   }
   Serial.println();
-  Serial.println(F("=== Ed25519 (RFC 8032, rweather Crypto lib) on RP2040 ==="));
-  Serial.print(F("CPU clock: ")); Serial.print(F_CPU / 1000000u); Serial.println(F(" MHz")); Serial.flush();
+  Serial.println(F("=== Ed25519 (RFC 8032, rweather Crypto lib) on " BOARD_CHIP " ==="));
+  Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz")); Serial.flush();
   Serial.println(F("sizes: pk=32 sk=32 sigMax=64 sig=64"));
   report_op("keygen", tk, ITERS);
   report_op("sign",   ts, ITERS);
   report_op("verify", tv, ITERS);
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
-  Serial.print(F("free heap: ")); Serial.print(rp2040.getFreeHeap()); Serial.println(F(" bytes"));
+  Serial.print(F("free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));
   Serial.println(F("=== done (repeats in ~5s) ==="));
 }
 

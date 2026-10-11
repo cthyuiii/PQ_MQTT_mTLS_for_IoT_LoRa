@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10 big stack=96 KB
+  iter 1/10 k=415925us s=18752665us v=18659886us
+  iter 2/10 k=415900us s=18740983us v=18659770us
+  iter 3/10 k=415889us s=18747487us v=18659891us
+  iter 4/10 k=415907us s=18761858us v=18660429us
+  iter 5/10 k=415895us s=18723231us v=18659786us
+  iter 6/10 k=415907us s=18729035us v=18660106us
+  iter 7/10 k=415904us s=18758532us v=18659984us
+  iter 8/10 k=415899us s=18741355us v=18659902us
+  iter 9/10 k=415904us s=18740267us v=18660029us
+  iter 10/10 k=415906us s=18730182us v=18660451us
+=== mqom3_cat1_gf16_short_ct (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=64 sk=96 sig=2932 sigMax=2932
+mqom3_cat1_gf16_short_ct(liboqs)  keygen  n=10  mean=415903us/415.903ms  median=415904us/415.904ms  std=9us/0.009ms  min=415889us  max=415925us  mean_cyc=99816720  median_cyc=99816960  ops/s=2.4044
+mqom3_cat1_gf16_short_ct(liboqs)  sign  n=10  mean=18742559us/18742.561ms  median=18741169us/18741.168ms  std=12136us/12.136ms  min=18723231us  max=18761858us  mean_cyc=203246864  median_cyc=202913264  ops/s=0.0534
+mqom3_cat1_gf16_short_ct(liboqs)  verify  n=10  mean=18660023us/18660.023ms  median=18659943us/18659.943ms  std=229us/0.229ms  min=18659770us  max=18660451us  mean_cyc=183438224  median_cyc=183419024  ops/s=0.0536
+verify OK: 10/10
+peak stack: keygen=2048 sign=15408 verify=14848 / 98304 bytes
+free heap: 228504 bytes
+=== done (repeats in ~5s) ===

@@ -11,6 +11,9 @@
 //   big-stack needed. Board: "Raspberry Pi Pico". Serial Monitor @115200.
 
 #include <Arduino.h>
+#include <board_compat.h>
+BOARD_LOOP_STACK(32 * 1024);  // ESP32 only: loop() is a FreeRTOS task, 8 KB by default
+#include <board_compat.h>
 #include <string.h>
 
 extern "C" {
@@ -19,8 +22,8 @@ extern "C" {
 }
 
 extern "C" int randombytes(unsigned char *x, unsigned long long xlen) {
-  while (xlen >= 4) { uint32_t r = rp2040.hwrand32(); memcpy(x, &r, 4); x += 4; xlen -= 4; }
-  if (xlen) { uint32_t r = rp2040.hwrand32(); for (unsigned long long i = 0; i < xlen; i++) x[i] = (uint8_t)(r >> (8 * i)); }
+  while (xlen >= 4) { uint32_t r = board_hwrand32(); memcpy(x, &r, 4); x += 4; xlen -= 4; }
+  if (xlen) { uint32_t r = board_hwrand32(); for (unsigned long long i = 0; i < xlen; i++) x[i] = (uint8_t)(r >> (8 * i)); }
   return 0;
 }
 
@@ -41,7 +44,7 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   uint64_t vsum = 0;
   for (int i = 0; i < n; i++) { int64_t d = (int64_t)t[i] - (int64_t)mean; vsum += (uint64_t)(d * d); }
   uint32_t sd = (uint32_t)sqrtf((float)(vsum / (n > 0 ? n : 1)));
-  uint32_t mhz = F_CPU / 1000000u;
+  uint32_t mhz = board_cpu_mhz();
   float ops = (mean > 0) ? (1000000.0f / (float)mean) : 0.0f;
   Serial.print("Ed448  "); Serial.print(op);
   Serial.print(F("  n=")); Serial.print(n);
@@ -70,8 +73,8 @@ static void run_report() {
     Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
   }
   Serial.println();
-  Serial.println(F("=== Ed448 (RFC 8032 pure, OpenSSL Goldilocks + PQClean SHAKE) on RP2040 ==="));
-  Serial.print(F("CPU clock: ")); Serial.print(F_CPU / 1000000u); Serial.println(F(" MHz")); Serial.flush();
+  Serial.println(F("=== Ed448 (RFC 8032 pure, OpenSSL Goldilocks + PQClean SHAKE) on " BOARD_CHIP " ==="));
+  Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz")); Serial.flush();
   Serial.print(F("sizes: pk=")); Serial.print((long)CRYPTO_PUBLICKEYBYTES);
   Serial.print(F(" sk=")); Serial.print((long)(CRYPTO_SECRETKEYBYTES - CRYPTO_PUBLICKEYBYTES));  // seed only (the API key appends pk)
   Serial.print(F(" sigMax=")); Serial.print((long)CRYPTO_BYTES); Serial.print(F(" sig=")); Serial.println((long)(g_smlen - 32));
@@ -79,8 +82,8 @@ static void run_report() {
   report_op("sign",   ts, ITERS);
   report_op("verify", tv, ITERS);
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
-  Serial.print(F("free stack: ")); Serial.print(rp2040.getFreeStack());
-  Serial.print(F(" bytes   free heap: ")); Serial.print(rp2040.getFreeHeap()); Serial.println(F(" bytes"));
+  Serial.print(F("free stack: ")); Serial.print(board_free_stack());
+  Serial.print(F(" bytes   free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));
   Serial.println(F("=== done (repeats in ~5s) ==="));
 }
 

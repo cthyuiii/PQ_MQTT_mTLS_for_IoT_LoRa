@@ -9,7 +9,11 @@ CACHE=${IOT_PQC_CACHE:-$HOME/.cache/iot-pqc}
 SRC=${WOLFSSL_SRC:-$CACHE/wolfssl-src}
 LIB="$CACHE/arduino-libs/wolfssl"
 TAG=${WOLFSSL_TAG:-v5.9.4-stable}   # one release for the Mac, the Pi and the Pico (build_wolfssl.sh + make_wolfssl_lib.sh)
-[ -d "$SRC" ] || git clone -q --depth 1 --branch "$TAG" https://github.com/wolfSSL/wolfssl.git "$SRC"
+# LF checkout: Git for Windows defaults to core.autocrlf=true, and the perl patches below anchor on line ends ($)
+[ -d "$SRC" ] || git clone -q -c core.autocrlf=false --depth 1 --branch "$TAG" https://github.com/wolfSSL/wolfssl.git "$SRC"
+if [ "$(git -C "$SRC" config core.autocrlf)" != false ]; then  # a CRLF checkout from before: check it out again with LF
+    git -C "$SRC" config core.autocrlf false && git -C "$SRC" rm -r -q --cached . && git -C "$SRC" reset -q --hard
+fi
 if [ "$(git -C "$SRC" describe --tags --exact-match 2>/dev/null)" != "$TAG" ]; then  # another release cached: switch
     git -C "$SRC" fetch -q --depth 1 origin tag "$TAG" && git -C "$SRC" checkout -q -f "$TAG" && git -C "$SRC" clean -q -fdx
 fi

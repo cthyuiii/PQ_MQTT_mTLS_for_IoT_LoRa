@@ -4,6 +4,8 @@
 //   verbatim in src/ino__<v>.h; files that differ per variant are src/<name>__<v>.*, selected the
 //   same way. Files shared by all variants are stored once.
 #include <Arduino.h>
+#include <board_compat.h>
+BOARD_LOOP_STACK(32 * 1024);  // ESP32 only: loop() is a FreeRTOS task, 8 KB by default
 #if defined(PICO_VARIANT_128f)
 #include "src/ino__128f.h"
 #elif defined(PICO_VARIANT_192f)

@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10 big stack=96 KB
+  iter 1/10 k=2436673us s=5308222us v=3316668us
+  iter 2/10 k=2436610us s=5308237us v=3316657us
+  iter 3/10 k=2436674us s=5308209us v=3316650us
+  iter 4/10 k=2436647us s=5308237us v=3316656us
+  iter 5/10 k=2436660us s=5308185us v=3316646us
+  iter 6/10 k=2436682us s=5308214us v=3316664us
+  iter 7/10 k=2436675us s=5308255us v=3316677us
+  iter 8/10 k=2436627us s=5308220us v=3316662us
+  iter 9/10 k=2436628us s=5308222us v=3316671us
+  iter 10/10 k=2436668us s=5308177us v=3316674us
+=== SNOVA_V_K (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1216 sk=96 sig=896 sigMax=896
+SNOVA_V_K(liboqs)  keygen  n=10  mean=2436654us/2436.654ms  median=2436664us/2436.664ms  std=23us/0.023ms  min=2436610us  max=2436682us  mean_cyc=584796960  median_cyc=584799360  ops/s=0.4104
+SNOVA_V_K(liboqs)  sign  n=10  mean=5308217us/5308.217ms  median=5308221us/5308.221ms  std=22us/0.022ms  min=5308177us  max=5308255us  mean_cyc=1273972080  median_cyc=1273973040  ops/s=0.1884
+SNOVA_V_K(liboqs)  verify  n=10  mean=3316662us/3316.662ms  median=3316663us/3316.663ms  std=9us/0.009ms  min=3316646us  max=3316677us  mean_cyc=795998880  median_cyc=795999120  ops/s=0.3015
+verify OK: 10/10
+peak stack: keygen=7584 sign=95024 verify=18512 / 98304 bytes
+free heap: 229512 bytes
+=== done (repeats in ~5s) ===
