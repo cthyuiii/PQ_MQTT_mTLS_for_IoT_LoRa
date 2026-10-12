@@ -107,11 +107,13 @@ grep -q 'server="tcp://chirpstack-app-proxy:1883/"' "$CS/configuration/chirpstac
     { echo "no [integration.mqtt] server= line in chirpstack.toml" >&2; exit 1; }
 # the application's reply (chirpstack_app.py --reply) goes out in the uplink's RX1 window (1 s) only if ChirpStack waits
 # for it: 400 ms between handing the uplink to the integration and reading the device's queue (its default, 100 ms, is
-# shorter than the reply's trip through the Pi's broker; the uplink events themselves aren't delayed)
-awk '/^[[:space:]]*\[network\][[:space:]]*$/ {print; print "  get_downlink_data_delay=\"400ms\""; next}
+# shorter than the reply's trip through the Pi's broker; the uplink events themselves aren't delayed). DOWNLINK_DELAY=100ms:
+# ChirpStack's default again (finding 124)
+DD=${DOWNLINK_DELAY:-400ms}
+awk -v d="$DD" '/^[[:space:]]*\[network\][[:space:]]*$/ {print; print "  get_downlink_data_delay=\"" d "\""; next}
      /^[[:space:]]*get_downlink_data_delay=/ {next} {print}' "$CS/configuration/chirpstack-pq.toml" > "$CS/configuration/chirpstack-pq.toml.new"
 mv "$CS/configuration/chirpstack-pq.toml.new" "$CS/configuration/chirpstack-pq.toml"
-grep -q 'get_downlink_data_delay="400ms"' "$CS/configuration/chirpstack-pq.toml" || { echo "no [network] in chirpstack.toml" >&2; exit 1; }
+grep -q "get_downlink_data_delay=\"$DD\"" "$CS/configuration/chirpstack-pq.toml" || { echo "no [network] in chirpstack.toml" >&2; exit 1; }
 # ChirpStack's API secret (it signs the UI's and API's tokens): a random one, kept so a re-run doesn't log everyone out
 [ -s "$P/api_secret" ] || { "$OSSL" rand -base64 32 > "$P/api_secret"; chmod 600 "$P/api_secret"; }
 S=$(cat "$P/api_secret")

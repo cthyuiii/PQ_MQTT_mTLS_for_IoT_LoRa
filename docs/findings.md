@@ -1705,7 +1705,7 @@ Pico W's pipeline; no run of the new form yet)
        off (checked with `docker compose config`); the running two are to be stopped. Also plain on the LAN:
        ChirpStack's UI / API (:8080) and REST API (:8090), HTTP (hardening row).
 
-124. [Mac; the Pi and the Pico to run] **The round trip Pico → application → Pico, the Pico's cycle counts, and which
+124. [Mac, Pi, Pico W] **The round trip Pico → application → Pico, the Pico's cycle counts, and which
      certificates the chain can use (13 Oct).**
      - **Round trip, built:** with `REPLY_WAIT_MS` the air-only firmware waits after each uplink for the application's
        reply and verifies it (`reply_us`, from the uplink's send to the reply checked). `chirpstack_app.py --reply`
@@ -1722,6 +1722,29 @@ Pico W's pipeline; no run of the new form yet)
        Tested: the host test opens the reply under the `lorawan11_e2e` block's keys (frame identical to `app_aead`'s,
        tampering refused); the application → FIFO → relay → broker path delivered `ack 878` on the Mac; the
        firmware compiles (652,188 B flash); `mqtt_parse_test` reads the new columns.
+     - **The run** (13 Oct, `chirpstack_124`; derived key, the Pi broker's ACL and CRL on, `get_downlink_data_delay`
+       400 ms): 60 uplinks, none rejected; all 60 replies reached the gateway, and every reported one reached the Pico
+       (15 / 15 per scheme; the warm-up connections' aren't reported). The replies were 21 B frames (FPort 1, no
+       FOpts), sent for RX1 (tmst + 1 s, SF12 on 923.2 MHz). Medians:
+
+       | Leg | Time | What it is |
+       |---|---|---|
+       | gateway → application | 227.4 ms | ChirpStack's 200 ms de-duplication wait, its processing, links #1 and #2 |
+       | the application | 18.9 ms | the tag check and decryption (`openssl`), the reply written |
+       | application → gateway | 392.8 ms | relay → broker → link #2 → ChirpStack, which waits 400 ms from the event before reading the queue, → link #1 |
+       | the rest | ≈ 11 ms | the two Wi-Fi hops standing in for the radio, the Pico's check of the reply |
+       | **the Pico's round trip** | **650.0 ms** (`lorawan11`), **651.0 ms** (`lorawan11_e2e`) | from its send to the reply verified; max 661 / 811 ms |
+
+       ChirpStack's two configured waits are 600 of the 650 ms; the PQ links, ChirpStack's processing and the
+       application take about 50 ms together. The downlink left the gateway about 640 ms after the uplink, 360 ms
+       before RX1, so on a real radio the device would hear it at RX1: about 5.3 s in all at DR0 (computed). The
+       application replies within about 20 ms of the event, so ChirpStack's default 100 ms wait may well be enough,
+       which would bring the round trip to about 350 ms (to check: one run with `DOWNLINK_DELAY=100ms`).
+     - **Cycles on the board:** seal / open 144,317 / 131,135 cycles (`lorawan11` up), 239,320 / 215,227
+       (`lorawan11_e2e` up), 79,815 / 75,703 and 169,003 / 162,103 (down): 199.6-200.0 cycles per µs, the 200 MHz
+       clock, so the derived Stage 1 cycles hold. Seal / open stay within 20 µs of run 123 (723 / 657 and
+       1,199 / 1,076 µs). The air send took 373-375 µs (run 123: 214 / 329 µs); this firmware also listens on that
+       socket between sends.
      - **Cycle counts:** the air-only firmware's msg rows add `seal_cyc` / `open_cyc` from `rp2040.getCycleCount()`
        (the core's SysTick, extended to 32 bits): elapsed core cycles at one-cycle resolution (5 ns at 200 MHz),
        interrupts included, as with the µs timer. The Cortex-M0+ has no DWT cycle counter; SysTick also works on the
@@ -1809,8 +1832,8 @@ All links checked on 28 Sep 2026.
 - **The broker's CRL (121):** on at the Pi's broker; left: the revoked certificate refused there (one command) and its
   cost per handshake on the Pi 4.
 - **The air-only device (123):** run on 13 Oct, no frame rejected; the stock Gateway Bridges are stopped.
-- **Built, to run (124):** the round trip Pico → application → Pico (`REPLY_WAIT_MS`, `chirpstack_app.py --reply`,
-  ChirpStack's `get_downlink_data_delay`) and the Pico's cycle counts for seal / open.
+- **The round trip (124):** run, 650 ms on the Pico (600 ms of it ChirpStack's two configured waits). Optional: one
+  run with ChirpStack's default 100 ms downlink wait (`DOWNLINK_DELAY=100ms`).
 
 ## Future implementations (KIV)
 

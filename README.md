@@ -592,7 +592,7 @@ device (`AIR=1 DEV_ADDR=… APP_KEYS=… AEAD=… MSGS=n mqtt_tls_timer <gateway
   network/mqtt_tls_timer 127.0.0.1 18835 1 0 $C/CA.crt $C/application.crt $C/application.key < /tmp/replies`), and the
   Pico, built with `REPLY_WAIT_MS=2000`, waits after each uplink for it and verifies it (`reply_us`; uplinks at least
   1.05 s apart). ChirpStack has to wait for the reply before the RX1 window: `get_downlink_data_delay="400ms"`
-  (`chirpstack_pq_setup.sh`). With `--sent` the application prints the legs at the Pi. The air-only rows also carry
+  (`chirpstack_pq_setup.sh`; `DOWNLINK_DELAY=100ms` for ChirpStack's default). With `--sent` the application prints the legs at the Pi. The air-only rows also carry
   `seal_cyc` / `open_cyc` (CPU cycles, `rp2040.getCycleCount()`).
 - `chirpstack_app.py` prints each reading with its delay (event received − frame sent, both on the Pi's clock) and
   a median / p95 at the end. ChirpStack's de-duplication wait (`deduplication_delay` under `[network]` in
