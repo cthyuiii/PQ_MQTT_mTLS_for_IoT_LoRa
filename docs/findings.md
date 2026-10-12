@@ -1673,6 +1673,13 @@ Pico W's pipeline; no run of the new form yet)
        radio hop is outside TLS: mode `air`, per reading seal, open (the device's cost) and the air send; 15 messages
        a block, 60 uplinks a run as before (compiles: 651,628 B flash; the standard MQTT firmware still compiles,
        650,244 B). Its earlier TLS / mTLS figures (Stage 2) belong to a device that speaks MQTT itself.
+     - **The air-only run** (13 Oct, `chirpstack_123`; derived key, the Pi broker's ACL and CRL on): no frame rejected
+       at the application. On the Pico (medians, µs) seal / open: `lorawan11` uplink 705 / 638, downlink 392 / 374;
+       `lorawan11_e2e` uplink 1,185 / 1,075, downlink 837 / 811; the air send 214 (`lorawan11`) and 329
+       (`lorawan11_e2e`). Against run 121's plain-MQTT rows (seal / open 756 / 752 and 1,198 / 1,201; air 345 / 343)
+       seal is 13-51 µs and open 114-126 µs faster: most likely the RP2040's 16 KB flash cache, since the broker round
+       trip ran Wi-Fi and TCP code between seal and open, and open now follows seal at once (not tested). These are the
+       device's own figures, with no broker traffic on the board.
      - **mTLS from the gateway on**, all TLS 1.3, X25519MLKEM768 only, ML-DSA-44 certificates on both sides, each
        link set up once: #1 the gateway's stunnel (`gateway.crt`) → ChirpStack's Mosquitto :8883 (backend CA);
        #2 ChirpStack's stunnel (`chirpstack.crt`, broker pinned) → the Pi's broker :18835; #3 the application
@@ -1697,6 +1704,42 @@ Pico W's pipeline; no run of the new form yet)
        MIC). `chirpstack_pq_setup.sh` now puts both under a `stock` profile, so `docker compose up -d` leaves them
        off (checked with `docker compose config`); the running two are to be stopped. Also plain on the LAN:
        ChirpStack's UI / API (:8080) and REST API (:8090), HTTP (hardening row).
+
+124. [Mac; the Pi and the Pico to run] **The round trip Pico → application → Pico, the Pico's cycle counts, and which
+     certificates the chain can use (13 Oct).**
+     - **Round trip, built:** with `REPLY_WAIT_MS` the air-only firmware waits after each uplink for the application's
+       reply and verifies it (`reply_us`, from the uplink's send to the reply checked). `chirpstack_app.py --reply`
+       answers every uplink that opens with a ChirpStack downlink command, FPort 1, "ack <FCnt>", written to a FIFO
+       that `mqtt_tls_timer`'s relay mode publishes on its own mTLS session (the application certificate; the ACL
+       already lets it write commands). ChirpStack sends it in that uplink's RX1 window, through the gateway's
+       stunnel and the air back to the Pico, which checks the MIC (SNwkSIntKey) and decrypts it (AppSKey). Uplinks
+       go at least 1.05 s apart, so none waits in the gateway's 1 s queue. With `--sent` the application also prints
+       the legs at the Pi (gateway → application, its own time, application → gateway). ChirpStack reads a device's
+       queue 100 ms after handing the uplink to the integration by default, less than the reply's trip through the
+       Pi's broker, so `chirpstack_pq_setup.sh` sets `get_downlink_data_delay="400ms"` (uplink events are not
+       delayed). Expected: about 0.6-0.7 s, inside RX1's 1 s; a real radio then delivers it at RX1, so the radio
+       round trip would be 2,793 ms (64 B up at DR0) + 1 s + 1,483 ms (the 21 B reply at DR0) ≈ 5.3 s (computed).
+       Tested: the host test opens the reply under the `lorawan11_e2e` block's keys (frame identical to `app_aead`'s,
+       tampering refused); the application → FIFO → relay → broker path delivered `ack 878` on the Mac; the
+       firmware compiles (652,188 B flash); `mqtt_parse_test` reads the new columns.
+     - **Cycle counts:** the air-only firmware's msg rows add `seal_cyc` / `open_cyc` from `rp2040.getCycleCount()`
+       (the core's SysTick, extended to 32 bits): elapsed core cycles at one-cycle resolution (5 ns at 200 MHz),
+       interrupts included, as with the µs timer. The Cortex-M0+ has no DWT cycle counter; SysTick also works on the
+       RP2350. The Stage 1 Pico rows' `*_cyc` columns are µs × 200 (derived, 200-cycle resolution); for operations
+       of a millisecond or more the two agree within 0.1 %.
+     - **SLH-DSA in the chain:** as a TLS certificate key, no. OpenSSL 3.5 / 3.6 has no TLS code point for it, so a
+       server can't load one (`ssl_set_cert: unknown certificate type`, again on 13 Oct with 3.6.4; finding 12), and
+       oqs-provider's own SLH-DSA is switched off on OpenSSL 3.5+ (finding 51). As the CA, yes: an
+       SLH-DSA-SHA2-128s root signing ML-DSA-44 server and client certificates completed mTLS (TLS 1.3,
+       X25519MLKEM768, both chains verified) with OpenSSL 3.6.4 on the Mac. Each leaf grows from 4,004 to 9,400 B
+       (the 7,856 B SLH-DSA signature), so every mTLS handshake carries about 5.4 KB more each way; the root is
+       8,139 B. Every endpoint of the chain runs OpenSSL 3.5 (stunnel 3.5.8, the Pi's Mosquitto 3.5.6, ChirpStack's
+       Mosquitto on Alpine 3.23), which verifies SLH-DSA in X.509; not yet tried there.
+     - **Certificates the whole chain can use** (each link needs both ends): leaf keys ML-DSA-44 / 65 / 87, or
+       classical ECDSA, Ed25519, Ed448 and RSA-PSS, signed by any of those or an SLH-DSA CA. Falcon, MAYO and SNOVA
+       need oqs-provider at both ends of a link: the Pi's broker and application have it (round 3 broker), but the
+       stunnel image and ChirpStack's Mosquitto don't, so links #1 and #2 would need images built with it. The Pico
+       needs none of them: it has no TLS in the chain.
 
 ### Sources
 
@@ -1765,7 +1808,9 @@ All links checked on 28 Sep 2026.
   [pending.md](pending.md)); the derived key and the ACL together in one Pico run (121).
 - **The broker's CRL (121):** on at the Pi's broker; left: the revoked certificate refused there (one command) and its
   cost per handshake on the Pi 4.
-- **On the Mac (123):** stop the stock Gateway Bridges; the next Pico run uses the plain-only firmware.
+- **The air-only device (123):** run on 13 Oct, no frame rejected; the stock Gateway Bridges are stopped.
+- **Built, to run (124):** the round trip Pico → application → Pico (`REPLY_WAIT_MS`, `chirpstack_app.py --reply`,
+  ChirpStack's `get_downlink_data_delay`) and the Pico's cycle counts for seal / open.
 
 ## Future implementations (KIV)
 
@@ -1773,6 +1818,9 @@ All links checked on 28 Sep 2026.
   model only, not for the Pico (122).
 - **TLS 1.3 resumption:** saves the device's signature on a reconnect, but the LoRa chain's TLS links (stunnel,
   ChirpStack, the application) stay connected, and a LoRaWAN device has no TLS of its own.
+- **SLH-DSA as the chain's root** (124): tested on the Mac (SLH-DSA-SHA2-128s CA, ML-DSA-44 leaves); in the chain it
+  adds about 5.4 KB per certificate sent. Falcon / MAYO / SNOVA on links #1-#2 need stunnel and Mosquitto images
+  built with oqs-provider.
 - **ESP32 port**, pending the board.
 
 - **LoRaWAN OTAA join through the broker (KIV).** The join (Join-Request / Join-Accept) was timed only locally, so it

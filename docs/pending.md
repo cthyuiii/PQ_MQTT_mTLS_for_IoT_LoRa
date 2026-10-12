@@ -9,7 +9,7 @@ Labels: **G&B** = Gateway & Backend, **B&R** = Benchmarking & Reproducibility.
 ## Status: done (10 Oct 2026)
 
 The chain works end to end with the Pico W (finding 119), with the final-setup hardening, the end-to-end tag and the
-per-device keys in place (finding 120). Every item below is ticked except the air-only Pico run (finding 123); the rest is KIV.
+per-device keys in place (finding 120). Every item below is ticked except the round trip (finding 124, to run); the rest is KIV.
 
 - [x] **On the Pi:** certificates pushed without CA keys; the Pico's tagged run went through ChirpStack (60 uplinks,
   18:54-18:55 UTC, none rejected). Its timing is on the Pi (`results/*chirpstack*`).
@@ -26,12 +26,15 @@ per-device keys in place (finding 120). Every item below is ticked except the ai
 - [x] **The broker's CRL for device certificates** (12 Oct, finding 121): `gen_certs.sh --client-crl`,
   `BROKER_CRL=1`; revoked device refused on the Mac, +80 µs per handshake there; on at the Pi's broker since the 12 Oct
   run (no frame rejected).
-- [~] **The device without TLS** (12-13 Oct, finding 123): the ChirpStack firmware makes no broker connection (mode
-  `air`: seal, open, send over the air); mTLS starts at the gateway. Compiled; to run on the Pico. The Mac's stock
-  Gateway Bridges (LAN, plain into Mosquitto) are off by default in the override.
+- [x] **The device without TLS** (12-13 Oct, finding 123): the ChirpStack firmware makes no broker connection (mode
+  `air`: seal, open, send over the air); mTLS starts at the gateway. Run on the Pico 13 Oct (`chirpstack_123`), no
+  frame rejected. The Mac's stock Gateway Bridges (LAN, plain into Mosquitto) are stopped and off by default.
 - [x] **Constant-time MIC / tag compares** (12 Oct, 121): the Pico (`lora_aead.h`) and the application; host test
   passes; the Pico through ChirpStack on its derived key, ACL on: 60 uplinks, delay median 234.4 ms, seal / open
   unchanged. A board timing test (dudect-style) is KIV.
+- [~] **The round trip Pico → application → Pico, and the Pico's cycle counts** (13 Oct, finding 124):
+  `REPLY_WAIT_MS`, `chirpstack_app.py --reply` + a relay (`PUB=`), ChirpStack's `get_downlink_data_delay="400ms"`;
+  `seal_cyc` / `open_cyc`. Host test, local reply path, compile and parser test pass. To do: one run on the Pi.
 - Evidence stays on the Pi and in local copies (`results/`, `*.log` are gitignored): rsync or the Docker logs.
 - Not needed to finish (KIV): a real LoRa radio and gateway in place of the UDP air and `virtual_gateway.py`; the OTAA
   join; downlinks to the Pico; the 10 ms de-duplication run on two machines (one-Mac figure in finding 116).

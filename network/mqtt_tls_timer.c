@@ -45,6 +45,7 @@
  *
  * Relay mode (PUB = topic prefix, e.g. "pqc/down"): reads virtual_gateway.py's "downlink <time> <frame hex>"
  * lines on stdin and PUBLISHes each frame on <PUB>/<DevAddr>: a network server's downlink back to the device.
+ * Lines "pub <topic> <payload>" are PUBLISHed as they are (chirpstack_app.py --reply: ChirpStack downlink commands).
  *
  * stdout: "#lib <version>", "#suite <negotiated TLS suite>", then CSV
  *   iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B
@@ -708,6 +709,14 @@ static void relay(conn_t *c, const char *prefix) {
     while (fgets(line, sizeof line, stdin)) {
         char *h = strrchr(line, ' ');
         int n = 0;
+        if (!strncmp(line, "pub ", 4) && (h = strchr(line + 4, ' '))) {  /* pub <topic> <payload> */
+            *h++ = 0; h[strcspn(h, "\r\n")] = 0;
+            if (strlen(line + 4) + strlen(h) + 8 > sizeof pkt) { fprintf(stderr, "relay: pub line too long\n"); continue; }
+            int l = publish_packet(pkt, line + 4, (const unsigned char *)h, strlen(h));
+            if (io_write(c, pkt, l) != l) die("mqtt publish failed", "relay");
+            printf("published %d B to %s\n", (int)strlen(h), line + 4); fflush(stdout);
+            continue;
+        }
         if (strncmp(line, "downlink ", 9) || !h) continue;
         for (h++; isxdigit((unsigned char)h[0]) && isxdigit((unsigned char)h[1]) && n < (int)sizeof f; h += 2) {
             unsigned v; sscanf(h, "%2x", &v); f[n++] = (unsigned char)v;

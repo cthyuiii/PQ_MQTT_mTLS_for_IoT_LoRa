@@ -6,6 +6,7 @@ lorawan11_e2e layer (AES-256-CTR, FPort 2) that ChirpStack can't, and times Chir
       | python3 network/chirpstack_app.py --e2e-key <64 hex> [--sent vgw.log --csv results/chirpstack_delay_<tag>.csv]
     ... | python3 network/chirpstack_app.py --e2e-master-file <file>     # per-device keys from one master key
     python3 network/chirpstack_app.py --e2e-master-file <file> --derive <DevEUI>   # provisioning: a device's key
+    ... | python3 network/chirpstack_app.py ... --reply <fifo>   # the round trip: answer each uplink (see --reply)
     python3 network/chirpstack_app.py --selftest
 
 Input: mqtt_tls_timer's RAW lines ("<unix time> <topic> <payload hex>"), each payload one ChirpStack JSON event.
@@ -17,8 +18,13 @@ application holds (--e2e-master-file, 64 hex): key = HKDF-SHA-256(master, "IoT-P
 from the event. Each device is provisioned with its own key only (--derive prints it), so one device's key exposes no
 other's, and ChirpStack never holds any of them. --sent: the virtual gateway's output on the same machine (same clock): delay = event received -
 frame sent, per DevAddr and FCnt = ChirpStack's de-duplication wait + its processing + the MQTT hops on the way.
+--reply: answer each uplink that opens with a downlink, FPort 1, "ack <FCnt>": a ChirpStack command written as a
+"pub <topic> <payload>" line to a FIFO that mqtt_tls_timer's relay mode (PUB=) publishes on its own mTLS session (the
+application certificate). ChirpStack sends it in the uplink's RX1 window, and the device times the round trip. With
+--sent the virtual gateway's "downlink" lines give the legs at the Pi: gateway -> application, the application's own
+time, application -> gateway.
 """
-import argparse, base64, csv, hashlib, hmac, json, os, statistics, subprocess, sys
+import argparse, base64, csv, hashlib, hmac, json, os, statistics, subprocess, sys, time
 
 OSSL = os.environ.get("OSSL", "openssl")
 E2E_LABEL = b"IoT-PQC lorawan11_e2e v1"
@@ -96,6 +102,38 @@ class SentLog:
         return self.at.get((da, fcnt & 0xFFFF))  # the frame carries FCnt's low 16 bits
 
 
+def reply_line(ev, fcnt):
+    """--reply: the answer to one uplink event, a ChirpStack downlink command on FPort 1 reading "ack <FCnt>", as
+    mqtt_tls_timer's relay mode takes it"""
+    info = ev.get("deviceInfo", {})
+    eui = info.get("devEui", "")
+    cmd = {"devEui": eui, "confirmed": False, "fPort": 1, "data": base64.b64encode(f"ack {fcnt}".encode()).decode()}
+    return f"pub application/{info.get('applicationId', '')}/device/{eui}/command/down {json.dumps(cmd, separators=(',', ':'))}\n"
+
+
+def downlinks(path):
+    """the virtual gateway's "downlink <time> ... <frame hex>" lines -> [(time, DevAddr as ChirpStack shows it)]"""
+    out = []
+    for ln in open(path):
+        w = ln.split()
+        if len(w) >= 3 and w[0] == "downlink":
+            f = bytes.fromhex(w[-1])
+            out.append((float(w[1]), f[4:0:-1].hex()))
+    return out
+
+
+def legs(rows, downs):
+    """down_s = the first downlink to the row's DevAddr after its reply; -> the median legs at the Pi (ms), or None"""
+    for r in rows:
+        r["down_s"] = next((t for t, da in downs if da == r["devaddr"] and r.get("reply_s") and t >= r["reply_s"]), None)
+    ok = [r for r in rows if r["down_s"] and r["sent_s"]]
+    if not ok:
+        return None
+    med = lambda f: statistics.median(f(r) for r in ok)
+    return len(ok), med(lambda r: r["delay_ms"]), med(lambda r: (r["reply_s"] - r["recv_s"]) * 1e3), \
+        med(lambda r: (r["down_s"] - r["reply_s"]) * 1e3)
+
+
 def summary(rows):
     d = sorted(r["delay_ms"] for r in rows if r.get("delay_ms") is not None)
     if not d:
@@ -127,6 +165,14 @@ def selftest():
     assert len(device_key(m, "e2af8c50008974f8")) == 32
     assert summary([{"delay_ms": 210.0}, {"delay_ms": 230.0}, {"delay_ms": None}]).startswith(
         "ChirpStack delay over 2 frames: median 220.0 ms")
+    ev = {"deviceInfo": {"applicationId": "a1", "devEui": "e2af8c50008974f8"}}
+    topic, cmd = reply_line(ev, 878).split()[1:]
+    assert topic == "application/a1/device/e2af8c50008974f8/command/down"
+    assert base64.b64decode(json.loads(cmd)["data"]) == b"ack 878" and json.loads(cmd)["fPort"] == 1
+    rs = [dict(devaddr="01234568", sent_s=10.0, recv_s=10.25, delay_ms=250.0, reply_s=10.27),
+          dict(devaddr="01234568", sent_s=11.0, recv_s=11.25, delay_ms=250.0, reply_s=None)]
+    n, gw_app, app, back = legs(rs, [(9.0, "01234568"), (10.6, "01234568"), (10.7, "01234569")])
+    assert (n, round(gw_app), round(app), round(back)) == (1, 250, 20, 330) and rs[1]["down_s"] is None
     print("chirpstack_app selftest OK")
 
 
@@ -137,6 +183,7 @@ def main():
     ap.add_argument("--derive", metavar="DEVEUI", help="with --e2e-master-file: print that device's key (64 hex), exit")
     ap.add_argument("--sent", help="the virtual gateway's output (same machine): per-frame delay")
     ap.add_argument("--csv", help="write devaddr,fcnt,fport,sent_s,recv_s,delay_ms,reading rows here")
+    ap.add_argument("--reply", metavar="FIFO", help="answer each uplink: downlink commands for mqtt_tls_timer PUB= mode")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
     if a.selftest:
@@ -153,6 +200,7 @@ def main():
         print(device_key(master, a.derive).hex())
         return
     sent, rows = SentLog(a.sent) if a.sent else None, []
+    reply = open(a.reply, "w", buffering=1) if a.reply else None  # waits here until the relay opens the FIFO
     try:
         for line in sys.stdin:
             w = line.split()
@@ -164,13 +212,24 @@ def main():
             da, fc, fp, text = reading(ev, dev_key)
             ts = sent.time_of(da, fc) if sent else None
             d = (t - ts) * 1e3 if ts is not None else None
-            rows.append(dict(devaddr=da, fcnt=fc, fport=fp, sent_s=ts, recv_s=t, delay_ms=d, reading=text))
+            row = dict(devaddr=da, fcnt=fc, fport=fp, sent_s=ts, recv_s=t, delay_ms=d, reading=text)
+            if reply:
+                ans = fp in (1, 2) and not text.startswith("REJECTED")
+                if ans:
+                    reply.write(reply_line(ev, fc))
+                row["reply_s"] = time.time() if ans else None
+            rows.append(row)
             print(f"recv {t:.6f} DevAddr {da} FCnt {fc} FPort {fp}" + (f" delay {d:.1f} ms" if d is not None else "")
                   + f"  {text}", flush=True)
     except KeyboardInterrupt:
         pass
     if sent:
         print(summary(rows))
+    if sent and reply:
+        lg = legs(rows, downlinks(a.sent))
+        print(f"Round trip at the Pi over {lg[0]} replies (medians): gateway -> application {lg[1]:.1f} ms, application "
+              f"{lg[2]:.1f} ms, application -> gateway {lg[3]:.1f} ms; the Pico's whole round trip: reply_us in its "
+              "results" if lg else "no reply reached the gateway (is the relay running? ChirpStack's get_downlink_data_delay?)")
     if a.csv and rows:
         with open(a.csv, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0]))

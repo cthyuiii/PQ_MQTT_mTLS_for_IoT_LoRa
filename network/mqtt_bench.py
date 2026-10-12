@@ -368,6 +368,13 @@ def summarize(common: dict, rows: list[dict], msgs: list[dict], wholes: list[dic
         air = [float(m["air_us"]) for m in msgs if m.get("air_us")]  # the Pico's UDP uplink to the air (ChirpStack runs)
         if air:
             out.update(**stats("air", air, "us"))
+        for k in ("seal_cyc", "open_cyc"):  # the Pico's CPU cycles (air-only ChirpStack firmware)
+            v = [float(m[k]) for m in msgs if m.get(k)]
+            if v:
+                out.update(**stats(k[:-4], v, "cyc"))
+        reply = [float(m["reply_us"]) / 1e3 for m in msgs if m.get("reply_us")]  # its round trip to the application
+        if reply:
+            out.update(**stats("reply", reply, "ms"), replies=len(reply))
     if wholes:
         out.update(**stats("whole_first", [float(w["first_ms"]) for w in wholes], "ms"),
                    **stats("whole_all", [float(w["all_ms"]) for w in wholes], "ms"))

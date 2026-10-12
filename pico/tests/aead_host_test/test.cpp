@@ -36,6 +36,21 @@ int main() {
                LA[k].name, d ? "down" : "up", len, same ? "yes" : "NO", rt ? "ok" : "FAIL", tamper ? "yes" : "NO");
       }
     }
+  {  // the round trip's reply (mqtt_tls_bench await_reply): a lorawan11 downlink "ack <n>" on FPort 1, opened under the
+     // lorawan11_e2e block's key setup with lw_fport switched to 1 (the same LoRaWAN keys); a changed byte is refused
+    int k11 = 0, ke = 0;
+    for (int k = 0; k < LA_N; k++) { if (!strcmp(LA[k].name, "lorawan11")) k11 = k; if (!strcmp(LA[k].name, "lorawan11_e2e")) ke = k; }
+    la_setup(k11); down = 1; memcpy(pt, "ack 878", 7); fcnt = 3; LA[k11].seal(7);  // as ChirpStack's downlink
+    app_aead_init("lorawan11"); app_aead_set_keys(k_app, k_nwk, k_nwk2, devaddr);
+    int same = app_seal(1, 4, pt, 7, ref) == HDR + 7 + 4 && !memcmp(ref, frame, HDR + 7 + 4);
+    la_setup(ke); down = 0; lw_fport = 1;
+    int ok = lw_open(7) == 0 && !memcmp(out, "ack 878", 7);
+    frame[HDR + 7] ^= 1; int tamper = lw_open(7) != 0; frame[HDR + 7] ^= 1;
+    lw_fport = 2;
+    bad |= !(same && ok && tamper);
+    printf("reply downlink under the e2e block's keys: frame == app_aead %s, opens %s, tamper rejected %s\n",
+           same ? "yes" : "NO", ok ? "yes" : "NO", tamper ? "yes" : "NO");
+  }
   printf("%s\n", bad ? "HOST TEST FAILED" : "all Pico pipeline crypto checks pass on the host");
   return bad;
 }

@@ -587,6 +587,13 @@ device (`AIR=1 DEV_ADDR=… APP_KEYS=… AEAD=… MSGS=n mqtt_tls_timer <gateway
   and `chirpstack_app.py --e2e-master-file e2e_master` derives each device's key from the event's DevEUI
   (HKDF-SHA-256); `--derive <DevEUI>` prints one device's key for its `APP_KEYS` (hex 128-191) at provisioning.
   ChirpStack never holds it; `--e2e-key` (one key for every device) stays for tests.
+- The round trip (Pico → application → Pico): the application answers each uplink (`--reply <fifo>`, a ChirpStack
+  downlink "ack <FCnt>" on FPort 1) through a relay on its own mTLS session (`mkfifo /tmp/replies; PUB=- GROUP=X25519MLKEM768
+  network/mqtt_tls_timer 127.0.0.1 18835 1 0 $C/CA.crt $C/application.crt $C/application.key < /tmp/replies`), and the
+  Pico, built with `REPLY_WAIT_MS=2000`, waits after each uplink for it and verifies it (`reply_us`; uplinks at least
+  1.05 s apart). ChirpStack has to wait for the reply before the RX1 window: `get_downlink_data_delay="400ms"`
+  (`chirpstack_pq_setup.sh`). With `--sent` the application prints the legs at the Pi. The air-only rows also carry
+  `seal_cyc` / `open_cyc` (CPU cycles, `rp2040.getCycleCount()`).
 - `chirpstack_app.py` prints each reading with its delay (event received − frame sent, both on the Pi's clock) and
   a median / p95 at the end. ChirpStack's de-duplication wait (`deduplication_delay` under `[network]` in
   `chirpstack.toml`, default 200 ms) is most of it: measure at the default and at a low value.

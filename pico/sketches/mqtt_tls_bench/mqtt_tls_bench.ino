@@ -57,7 +57,10 @@
 //   with AIR=<host:port> in the environment each uplink also goes there as one UDP datagram (the "air", --air), after
 //   its message is timed; without it the gateway reads them from the broker (watch mode, RAW=1). With AIR the device
 //   makes no broker connection at all (MT_AIR_ONLY, mode "air"): it seals each reading, opens it again (its open cost)
-//   and sends it over the air, as a LoRa device does; mTLS starts at the gateway's link.
+//   and sends it over the air, as a LoRa device does; mTLS starts at the gateway's link. Its msg rows add seal / open
+//   in CPU cycles (rp2040.getCycleCount: SysTick, every core clock). REPLY_WAIT_MS=<ms> (-> MT_DOWN_WAIT_MS): the round
+//   trip, the device waiting after each uplink for the application's reply (chirpstack_app.py --reply: a downlink on
+//   FPort 1 reading "ack <FCnt>") that comes back through ChirpStack and the gateway, verified here (reply_us).
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -430,15 +433,45 @@ static bool lora_load() {  // true: keys, DevAddr and FCnt (= the saved reservat
 }
 #endif
 
-#if defined(MT_LORA_FIXED) && defined(AIR_HOST)
-static WiFiUDP air;  // the uplink as a radio would send it: one datagram to the virtual gateway
-#endif
-#if defined(MT_LORA_FIXED) && defined(AIR_HOST)
-#define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us"
-static const char *air_col(uint32_t us) { static char s[16]; snprintf(s, sizeof s, us ? ",%lu" : ",", (unsigned long)us); return s; }
+#ifdef MT_AIR_ONLY
+static WiFiUDP air;  // the uplink as a radio would send it: one datagram to the virtual gateway (and its downlinks back)
+#define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us,seal_cyc,open_cyc,reply_us"
+// the air columns: the UDP send, seal / open in CPU cycles, the round trip; air and reply empty when not measured
+static const char *air_col(uint32_t us, uint32_t seal_cyc, uint32_t open_cyc, uint32_t reply_us) {
+  static char s[64], a[12], r[12];
+  a[0] = r[0] = 0;
+  if (us) snprintf(a, sizeof a, "%lu", (unsigned long)us);
+  if (reply_us) snprintf(r, sizeof r, "%lu", (unsigned long)reply_us);
+  snprintf(s, sizeof s, ",%s,%lu,%lu,%s", a, (unsigned long)seal_cyc, (unsigned long)open_cyc, r);
+  return s;
+}
 #else
 #define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B"
-static const char *air_col(uint32_t) { return ""; }
+static const char *air_col(uint32_t, uint32_t, uint32_t, uint32_t) { return ""; }
+#endif
+#ifdef MT_DOWN_WAIT_MS
+#ifndef MT_AIR_GAP_MS
+#define MT_AIR_GAP_MS 1050  // uplinks this far apart: virtual_gateway.py's --gap (1 s) + 50 ms, so none waits in its queue
+#endif
+static uint32_t last_up;  // millis() of the last uplink sent
+// the application's reply to uplink `up`: a LoRaWAN 1.1 downlink on FPort 1 reading "ack <up>", back over the air.
+// -> us from t_sent to the reply verified (MIC with SNwkSIntKey, decrypted with the AppSKey), 0 if none in time.
+// ponytail: no AFCntDown check, so a replayed downlink isn't refused; add it when downlinks carry commands
+static uint32_t await_reply(uint32_t t_sent, uint32_t up) {
+  char want[16];
+  int wl = snprintf(want, sizeof want, "ack %lu", (unsigned long)up), fp = lw_fport;
+  while (micros() - t_sent < MT_DOWN_WAIT_MS * 1000u) {
+    rp2040.wdt_reset();
+    if (air.parsePacket() <= 0) continue;
+    int n = air.read(frame, sizeof frame);
+    if (n != HDR + wl + 4 || frame[0] != 0x60 || (frame[5] & 0x0F)) continue;  // unconfirmed down, no FOpts, our size
+    lw_fport = 1;  // the reply is lorawan11 on FPort 1, also in the lorawan11_e2e blocks (same LoRaWAN keys)
+    bool ok = lw_open(wl) == 0 && !memcmp(out, want, wl);
+    lw_fport = fp;
+    if (ok) return micros() - t_sent;
+  }
+  return 0;
+}
 #endif
 // the pipeline: seal a reading with the block's scheme (lora_aead.h; the frame, FCnt and direction as the host's
 // app_seal), PUBLISH it, wait for the broker to deliver it back, then verify + decrypt it (app_open)
@@ -457,6 +490,10 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
 #endif
   for (int m = 0; m < msgs; m++) {
     char s[48];
+    uint32_t cyc_seal = 0, cyc_open = 0, reply_us = 0;
+#ifdef MT_DOWN_WAIT_MS
+    while (!down && millis() - last_up < MT_AIR_GAP_MS) { rp2040.wdt_reset(); delay(1); }
+#endif
     int sl = snprintf(s, sizeof s, "{\"seq\":%lu,\"temp_c\":21.5,\"rh\":48}", (unsigned long)(fcnt + 1));
     memset(pt, ' ', MT_PAYLOAD);
     memcpy(pt, s, sl < MT_PAYLOAD ? sl : MT_PAYLOAD);
@@ -468,12 +505,15 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
       save_us[nsaves++ % 16] = micros() - s0;
     }
 #endif
-    uint32_t t0 = micros();
+    uint32_t t0 = micros(), c0 = rp2040.getCycleCount();
     if (sc.seal(MT_PAYLOAD)) return "seal failed";
+    cyc_seal = rp2040.getCycleCount() - c0;
     uint32_t t1 = micros();
 #ifdef MT_AIR_ONLY  // no broker: the device opens its own frame (its open cost); the air send follows
     uint32_t tx0 = c->tx, rx0 = c->rx, t2 = t1;
+    c0 = rp2040.getCycleCount();
     bool ok = sc.open(MT_PAYLOAD) == 0 && !memcmp(out, pt, MT_PAYLOAD);
+    cyc_open = rp2040.getCycleCount() - c0;
 #else
     int h = 0;
     pkt[h++] = 0x30; h += put_len(pkt + h, 2 + tl + fl);
@@ -495,14 +535,17 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     if (!ok) { snprintf(err, sizeof err, "payload verification failed: %s", sc.name); return err; }
     if (m == 0) first = micros() - t_conn;  // the 'whole' row: before the air send
     uint32_t air_us = 0;  // the uplink to the air, timed apart from seal / round trip / open: Wi-Fi UDP, not LoRa airtime
-#if defined(MT_LORA_FIXED) && defined(AIR_HOST)
+#ifdef MT_AIR_ONLY
     uint32_t t4 = micros();
     if (!down && air.beginPacket(AIR_HOST, AIR_PORT)) { air.write(frame, fl); air.endPacket(); air_us = micros() - t4; }
+#ifdef MT_DOWN_WAIT_MS
+    if (!down) { last_up = millis(); reply_us = await_reply(t4, fcnt); }  // fcnt: this uplink's (seal counted it)
+#endif
 #endif
     STEP(S_SERIAL);
     if (report) Serial.printf("msg,%d,%d,%lu,%lu,%lu,%lu,%lu%s\n", iter, m, (unsigned long)(t1 - t0),
-                              (unsigned long)(t2 - t1), (unsigned long)(t3 - t2),
-                              (unsigned long)(c->tx - tx0), (unsigned long)(c->rx - rx0), air_col(air_us));
+                              (unsigned long)(t2 - t1), (unsigned long)(t3 - t2), (unsigned long)(c->tx - tx0),
+                              (unsigned long)(c->rx - rx0), air_col(air_us, cyc_seal, cyc_open, reply_us));
   }
   if (report && msgs > 0)
     Serial.printf("whole,%d,%.3f,%.3f,%d\n", iter, first / 1e3, (micros() - t_conn) / 1e3, msgs);
@@ -978,6 +1021,9 @@ void setup() {
     for (int i = 0; i < 4; i++) devaddr[i] = rp2040.hwrand32();
 #endif
     rp2040.wdt_begin(8000);  // the RP2040's longest; reset per connection and inside every socket wait
+#ifdef MT_AIR_ONLY  // a fixed local port: the gateway sends downlinks back to where the uplinks came from
+    if (!air.begin(AIR_PORT)) Serial.println("#warn the air socket can't bind its port: no downlinks");
+#endif
     snprintf(topic, sizeof topic, "pqc/pipe/pico-%02x%02x%02x%02x", devaddr[0], devaddr[1], devaddr[2], devaddr[3]);
     for (cur_block = first; cur_block < N_BLOCKS; cur_block++) {
       watchdog_hw->scratch[0] = cur_block; watchdog_hw->scratch[1] = RESUME_MAGIC; STEP(S_SETUP);

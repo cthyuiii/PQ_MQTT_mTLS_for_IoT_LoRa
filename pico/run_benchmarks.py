@@ -321,6 +321,11 @@ def mqtt_secrets(sig, gen, lora=False):
             if not (host and port.isdigit()):
                 return "BAD_AIR: AIR=<gateway ip>:<port>, e.g. 192.168.50.132:1680"
             out += [f"#define AIR_HOST {json.dumps(host)}", f"#define AIR_PORT {port}"]
+            wait = os.environ.get("REPLY_WAIT_MS", "")  # the round trip: after each uplink, wait for the application's reply
+            if wait:
+                if not wait.isdigit():
+                    return "BAD_REPLY_WAIT_MS: milliseconds, e.g. 2000 (chirpstack_app.py --reply must be running)"
+                out.append(f"#define MT_DOWN_WAIT_MS {int(wait)}")
     for name, b in blobs:
         out.append(f"static const unsigned char {name}[] = {{{','.join(map(str, b))}}};")
     os.makedirs(gen, exist_ok=True)
