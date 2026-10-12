@@ -578,8 +578,9 @@ BROKER=<pi-ip> AIR=<pi-ip>:1680 APP_KEYS=$K DEV_ADDR=01234568 \
   python3 pico/run_benchmarks.py --test mqtt --match chirpstack --tag chirpstack                            # 4: the Pico
 ```
 
-The Pico runs its pipeline as usual (its own MQTT connections to the broker, timed) and sends every uplink to the air
-too; its device is registered in ChirpStack with DevAddr 01234568 and the keys above. A host can stand in for the
+With `AIR` the Pico makes no broker connection (mode `air`): per reading it seals, opens (its own cost) and sends the
+frame over the air, 15 messages a block (60 uplinks a run). In this chain the device has no TLS; mTLS starts at the
+gateway's link; its device is registered in ChirpStack with DevAddr 01234568 and the keys above. A host can stand in for the
 device (`AIR=1 DEV_ADDR=… APP_KEYS=… AEAD=… MSGS=n mqtt_tls_timer <gateway> 1680 1 0`; `AIR_LISTEN=<s>` for downlinks).
 
 - End-to-end keys per device: the application keeps one master key (`openssl rand -hex 32 > e2e_master; chmod 600`)

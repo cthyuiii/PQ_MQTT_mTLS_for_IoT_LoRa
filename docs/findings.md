@@ -1609,7 +1609,7 @@ Pico W's pipeline; no run of the new form yet)
        frame (FCnt 908) doesn't. The derived key on the Pico is shown by the first derived-key run (10 FPort 2
        readings opened by the master-key application, none rejected); the ACL doesn't depend on the payload key.
 
-121. [Mac; the Pi and the Pico to run] **The broker refuses revoked devices, and every MIC / tag check is
+121. [Mac, Pi, Pico W] **The broker refuses revoked devices, and every MIC / tag check is
      constant-time (12 Oct, branch `LoRa_1.1_implementation`).**
      - **The broker's CRL:** `gen_certs.sh --client-crl` gives certs/MLDSA44 the client CA's CRL (`ClientCA.crl`,
        ML-DSA-44, valid a year) and `client_revoked.crt` (CN pqc-client, serial 5EED, for `client.key`); `openssl
@@ -1627,8 +1627,17 @@ Pico W's pipeline; no run of the new form yet)
        BearSSL's GCM / CCM already do. The application (`chirpstack_app.py`) compared the tag with `!=`; now
        `hmac.compare_digest`. Tested: `aead_host_test` 88 / 88 frames identical to the host's, round trips OK, tampered
        frames rejected, including a new case with only the MIC / tag's last byte wrong; `chirpstack_app.py --selftest`
-       OK; the ChirpStack firmware compiles (654,156 B flash, 93,456 B static RAM). Not yet: the board run, and a
-       timing test on the board (dudect-style).
+       OK; the ChirpStack firmware compiles (654,156 B flash, 93,456 B static RAM).
+     - **The board run** (12 Oct, Pico W through ChirpStack, run tag `chirpstack_121`): the constant-time firmware on
+       its derived end-to-end key, with the Pi broker's ACL on, the first run with both together. 60 uplinks reached
+       the application; ChirpStack's delay median 234.4 ms, p95 276.1 ms, min 223.0, max 348.4 (final run 233.1 ms,
+       120). In ChirpStack's frame log the last ten FPort 2 frames (FCnt 869-878) open with the derived key and not
+       with the shared test key. Seal / open medians stay within 6 µs of the final run's (open, plain / TLS / mTLS:
+       `lorawan11` 752 / 835 / 842 µs against 757 / 836 / 840; `lorawan11_e2e` 1,201 / 1,283 / 1,283 against
+       1,201 / 1,277 / 1,277), so the four-byte constant-time compare costs nothing measurable. The Pi's broker ran with
+       `BROKER_CRL=1` (`crlfile` in its config): ChirpStack's and the application's certificates passed the CRL, and
+       no frame was rejected (0 `REJECTED` rows). Not yet: a timing test on the board (dudect-style); the revoked
+       certificate refused by the Pi's broker (shown on the Mac) and the CRL's cost on the Pi 4.
 
 122. [Mac] **The fixed-point Falcon prototype (fxp-falcon-py) can't run on the Pico W; it is a model for a C port
      (12 Oct).**
@@ -1651,9 +1660,43 @@ Pico W's pipeline; no run of the new form yet)
        of work as the integer emulation of binary64 that the Pico's Falcon does now (89), so a large speed-up isn't
        expected; the gains are one KAT-testable result (NIST's FN-DSA plan [39]) and a path to constant-time code. The
        Pico 2 W's Cortex-M33 (32 × 32 → 64 multiply) suits it better.
-     - **In the LoRa 1.1 testbed it changes no number:** the device signs nothing with Falcon there (its mTLS
-       certificate is ML-DSA-44; over the air LoRaWAN uses AES only), and Falcon verification is integer-only
+     - **In the LoRa 1.1 testbed it changes no number:** the device signs nothing there (it has no TLS in that
+       chain, 123; over the air LoRaWAN uses AES only), and Falcon verification is integer-only
        already (89). KIV until liboqs or wolfSSL ship a fixed-point FN-DSA (FIPS 206 isn't final).
+
+123. [Mac, Pi] **Where TLS runs in the ChirpStack chain, what stays plain, and two plain doors found open on the Mac
+     (12 Oct).**
+     - **The device has no TLS:** LoRaWAN carries no IP or TCP, and the Pico's ML-DSA-44 mTLS handshake (7,890 B up,
+       7,950 B down) would be about 311 frames at DR0, some 14.5 min on air (a day where a 1 % duty cycle applies).
+       Its frames are protected by LoRaWAN 1.1 (MIC, AES-128) and the `lorawan11_e2e` layer (AES-256 + tag). The
+       ChirpStack firmware (`-DMT_LORA_FIXED` with `AIR`) now makes no broker connection at all, so nothing but the
+       radio hop is outside TLS: mode `air`, per reading seal, open (the device's cost) and the air send; 15 messages
+       a block, 60 uplinks a run as before (compiles: 651,628 B flash; the standard MQTT firmware still compiles,
+       650,244 B). Its earlier TLS / mTLS figures (Stage 2) belong to a device that speaks MQTT itself.
+     - **mTLS from the gateway on**, all TLS 1.3, X25519MLKEM768 only, ML-DSA-44 certificates on both sides, each
+       link set up once: #1 the gateway's stunnel (`gateway.crt`) → ChirpStack's Mosquitto :8883 (backend CA);
+       #2 ChirpStack's stunnel (`chirpstack.crt`, broker pinned) → the Pi's broker :18835; #3 the application
+       (`application.crt`) → the Pi's broker. Per handshake each side signs once and verifies twice (the peer's
+       certificate and CertificateVerify); the broker verifies the CRL too (121). So the chain's six signatures are
+       made by the gateway's stunnel, ChirpStack's Mosquitto, ChirpStack's stunnel, the application and the broker
+       (once per link), when the links connect, not per frame: ML-DSA-44 signing takes 2.13 ms on the Pi 4 and
+       0.29 ms on the Mac (OpenSSL, Stage 1 medians), against 139 ms on the Pico W. The CAs sign offline, on the Mac
+       (certificates; the client CA's CRL). Per frame there are only symmetric checks: the LoRaWAN MIC (device →
+       ChirpStack), the e2e tag (device → application) and each link's AES-256-GCM records.
+     - **stunnel is a TLS proxy:** ChirpStack (rustls with ring) and the Gateway Bridge (Go) can't do ML-DSA, nor
+       ChirpStack ML-KEM (117), so each speaks plain MQTT to a stunnel next to it, which carries it over PQ mTLS.
+       The plain legs never leave their machine: the Pi's virtual gateway → Bridge (UDP 127.0.0.1:1700) → stunnel
+       (127.0.0.1:18883); on the Mac, Mosquitto ↔ ChirpStack ↔ `chirpstack-app-proxy` inside the compose network
+       (the proxy publishes no port) and Mosquitto's 127.0.0.1:1884 for local tools. A quantum attacker recording
+       the network sees only the PQ links; reading a plain leg takes access to the machine, where the keys are too,
+       so TLS on it would add nothing. Even there the payload stays sealed: the LoRaWAN frame (gateway → ChirpStack),
+       the AES-256 layer and tag (ChirpStack → application); DevEUI, FCnt and radio metadata are in clear.
+     - **Found open on the Mac:** chirpstack-docker's stock Gateway Bridges (UDP 1700 and Basics Station TCP 3001)
+       were running, listening on every interface and publishing into Mosquitto's plain listener: a classical,
+       unauthenticated way into ChirpStack from the LAN, past the PQ listener (forged frames would still need a valid
+       MIC). `chirpstack_pq_setup.sh` now puts both under a `stock` profile, so `docker compose up -d` leaves them
+       off (checked with `docker compose config`); the running two are to be stopped. Also plain on the LAN:
+       ChirpStack's UI / API (:8080) and REST API (:8090), HTTP (hardening row).
 
 ### Sources
 
@@ -1718,10 +1761,11 @@ All links checked on 28 Sep 2026.
 
 ## In progress
 
-- **ChirpStack as the network server** (branch `LoRa_1.1_implementation`): done, findings 115-120 (steps in
-  [pending.md](pending.md)). Optional: one Pico run with the derived end-to-end key and the broker's ACL together.
-- **Built, to run on the Pi and the Pico (121):** the broker's CRL for device certificates (`BROKER_CRL=1`; tested on
-  the Mac) and the constant-time MIC / tag compares (host test, compiled): one Pico run through ChirpStack with both.
+- **ChirpStack as the network server** (branch `LoRa_1.1_implementation`): done, findings 115-121 (steps in
+  [pending.md](pending.md)); the derived key and the ACL together in one Pico run (121).
+- **The broker's CRL (121):** on at the Pi's broker; left: the revoked certificate refused there (one command) and its
+  cost per handshake on the Pi 4.
+- **On the Mac (123):** stop the stock Gateway Bridges; the next Pico run uses the plain-only firmware.
 
 ## Future implementations (KIV)
 
@@ -1748,14 +1792,15 @@ the ChirpStack backend's PQ TLS on both sides, the broker's per-role identities 
 | Key / seed storage | Private key (PKCS#8) and the Wi-Fi password in flash, unencrypted; LoRaWAN keys, FCnt, trust anchor in LittleFS, plain | RP2040 flash is readable over USB BOOTSEL / SWD; no OTP, secure boot or flash encryption | Keep 32 / 64 B seeds (ML-DSA / ML-KEM) and re-derive at boot; seeds in RP2350 OTP or a secure element; LittleFS encrypted under an OTP-derived key | Wi-Fi password and keys only in the generated build header, committed files checked for `WIFI_PASS` / `WIFI_SSID` before pushes; FCnt reserved ahead in LittleFS, so a reboot never reuses a counter (finding 109) | not started |
 | Boot and debug | RP2040: no secure boot, SWD always on | A changed image or a debugger reads / alters keys | RP2350 secure boot (signed images, boot key in OTP), debug locked via OTP; it raises the cost (the RP2350 hacking challenge was won by fault injection), a secure element for high-value keys | Options identified: RP2350 secure boot + OTP debug lock; ESP32 Secure Boot v2 + flash encryption (planned port, 9 Oct) | not started (pending Pico 2 W) |
 | Randomness | `pico_rand` (128-bit software PRNG, ring oscillator + timer entropy) used directly as wolfSSL's RNG (`CUSTOM_RAND_GENERATE_BLOCK`); liboqs the same | ML-KEM / X25519 keys, TLS randoms and the ML-DSA hedge rest on it; no health tests | wolfSSL's Hash_DRBG (SP 800-90A) seeded from the hardware (`CUSTOM_RAND_GENERATE_SEED`, SP 800-90B seed tests); RP2350 TRNG; liboqs through the same DRBG | RNG path traced in the 8 Oct review; SNOVA's liboqs calls draw from wolfSSL's RNG (`wb_snova.c`), not a second source | not started |
-| Constant-time code | wolfSSL ECC / RSA timing resistance on; BearSSL `br_aes_ct` for LoRaWAN AES; MIC / tag checks constant-time on the Pico (`ct_differ`, `lora_aead.h`), the host (`CRYPTO_memcmp`) and the application (`hmac.compare_digest`) | Timing of a MIC check leaks how many bytes matched (a forgery aid for frames from the air) | Constant-time compare on the Pico; check with a timing test (dudect-style) | `TFM_TIMING_RESISTANT`, `ECC_TIMING_RESISTANT`, `WC_RSA_BLINDING` set (`wolfssl_user_settings.h`); constant-time AES (`br_aes_ct`) for LoRaWAN; host MIC check constant-time; the Pico's and the application's compares made constant-time (121: host test 88 / 88 incl. a last-byte case; firmware compiles) | compare done; board run and timing test pending |
+| Constant-time code | wolfSSL ECC / RSA timing resistance on; BearSSL `br_aes_ct` for LoRaWAN AES; MIC / tag checks constant-time on the Pico (`ct_differ`, `lora_aead.h`), the host (`CRYPTO_memcmp`) and the application (`hmac.compare_digest`) | Timing of a MIC check leaks how many bytes matched (a forgery aid for frames from the air) | Constant-time compare on the Pico; check with a timing test (dudect-style) | `TFM_TIMING_RESISTANT`, `ECC_TIMING_RESISTANT`, `WC_RSA_BLINDING` set (`wolfssl_user_settings.h`); constant-time AES (`br_aes_ct`) for LoRaWAN; host MIC check constant-time; the Pico's and the application's compares made constant-time (121: host test 88 / 88 incl. a last-byte case; board run through ChirpStack, 60 uplinks, seal / open unchanged within 6 µs) | compare done (host, board); timing test pending |
 | Signing (side channels, faults) | ML-DSA hedged (wolfSSL draws 32 random bytes per signature); Falcon (float emulation) and SNOVA (memory-optimised) sign on the device in their runs | Falcon signing has published power / EM attacks; the SNOVA code is unprotected; a glitched lattice signature can leak the key | ML-DSA (hedged) for device signing, Falcon verify-only; verify-after-sign (+27 ms per ML-DSA-44 signature); masked code or a secure element where physical attacks matter | ML-DSA hedging confirmed in wolfSSL's code (8 Oct); the device's signing cost per mTLS handshake measured for every type (`hs_sign`: Falcon-512 1,001 ms, RSA-2048 973 ms, ML-DSA-44 139 ms) | hedging in place; rest not started |
 | Power / EM side channels | No masking or shuffling in any device code (wolfSSL, liboqs, BearSSL); ephemeral key exchange keys (one per handshake) | The long-term signing key (mTLS, signed KEM exchange) can be targeted with many traces; SNOVA and Falcon signing most of all | Masked implementations or a secure element for the signing key; fewer signatures (resumption); Falcon verify-only | Fresh key-exchange keys in every handshake (X25519MLKEM768); the long-term keys on the device listed (mTLS key, signed KEM exchange key) | not started |
-| Long-term key use | Full handshake on every connection (`NO_SESSION_CACHE`, no tickets) | Each connection signs with the device key: more exposure, and 3-12 s per SNOVA mTLS handshake | TLS 1.3 resumption with a fresh key exchange (`psk_dhe_ke`); protect the tickets | Signing cost per handshake measured for all 18 types, which sizes what resumption saves | not started |
+| Long-term key use | Full handshake on every connection (`NO_SESSION_CACHE`, no tickets) | Each connection signs with the device key: more exposure, and 3-12 s per SNOVA mTLS handshake | TLS 1.3 resumption with a fresh key exchange (`psk_dhe_ke`); protect the tickets | Signing cost per handshake measured for all 18 types, which sizes what resumption saves | KIV: the LoRa chain's TLS links stay connected, and a LoRaWAN device has no TLS |
 | Trust anchor at rest | Signed update verified when it arrives (finding 109), then the certificate is kept | A flash edit could swap the root on a device that boots from it | Keep the signed bundle; re-check its ML-DSA-44 signature at each boot (33 ms) | The update is verified (ML-DSA-44, 33 ms) before it is stored; refused under the old root, then reconnected under the new one (Pico W 109, Pi 4 111) | not started |
-| Revocation | Device: the broker's certificate against its CA's CRL, for every certificate type (deployment runs: host OpenSSL + wolfSSL, the Pico); broker: device certificates against the client CA's CRL with `BROKER_CRL=1` (121) | A revoked device certificate is still accepted by the broker (without `BROKER_CRL=1`) | Mosquitto `crlfile` for ClientCA; short-lived device certificates (renewed through the CSR path) | A CRL per CA for all 9 types; revoked, expired and wrongly named broker certificates refused (Mac, Pico W, Pi 4: 54 / 54); CRL cost measured (Pico 8-98 ms per load; OpenSSL +0.19-1.28 ms per handshake); broker side: revoked device refused (TLS alert 44), +80 µs per handshake on the Mac (121) | device side done (112-114); broker side tested on the Mac, the Pi run pending |
+| Revocation | Device: the broker's certificate against its CA's CRL, for every certificate type (deployment runs: host OpenSSL + wolfSSL, the Pico); broker: device certificates against the client CA's CRL, on at the Pi (`BROKER_CRL=1`, 121) | A revoked device certificate is still accepted by the broker (without `BROKER_CRL=1`) | Mosquitto `crlfile` for ClientCA; short-lived device certificates (renewed through the CSR path) | A CRL per CA for all 9 types; revoked, expired and wrongly named broker certificates refused (Mac, Pico W, Pi 4: 54 / 54); CRL cost measured (Pico 8-98 ms per load; OpenSSL +0.19-1.28 ms per handshake); broker side: revoked device refused (TLS alert 44), +80 µs per handshake on the Mac; on at the Pi's broker in the 12 Oct run, ChirpStack's and the application's certificates pass (121) | device side done (112-114); broker side on; the refusal on the Pi to check |
 | Trust-anchor update format | `PQTA` \| CA length \| CA \| ML-DSA-44 signature: no version, no expiry | An old signed update can be replayed: a rollback to an earlier (perhaps compromised) root | A version and an expiry inside the signed bytes; keep the highest version seen in flash / OTP and refuse lower ones | Signed format with a length field; a changed byte in the length, the CA or the signature is refused (`deploy_host_test`) | not started |
 | Update key | `certs/DEPLOY/update.key` made next to the CA, on the broker machine | Whoever holds it can install any root on every device | Keep it offline (HSM or an air-gapped machine), apart from the CA; a second key in firmware for recovery | A separate ML-DSA-44 update key, not the CA's; the device holds only its public half (`UPD_PUB`) | not started |
 | CA keys on every machine | Certificates are made on the Mac; `rsync certs/` to the Pi leaves out `CA.key`, `ClientCA.key`, `update.key` and the serials, and removes copies already there | The Mac still holds every CA key next to the certificates | CA keys offline (or in an HSM), the update key apart from the CA (update key row) | Nothing on the Pi needs the keys (120); README's rsync updated | in place once pushed with the new rsync |
+| ChirpStack's UI and API | UI / gRPC API on :8080 and REST API on :8090 over HTTP on all the Mac's interfaces | The admin password and API tokens cross the LAN in clear when used from another machine; anyone on the LAN reaches the login | Bind both to 127.0.0.1 (a browser on the Mac), or put them behind a TLS proxy as the MQTT links | Admin password changed, API secret random (120) | not started |
 | LoRaWAN keys and activation | ABP: DevAddr and LoRaWAN session keys set per device and in ChirpStack, static for the device's life (the test devices share public test patterns); end-to-end keys derived per device from an application master key (HKDF-SHA-256 over DevEUI), or one shared test key | Test LoRaWAN keys on a real device let anyone forge its frames at the LoRaWAN layer (the end-to-end layer still holds with derived keys); no rekeying | Per-device random LoRaWAN keys; OTAA (KIV) for fresh session keys; the master key offline / in an HSM next to the application | Derivation built and tested (RFC 5869 vector; live through ChirpStack: the derived key read, the old shared key rejected; the Pico on its derived key, 04:20 UTC run, 120); FCnt never reused (109, 116, 119) | end-to-end keys: done (`--e2e-master-file`); LoRaWAN keys: not started |
 

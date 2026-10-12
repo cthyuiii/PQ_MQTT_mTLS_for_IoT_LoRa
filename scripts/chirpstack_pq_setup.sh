@@ -138,6 +138,12 @@ services:
       - ./configuration/chirpstack-pq.toml:/etc/chirpstack/chirpstack.toml:ro
     depends_on:
       - chirpstack-app-proxy
+  # the stock bridges listen on the LAN (UDP 1700, Basics Station 3001) and feed Mosquitto in plain, past the PQ
+  # listener: off unless asked for (docker compose --profile stock up -d)
+  chirpstack-gateway-bridge:
+    profiles: [stock]
+  chirpstack-gateway-bridge-basicstation:
+    profiles: [stock]
 EOF
 echo "[+] $CS/docker-compose.override.yml (MQTT broker: $APP)"
 echo "next:  cd $CS && docker compose up -d --build --force-recreate --remove-orphans mosquitto chirpstack-app-proxy chirpstack"

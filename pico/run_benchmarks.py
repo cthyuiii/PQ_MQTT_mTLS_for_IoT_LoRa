@@ -166,9 +166,10 @@ SKETCHES = [
                             ("Falcon-512", "FALCON512", "FALCON512"), ("Falcon-1024", "FALCON1024", "FALCON1024"))],
     # one fixed LoRaWAN device for ChirpStack (branch LoRa_1.1_implementation, docs/pending.md step 7): APP_KEYS (192 hex)
     # and DEV_ADDR from the environment, FCnt in flash (LittleFS), lorawan11 + lorawan11_e2e, few messages (the virtual
-    # gateway hands ChirpStack one frame a second). Run it with its own --tag: its rows are not benchmark rows.
+    # gateway hands ChirpStack one frame a second). With AIR the device makes no broker connection (mode "air": seal,
+    # open, send over the air), as in the chain mTLS starts at the gateway. Run it with its own --tag: not benchmark rows.
     S("mqtt_tls_bench", "MQTT ChirpStack device ML-DSA-44 (wolfSSL)", 600, BOTH, 0,
-      flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_LORA_FIXED -DMT_NO_SWEEP -DMT_ITERS=5 -DMT_PIPE_ITERS=1 -DMT_MSGS=5 "
+      flags="-DWB_TLS -DWB_MLDSA44 -DMT_SIG=MLDSA44 -DMT_LORA_FIXED -DMT_NO_SWEEP -DMT_ITERS=5 -DMT_PIPE_ITERS=1 -DMT_MSGS=15 "
             "-DMT_PAYLOAD=47"),  # 47 B + the e2e tag + MIC = 64 B: within DR0's 51-byte FRMPayload
     # --- liboqs 0.16 bare-metal (portable C): the same code the Pi/Mac run via oqs-provider and the host liboqs stage.
     #     One algorithm per firmware (-DLB_ALG=<liboqs id>); reports peak stack per op (painted big stack,
@@ -390,9 +391,9 @@ def save_mqtt(blocks, txt, family, sig, fqbn):
     for stage, stem, rawname in (("connect", "mqtt_mtls", "raw"), ("pipeline", "pipeline", "msgs_raw")):
         summary, raw = [], []
         for b in (b for b in blocks if b["stage"] == stage):
-            plain = b["mode"] == "plain"
+            plain = b["mode"] in ("plain", "air")  # air: the ChirpStack device, no broker connection (no TLS either)
             common = dict(Board=family, Library="none" if plain else "wolfSSL",
-                          Signature="(plain MQTT reference)" if plain else sig, Group="" if plain else "X25519MLKEM768",
+                          Signature={"plain": "(plain MQTT reference)", "air": "(none: LoRa air only)"}.get(b["mode"], sig), Group="" if plain else "X25519MLKEM768",
                           Mode=b["mode"], AEAD=b["aead"], Direction={"up": "uplink", "down": "downlink"}.get(b["dir"], ""),
                           TLS_suite=b["suite"],
                           status="OK" if not b["err"] else f"PARTIAL: {b['err']}" if b["rows"] else b["err"],

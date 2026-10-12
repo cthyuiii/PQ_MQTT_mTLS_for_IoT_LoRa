@@ -55,7 +55,9 @@
 //   FCnt is kept in flash as the deployment firmware's (reserved FCNT_GAP ahead), and the pipeline sends the frames
 //   ChirpStack accepts: lorawan11 and lorawan11_e2e. Uplinks reach ChirpStack through network/virtual_gateway.py:
 //   with AIR=<host:port> in the environment each uplink also goes there as one UDP datagram (the "air", --air), after
-//   its message is timed; without it the gateway reads them from the broker (watch mode, RAW=1).
+//   its message is timed; without it the gateway reads them from the broker (watch mode, RAW=1). With AIR the device
+//   makes no broker connection at all (MT_AIR_ONLY, mode "air"): it seals each reading, opens it again (its open cost)
+//   and sends it over the air, as a LoRa device does; mTLS starts at the gateway's link.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -143,7 +145,14 @@ static const Group GROUPS[] = {
   {"x448_mlkem768", WOLFSSL_X448MLKEM768},
   {"X25519", WOLFSSL_ECC_X25519}, {"secp256r1", WOLFSSL_ECC_SECP256R1}};
 enum { N_GROUPS = sizeof GROUPS / sizeof *GROUPS, G_STAGE2 = 3 };  // Stage 2 / pipeline: X25519MLKEM768
+#if defined(MT_LORA_FIXED) && defined(AIR_HOST)  // the ChirpStack device: no broker, its frames go over the air only
+#define MT_AIR_ONLY
+static const char *const MODES[] = {"air"};
+constexpr int NM = 1, NC = 0;  // modes; connect blocks
+#else
 static const char *const MODES[] = {"plain", "TLS", "mTLS"};
+constexpr int NM = 3, NC = 3;
+#endif
 #ifdef MT_DEPLOY  // the deployment blocks (see the header), on certs/DEPLOY
 enum { R_NAME, R_REVOKED, R_EXPIRED };      // refuse: what must be refused
 enum { K_768 = 1, K_HYB = 4, A_LW11 = 2 };  // KW[] and LA[] indices: ML-KEM-768, X25519MLKEM768, lorawan11
@@ -154,7 +163,7 @@ static const char *const REFUSE[] = {"wrong-name", "revoked", "expired"};
 #define FCNT_GAP 64  // FCnt reserved this far ahead in flash: one flash write per 64 frames
 #define WRONG_NAME "192.0.2.1"  // TEST-NET-1: never the broker
 #endif
-// connect x 3 modes, pipeline x 3 modes x the PIPE schemes x up / down, then sweep x TLS / mTLS x every group
+// connect x NM modes, pipeline x NM modes x the PIPE schemes x up / down, then sweep x TLS / mTLS x every group
 // the pipeline's schemes (LA[] indices): LoRaWAN 1.1, with AES-128, with 256-bit keys, and around an AES-256 layer
 // (mqtt_bench.AEADS_DEFAULT); -DMT_ALL_SCHEMES: all eleven; -DMT_LORA_FIXED: the two a network server accepts
 #ifdef MT_ALL_SCHEMES
@@ -172,9 +181,9 @@ enum { N_BLOCKS = 7 };     // DPLAN: connect and refuse
 #elif defined(MT_DEPLOY)
 enum { N_BLOCKS = 16 };    // DPLAN
 #elif defined(MT_NO_SWEEP)
-enum { N_BLOCKS = 3 + 3 * NP * 2 };
+enum { N_BLOCKS = NC + NM * NP * 2 };
 #else
-enum { N_BLOCKS = 3 + 3 * NP * 2 + 2 * N_GROUPS };
+enum { N_BLOCKS = NC + NM * NP * 2 + 2 * N_GROUPS };
 #endif
 static const uint32_t RESUME_MAGIC = 0x4D515454;  // watchdog scratch[1]: scratch[0] holds a valid block index
 static const uint32_t REBOOT_MAGIC = 0x46434E54;  // the same, after the deployment firmware's own reboot (fcnt)
@@ -298,10 +307,10 @@ static Block plan(int i) {  // connect; per mode every scheme, uplink then downl
 #ifdef MT_KEX_ONLY
   return {"kex", "plain", 1, 0, 0, -1, 0, i};  // group = the KEM (KW[i]); one connection, MT_KEX_ITERS exchanges
 #endif
-  if (i < 3) return {"connect", MODES[i], MT_ITERS, MT_WARMUP, 0, -1, 0, G_STAGE2};
-  i -= 3;
-  if (i < 3 * NP * 2) return {"pipeline", MODES[i / (2 * NP)], MT_PIPE_ITERS, 1, MT_MSGS, PIPE[i / 2 % NP], i % 2, G_STAGE2};
-  i -= 3 * NP * 2;
+  if (i < NC) return {"connect", MODES[i], MT_ITERS, MT_WARMUP, 0, -1, 0, G_STAGE2};
+  i -= NC;
+  if (i < NM * NP * 2) return {"pipeline", MODES[i / (2 * NP)], MT_PIPE_ITERS, 1, MT_MSGS, PIPE[i / 2 % NP], i % 2, G_STAGE2};
+  i -= NM * NP * 2;
   return {"sweep", MODES[1 + i / N_GROUPS], MT_SWEEP_ITERS, MT_SWEEP_WARMUP, 0, -1, 0, i % N_GROUPS};
 }
 static const char *label(const Block &b) {  // "connect TLS", "pipeline mTLS lorawan11 down", "sweep TLS MLKEM512"
@@ -442,8 +451,10 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
   const la_scheme &sc = LA[cur_aead];
   int tl = (int)strlen(topic), fl = HDR + MT_PAYLOAD + sc.tag;
   uint8_t type;
+#ifndef MT_AIR_ONLY
   STEP(S_SUB);
   if (!subscribe(c, topic)) return "mqtt subscribe failed: no SUBACK";
+#endif
   for (int m = 0; m < msgs; m++) {
     char s[48];
     int sl = snprintf(s, sizeof s, "{\"seq\":%lu,\"temp_c\":21.5,\"rh\":48}", (unsigned long)(fcnt + 1));
@@ -460,6 +471,10 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     uint32_t t0 = micros();
     if (sc.seal(MT_PAYLOAD)) return "seal failed";
     uint32_t t1 = micros();
+#ifdef MT_AIR_ONLY  // no broker: the device opens its own frame (its open cost); the air send follows
+    uint32_t tx0 = c->tx, rx0 = c->rx, t2 = t1;
+    bool ok = sc.open(MT_PAYLOAD) == 0 && !memcmp(out, pt, MT_PAYLOAD);
+#else
     int h = 0;
     pkt[h++] = 0x30; h += put_len(pkt + h, 2 + tl + fl);
     pkt[h++] = tl >> 8; pkt[h++] = tl & 0xFF;
@@ -475,6 +490,7 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     int off = 2 + (body[0] << 8 | body[1]);
     bool ok = len - off == fl;
     if (ok) { memcpy(frame, body + off, fl); ok = sc.open(MT_PAYLOAD) == 0 && !memcmp(out, pt, MT_PAYLOAD); }
+#endif
     uint32_t t3 = micros();
     if (!ok) { snprintf(err, sizeof err, "payload verification failed: %s", sc.name); return err; }
     if (m == 0) first = micros() - t_conn;  // the 'whole' row: before the air send
@@ -609,9 +625,11 @@ static const char *one_connection(WOLFSSL_CTX *ctx, uint16_t port, int iter, int
   const char *e = nullptr;
   uint32_t t0 = micros(), t1 = 0, t2 = 0, t3 = 0, hs_tx = 0, hs_rx = 0, hs_w = 0, hs_r = 0;
   do {
+#ifndef MT_AIR_ONLY  // air only: no connection; the row keeps the block's shape, with zero times and bytes
     STEP(S_TCP);
     if (!c.cl.connect(broker, port)) { e = "tcp connect failed (no listener?)"; break; }
     c.cl.setNoDelay(true);
+#endif
     t1 = micros();
     hs_reset();
     if (ctx) {
@@ -635,6 +653,7 @@ static const char *one_connection(WOLFSSL_CTX *ctx, uint16_t port, int iter, int
 #endif
     hs_times_t hs = hs_t;  // before the MQTT CONNECT: only the handshake's crypto
     hs_tx = c.tx; hs_rx = c.rx; hs_w = c.io[0]; hs_r = c.io[1];
+#ifndef MT_AIR_ONLY
     uint8_t ack[4];
     int r = 0;
     STEP(S_MQTT);
@@ -644,6 +663,7 @@ static const char *one_connection(WOLFSSL_CTX *ctx, uint16_t port, int iter, int
     if (ack[0] != 0x20 || ack[3] != 0) {
       snprintf(err, sizeof err, "mqtt connect refused: CONNACK return code %d", ack[3]); e = err; break;
     }
+#endif
     t3 = micros();
     STEP(S_SERIAL);
     if (iter == 0 && c.tls) Serial.printf("#suite %s\n", wolfSSL_get_cipher_name(c.tls));
@@ -660,7 +680,9 @@ static const char *one_connection(WOLFSSL_CTX *ctx, uint16_t port, int iter, int
     if (!e && conn_hook) e = conn_hook(&c);
 #endif
     STEP(S_TLSCLOSE);
+#ifndef MT_AIR_ONLY
     if (!e) io_write(&c, disconnect_pkt, sizeof disconnect_pkt);
+#endif
   } while (0);
   STEP(S_TLSCLOSE);
   if (c.tls) { if (!e) wolfSSL_shutdown(c.tls); wolfSSL_free(c.tls); }
@@ -792,7 +814,7 @@ static void fcnt_report(const Block &b, uint32_t start) {
 static void bench_block(const Block &b) {
   const char *mode = b.mode;
   int iters = b.iters, warm = b.warm, msgs = b.msgs;
-  bool tls = strcmp(mode, "plain") && strcmp(mode, "signed"), mtls = !strncmp(mode, "mTLS", 4), crl = false;
+  bool tls = strcmp(mode, "plain") && strcmp(mode, "signed") && strcmp(mode, "air"), mtls = !strncmp(mode, "mTLS", 4), crl = false;
   cur_kem = !strcmp(b.stage, "kex") ? b.group : -1;
   uint16_t port = !tls ? PORT_PLAIN : mtls ? PORT_MTLS : PORT_TLS;
   const char *e = nullptr;
@@ -821,7 +843,7 @@ static void bench_block(const Block &b) {
     if (!kat_ok && cur_aead) e = "LoRaWAN / AES / Ascon known-answer check failed on this board: not sending";
   }
   if (tls && !e) ctx = new_ctx(CA_DER, sizeof CA_DER, mtls, crl, &e);
-  Serial.printf("#lib %s\n", tls ? "wolfSSL " LIBWOLFSSL_VERSION_STRING : "none (plain MQTT)");
+  Serial.printf("#lib %s\n", tls ? "wolfSSL " LIBWOLFSSL_VERSION_STRING : strcmp(mode, "air") ? "none (plain MQTT)" : "none (LoRa air only)");
   Serial.println("iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B,hs_writes,hs_reads,writes,reads,"
                  "free_heap_B," HS_COLS);
   if (msgs > 0) Serial.println(MSG_HDR "\nwhole,iter,first_ms,all_ms,msgs");
