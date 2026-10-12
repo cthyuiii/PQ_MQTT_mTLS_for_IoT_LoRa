@@ -213,6 +213,8 @@ ACL_MTLS = ("user pqc-client\ntopic readwrite pqc/#\n"
             "user chirpstack\ntopic write application/+/device/+/event/#\ntopic read application/+/device/+/command/#\n"
             "user application\ntopic read application/+/device/+/event/#\ntopic write application/+/device/+/command/#\n")
 ACL_TLS = "topic readwrite pqc/#\n"
+# BROKER_CRL=1: the mTLS listeners also check each client certificate against its CA's CRL (Mosquitto crlfile;
+# certs/<set>/ClientCA.crl from gen_certs.sh --client-crl), so a revoked device is refused at the handshake
 
 
 def start_brokers(args, tmp: Path, bind: str):
@@ -227,6 +229,7 @@ def start_brokers(args, tmp: Path, bind: str):
         (tmp / "acl_mtls").write_text(ACL_MTLS)
         (tmp / "acl_tls").write_text(ACL_TLS)
     acl_file = lambda f: [f"acl_file {tmp / f}"] if acl else []
+    crl = os.environ.get("BROKER_CRL", "") not in ("", "0")
 
     def launch(name, port, extra):
         conf = tmp / f"{name}.conf"
@@ -258,6 +261,7 @@ def start_brokers(args, tmp: Path, bind: str):
         err = launch(sig, port_of(args.base_port, sig), [
             "allow_anonymous false", "require_certificate true", "use_identity_as_username true", *tls,
             *acl_file("acl_mtls"),
+            *([f"crlfile {d}/ClientCA.crl"] if crl and (src / "ClientCA.crl").exists() else []),
             f"listener {port_of(args.base_port, sig, 'TLS')} {bind}".rstrip(),   # server-auth TLS
             "allow_anonymous true", "require_certificate false", *tls, *acl_file("acl_tls")])
         if err:
@@ -672,6 +676,8 @@ def main():
             print(f"[broker] plain MQTT on :{args.base_port}; per signature mTLS / TLS listeners "
                   f"(groups {', '.join(dict.fromkeys([args.group, *SWEEP_GROUPS]))})"
                   + ("; ACL per client certificate (BROKER_ACL)" if os.environ.get("BROKER_ACL", "") not in ("", "0") else "")
+                  + ("; device certificates checked against ClientCA.crl where the set has one (BROKER_CRL)"
+                     if os.environ.get("BROKER_CRL", "") not in ("", "0") else "")
                   + ":")
             for sig in args.sigs:
                 print(f"  {sig:<21} :{port_of(args.base_port, sig)} / :{port_of(args.base_port, sig, 'TLS')}"

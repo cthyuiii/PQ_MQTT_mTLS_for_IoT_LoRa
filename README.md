@@ -518,6 +518,11 @@ device ─ "air" ─► gateway ─ stunnel ═PQ═► ChirpStack ─ stunnel �
   from the broker's client CA (certs/MLDSA44), next to the devices' `pqc-client`. With `BROKER_ACL=1` each sees only its
   own topics (`pqc/` for devices; events out of ChirpStack, commands into it), and the server-auth TLS listener's
   anonymous clients only `pqc/`: without the ACL they share the mTLS listener's topics (finding 120).
+- **Revoked devices:** `gen_certs.sh --client-crl` (on the Mac, which holds the client CA's key) adds the client CA's
+  CRL to certs/MLDSA44 (`ClientCA.crl`) and a revoked device certificate to test it with (`client_revoked.crt`, for
+  `client.key`). With `BROKER_CRL=1` each mTLS listener whose set has a `ClientCA.crl` checks every client certificate
+  against it (Mosquitto `crlfile`), so a revoked device is refused at the handshake (TLS alert 44, finding 121). The
+  CRL is valid a year; Mosquitto reads it at start, so restart the broker after a new one.
 - **stunnel** (`scripts/stunnel`, Alpine's OpenSSL 3.5) is a TLS proxy: the Gateway Bridge and ChirpStack speak plain
   MQTT to it on their own machine, and it speaks PQ TLS across the network; neither one's own TLS can (finding 117).
 - `scripts/chirpstack_pq_setup.sh` does the Mac side as a `docker-compose.override.yml` and new files (the compose
@@ -533,7 +538,7 @@ cd - && bash scripts/chirpstack_pq_setup.sh <mac-ip> <pi-ip>:18835   # certifica
 rsync -a ~/chirpstack-docker/configuration/pq/{ca.crt,gateway.crt,gateway.key} <pi-user>@<pi-ip>:chirpstack-pq/   # ON THE MAC
 
 # Pi, from the repo root: the MQTT broker (as for the Pico), the Gateway Bridge behind stunnel, the virtual gateway's check
-BROKER_ACL=1 ./run_all.sh --serve-broker                          # its own terminal; certs/ pushed from the Mac
+BROKER_ACL=1 BROKER_CRL=1 ./run_all.sh --serve-broker             # its own terminal; certs/ pushed from the Mac
 PQ=~/chirpstack-pq ./scripts/setup_gateway_pi.sh <mac-ip> as923
 python3 network/virtual_gateway.py --selftest
 ```
@@ -564,7 +569,7 @@ ChirpStack). On the Pi, four terminals or tmux panes:
 
 ```bash
 K=<192 hex>; E2E=${K:128:64}; C=certs/MLDSA44      # the device's keys; E2E = the application's AES-256 key
-BROKER_ACL=1 ./run_all.sh --serve-broker                                      # 1: the MQTT broker, per-role ACL
+BROKER_ACL=1 BROKER_CRL=1 ./run_all.sh --serve-broker                         # 1: the MQTT broker, ACL + CRL
 python3 -u network/virtual_gateway.py --air 0.0.0.0:1680 | tee vgw.log        # 2: the gateway
 RAW=1 SUB='application/+/device/+/event/up' GROUP=X25519MLKEM768 network/mqtt_tls_timer 127.0.0.1 18835 1 0 \
   $C/CA.crt $C/application.crt $C/application.key \

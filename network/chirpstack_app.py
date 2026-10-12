@@ -58,7 +58,7 @@ def e2e_open(key, devaddr_be, fcnt, data):
     kmac = ossl("enc", "-aes-256-ecb", "-nopad", "-K", key.hex(), data=bytes([2] + [0] * 15 + [3] + [0] * 15))
     mac = ossl("mac", "-cipher", "AES-256-CBC", "-macopt", f"hexkey:{kmac.hex()}", "CMAC",
                data=block(0x49, devaddr_be, fcnt, len(c)) + c).decode().strip()
-    if bytes.fromhex(mac)[:4] != tag:
+    if not hmac.compare_digest(bytes.fromhex(mac)[:4], tag):  # constant time
         return None
     return ctr(key, block(1, devaddr_be, fcnt, 1), c)
 

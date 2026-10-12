@@ -91,6 +91,13 @@ static br_aes_ct_ctrcbc_keys ccm_aes;
 static br_ccm_context ccm;
 static bool lw11, e2e;
 
+// MIC / tag check without an early exit (memcmp stops at the first wrong byte, so its time tells a forger how many
+// leading bytes were right); BearSSL's GCM / CCM and ascon-c already check their tags this way
+static bool ct_differ(const uint8_t *a, const uint8_t *b, int n) {
+  uint8_t d = 0;
+  while (n--) d |= *a++ ^ *b++;
+  return d != 0;
+}
 static void mic(int n, uint32_t fc, uint8_t m[4]) {  // over frame[0..n)
   uint8_t b0[16], f[16], s[16];
   block(b0, 0x49, fc, (uint8_t)n);
@@ -119,7 +126,7 @@ static int lw_open(int len) {
   uint8_t m[4];
   if (frame[8] != lw_fport) return -1;
   mic(HDR + len, fc, m);
-  if (memcmp(m, frame + HDR + len, 4)) return -1;
+  if (ct_differ(m, frame + HDR + len, 4)) return -1;
   memcpy(out, frame + HDR, len); lw_crypt(fc, out, len);
   return 0;
 }
@@ -137,10 +144,10 @@ static int e2e_open(int len) {
   uint8_t m[4], b[16], t[16];
   if (frame[8] != lw_fport) return -1;
   mic(HDR + len + 4, fc, m);
-  if (memcmp(m, frame + HDR + len + 4, 4)) return -1;
+  if (ct_differ(m, frame + HDR + len + 4, 4)) return -1;
   memcpy(out, frame + HDR, len + 4); ctr_crypt(&lw_ctr, fc, out, len + 4);
   block(b, 0x49, fc, (uint8_t)len); cmac(&cm_e2e, b, out, len, t);
-  if (memcmp(t, out + len, 4)) return -1;
+  if (ct_differ(t, out + len, 4)) return -1;
   ctr_crypt(&e2e_ctr, fc, out, len);
   return 0;
 }

@@ -100,6 +100,13 @@ gen() {
 # DEPLOY_SIGS picks the sets: DEPLOY (the default), DEPLOY_<SIG> for another certificate type, or "all" (DEPLOY and
 # the other 8: the same checks, each under its own CA and CRL):
 #   DEPLOY_SIGS=all ./scripts/gen_certs.sh --deploy <broker IP>...
+mkcrl() {  # mkcrl <CA> <serial (hex)> <CN>: <CA>.crl revoking that one serial, signed by <CA>.key, valid a year
+  printf 'R\t271231000000Z\t%s\t%s\tunknown\t/CN=%s\n' "$(date -u +%y%m%d%H%M%SZ)" "$2" "$3" > index.txt
+  echo 01 > crlnumber
+  printf '[ca]\ndefault_ca=c\n[c]\ndatabase=index.txt\ncrlnumber=crlnumber\ndefault_md=default\ndefault_crl_days=365\n' > ca.cnf
+  "$OSSL" ca $P -gencrl -config ca.cnf -keyfile "$1.key" -cert "$1.crt" -out "$1.crl" 2>/dev/null; local r=$?
+  rm -f index.txt* crlnumber* ca.cnf; return $r
+}
 DEPLOY_ALL="DEPLOY DEPLOY_RSA2048 DEPLOY_RSA3072 DEPLOY_ECDSAP256 DEPLOY_ED25519 DEPLOY_MLDSA65 DEPLOY_MLDSA87
             DEPLOY_FALCON512 DEPLOY_FALCON1024"
 gen_deploy() {  # gen_deploy <set> <provider flags> <genpkey args...>; DEPLOY_SAN = the server certificate's names
@@ -119,10 +126,7 @@ gen_deploy() {  # gen_deploy <set> <provider flags> <genpkey args...>; DEPLOY_SA
   issue client ClientCA pqc-client -CAcreateserial -days 365                               || return 1
   issue revoked CA localhost -set_serial 0x5EED -days 365                                  || return 1
   issue expired CA localhost -set_serial 0x0DD -not_before 20250101000000Z -not_after 20250102000000Z || return 1
-  printf 'R\t271231000000Z\t%s\t5EED\tunknown\t/CN=localhost\n' "$(date -u +%y%m%d%H%M%SZ)" > index.txt
-  echo 01 > crlnumber
-  printf '[ca]\ndefault_ca=c\n[c]\ndatabase=index.txt\ncrlnumber=crlnumber\ndefault_md=default\ndefault_crl_days=365\n' > ca.cnf
-  "$OSSL" ca $P -gencrl -config ca.cnf -keyfile CA.key -cert CA.crt -out CA.crl 2>/dev/null  || return 1
+  mkcrl CA 5EED localhost                                                                  || return 1
   if [ "$L" = DEPLOY ]; then  # the trust-anchor update: always ML-DSA-44, whatever the certificates are
     "$OSSL" genpkey -algorithm ML-DSA-44 -out update.key && "$OSSL" pkey -in update.key -pubout -outform DER | tail -c 1312 > update.pub
     "$OSSL" x509 -in CA.crt -outform DER -out CA.der
@@ -160,6 +164,30 @@ if [ "${1:-}" = --deploy ]; then
     case $L in *FALCON*) [ -n "$P" ] || { echo "[!] $L skipped: needs oqs-provider"; continue; } ;; esac
     gen_deploy "$L" "$P" $A || { echo "[!] $L failed (needs OpenSSL 3.5+)"; exit 1; }
     echo "[+] Done: $CERTS/$L"
+  done
+  exit 0
+fi
+
+# --- --client-crl [set]...: the broker's revocation list for device certificates (BROKER_CRL=1 in mqtt_bench.py) ----
+# For existing sets (default MLDSA44, the ChirpStack set-up's broker); nothing else in the set changes:
+#   client_revoked.crt   a second certificate for client.key (CN pqc-client, serial 5EED): the broker must refuse it
+#   ClientCA.crl         the client CA's CRL revoking it, valid a year; client, chirpstack and application still pass
+if [ "${1:-}" = --client-crl ]; then
+  shift
+  for L in "${@:-MLDSA44}"; do
+    P=""; case $L in FALCON*|*MAYO*|*SNOVA*) P=$OQS_PROV ;; esac
+    ( cd "$L" 2>/dev/null && [ -f ClientCA.key ] || { echo "[!] $L: no $CERTS/$L/ClientCA.key (it stays on the Mac)"; exit 1; }
+      "$OSSL" req $P -new -key client.key -subj /CN=pqc-client -out r.csr &&
+        "$OSSL" x509 $P -req -in r.csr -CA ClientCA.crt -CAkey ClientCA.key -set_serial 0x5EED -days 365 \
+          -extfile <(echo extendedKeyUsage=clientAuth) -out client_revoked.crt 2>/dev/null && rm r.csr &&
+        mkcrl ClientCA 5EED pqc-client || exit 1
+      "$OSSL" verify $P -crl_check -CAfile ClientCA.crt -CRLfile ClientCA.crl client_revoked.crt 2>&1 | grep -q "certificate revoked" ||
+        { echo "[!] $L: client_revoked.crt is not refused"; exit 1; }
+      for c in client chirpstack application; do
+        [ -f $c.crt ] || continue
+        "$OSSL" verify $P -crl_check -CAfile ClientCA.crt -CRLfile ClientCA.crl $c.crt >/dev/null || { echo "[!] $L: $c.crt refused"; exit 1; }
+      done
+      echo "[+] $L: ClientCA.crl revokes client_revoked.crt; the other client certificates pass" ) || exit 1
   done
   exit 0
 fi

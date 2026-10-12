@@ -29,6 +29,8 @@ int main() {
         int same = n == HDR + len + LA[k].tag && memcmp(ref, frame, n) == 0;
         int rt = LA[k].open(len) == 0 && memcmp(out, pt, len) == 0;
         frame[HDR] ^= 1; int tamper = k == 0 || LA[k].open(len) != 0; frame[HDR] ^= 1;  // "none" has nothing to check
+        int last = HDR + len + LA[k].tag - 1;  // only the MIC / tag's last byte wrong: the compare must reach it
+        frame[last] ^= 1; tamper = tamper && (k == 0 || LA[k].open(len) != 0); frame[last] ^= 1;
         bad |= !(same && rt && tamper);
         printf("%-13s %-4s %3d B: Pico frame == app_aead frame %s, round trip %s, tamper rejected %s\n",
                LA[k].name, d ? "down" : "up", len, same ? "yes" : "NO", rt ? "ok" : "FAIL", tamper ? "yes" : "NO");
