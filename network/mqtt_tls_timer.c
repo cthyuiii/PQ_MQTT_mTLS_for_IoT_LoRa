@@ -369,27 +369,20 @@ static uint32_t next_fcnt(void) {
  * connection's TCP connect started (ms): the 'whole' row */
 static void pipeline(conn_t *c, int iter, int msgs, int payload, const char *topic, int report, int down, double t_conn) {
     double first = 0;
-    static unsigned char pkt[2048], body[2048], pt[1024], out[1024 + 64];
-    int tl = (int)strlen(topic);
+    static unsigned char pkt[2048], body[2048], pt[1024], out[1024 + 64], frame[1024 + 64];
     unsigned char type;
     subscribe(c, topic);
     for (int m = 0; m < msgs; m++) {
         uint32_t fc = next_fcnt();
         reading(pt, payload, (int)fc);
         double t0 = now_us();
-        int fl = app_seal(down, fc, pt, payload, pkt + 16);  /* frame built in place */
+        int fl = app_seal(down, fc, pt, payload, frame);
         double t1 = now_us();
         if (fl < 0) die("payload too large for", app_aead_label());
-        unsigned char hdr[8];
-        int h = 0;
-        hdr[h++] = 0x30;
-        h += put_len(hdr + h, 2 + tl + fl);
-        hdr[h++] = tl >> 8; hdr[h++] = tl & 0xFF;
-        memmove(pkt + h + tl, pkt + 16, fl);            /* fixed header | topic | frame */
-        memcpy(pkt, hdr, h); memcpy(pkt + h, topic, tl);
+        int n = publish_packet(pkt, topic, frame, (size_t)fl);
         uint64_t tx0 = c->tx, rx0 = c->rx;
         int len;
-        if (io_write(c, pkt, h + tl + fl) != h + tl + fl) die("mqtt publish failed", "write");
+        if (io_write(c, pkt, n) != n) die("mqtt publish failed", "write");
         do len = read_packet(c, &type, body, sizeof body);  /* skip anything that isn't our PUBLISH */
         while (len >= 0 && (type & 0xF0) != 0x30);
         double t2 = now_us();

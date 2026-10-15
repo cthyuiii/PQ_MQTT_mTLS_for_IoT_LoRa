@@ -382,6 +382,11 @@ def mqtt_blocks(txt):
             best[k] = (n, b)
     return [b for _, b in best.values()]
 
+def run_meta(family, fqbn, **kw):
+    """a results/*_meta_<tag>.json: this board as the client of BROKER's brokers, + kw"""
+    return json.dumps(dict(board=family, fqbn=fqbn, role="client", broker=f"{os.environ['BROKER']}:{MQTT_BASE_PORT}",
+                           broker_local=False, **kw, started=time.strftime("%Y-%m-%dT%H:%M:%S%z")), indent=2)
+
 def save_mqtt(blocks, txt, family, sig, fqbn):
     """results/{mqtt_mtls,pipeline}_{summary,raw}_pico_<board>.csv + meta, in the host's columns (its summarize()),
     so collate_results.py reads them as a two-machine run. This signature's rows (and the plain reference)
@@ -417,14 +422,11 @@ def save_mqtt(blocks, txt, family, sig, fqbn):
         key = lambda r: (r["Library"], r["Signature"], r["Mode"], r.get("AEAD", ""), r.get("Direction", ""))
         fresh = {key(r) for r in summary}
         for name, new in ((f"{stem}_summary_{tag}.csv", summary), (f"{stem}_{rawname}_{tag}.csv", raw)):
-            old = list(csv.DictReader(open(res / name))) if (res / name).exists() else []
-            bmm.write_csv(res / name, [r for r in old if key(r) not in fresh] + new)
-        meta = dict(board=family, fqbn=fqbn, role="client", broker=f"{os.environ['BROKER']}:{MQTT_BASE_PORT}",
-                    broker_local=False, group="X25519MLKEM768", modes="plain,tls,mtls",
-                    messages=int(cfg.get("messages", 0)) if stage == "pipeline" else 0,
-                    payload_B=int(cfg.get("payload_B", 51)), wifi=wifi, config=cfg,
-                    started=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
-        (res / f"{stem}_meta_{tag}.json").write_text(json.dumps(meta, indent=2))
+            bmm.merge_csv(res / name, new, lambda r: key(r) not in fresh)
+        (res / f"{stem}_meta_{tag}.json").write_text(run_meta(
+            family, fqbn, group="X25519MLKEM768", modes="plain,tls,mtls",
+            messages=int(cfg.get("messages", 0)) if stage == "pipeline" else 0,
+            payload_B=int(cfg.get("payload_B", 51)), wifi=wifi, config=cfg))
     save_sweep([b for b in blocks if b["stage"] == "sweep"], res, tag, sig, family, fqbn, cfg)
     save_kex([b for b in blocks if b["stage"] == "kex"], res, tag, family, fqbn, cfg, modes=sig == "DEPLOY")
     save_deploy([b for b in blocks if b["stage"] in ("refuse", "ta", "fcnt")], res, tag, family, sig)
@@ -460,12 +462,10 @@ def save_sweep(blocks, res, tag, sig, family, fqbn, cfg):
                 row[c[:-3] + "_median_us" if c.endswith("_us") else c] = round(v, 1)
         new.append(row)
     name = res / f"tls_handshake_pure_{tag}.csv"
-    old = [r for r in csv.DictReader(open(name))] if name.exists() else []
-    bmm.write_csv(name, [r for r in old if r["sig"] != sig] + new)
-    (res / f"tls_handshake_meta_{tag}.json").write_text(json.dumps(dict(
-        board=family, fqbn=fqbn, role="client", broker=f"{os.environ['BROKER']}:{MQTT_BASE_PORT}", broker_local=False,
-        groups=[b["aead"] for b in blocks if b["mode"] == "TLS"], iterations=int(cfg.get("sweep_iterations", 0)),
-        warmup=int(cfg.get("sweep_warmup", 0)), started=time.strftime("%Y-%m-%dT%H:%M:%S%z")), indent=2))
+    bmm.merge_csv(name, new, lambda r: r["sig"] != sig)
+    (res / f"tls_handshake_meta_{tag}.json").write_text(run_meta(
+        family, fqbn, groups=[b["aead"] for b in blocks if b["mode"] == "TLS"],
+        iterations=int(cfg.get("sweep_iterations", 0)), warmup=int(cfg.get("sweep_warmup", 0))))
     print(f"    sweep rows: {name}")
 
 def save_deploy(blocks, res, tag, family, sig="DEPLOY"):
@@ -483,8 +483,7 @@ def save_deploy(blocks, res, tag, family, sig="DEPLOY"):
     if save and resume:  # the same keys after the reboot, and FCnt past every frame sent before it
         resume["same_devaddr"] = int(save.get("devaddr") == resume.get("devaddr"))
     f = res / f"deploy_{tag}.csv"
-    old = [r for r in csv.DictReader(open(f)) if (r.get("Signature") or "DEPLOY") != sig] if f.exists() else []
-    bmm.write_csv(f, old + rows)
+    bmm.merge_csv(f, rows, lambda r: (r.get("Signature") or "DEPLOY") != sig)
     print(f"    deployment checks: {f}")
 
 def save_kex(blocks, res, tag, family, fqbn, cfg, modes=False):
@@ -503,12 +502,10 @@ def save_kex(blocks, res, tag, family, fqbn, cfg, modes=False):
     key = lambda r: (r["KEM"], r.get("library_version", ""))
     fresh = {key(r) for r in summary}
     for name, new in ((f"kem_exchange_summary_{tag}.csv", summary), (f"kem_exchange_raw_{tag}.csv", raw)):
-        old = list(csv.DictReader(open(res / name))) if (res / name).exists() else []
-        bmm.write_csv(res / name, [r for r in old if key(r) not in fresh] + new)
-    (res / f"kem_exchange_meta_{tag}.json").write_text(json.dumps(dict(
-        board=family, fqbn=fqbn, role="client", broker=f"{os.environ['BROKER']}:{MQTT_BASE_PORT}", broker_local=False,
-        kems=[b["aead"] for b in blocks], exchanges=int(cfg.get("kex_iterations", 0)),
-        warmup=int(cfg.get("kex_warmup", 0)), started=time.strftime("%Y-%m-%dT%H:%M:%S%z")), indent=2))
+        bmm.merge_csv(res / name, new, lambda r: key(r) not in fresh)
+    (res / f"kem_exchange_meta_{tag}.json").write_text(run_meta(
+        family, fqbn, kems=[b["aead"] for b in blocks], exchanges=int(cfg.get("kex_iterations", 0)),
+        warmup=int(cfg.get("kex_warmup", 0))))
     print(f"    KEM exchange rows: {res}/kem_exchange_summary_{tag}.csv")
 
 def sh(cmd, **kw):

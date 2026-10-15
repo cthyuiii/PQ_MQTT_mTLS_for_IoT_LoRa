@@ -265,36 +265,16 @@ def summary_rows_from_raw(raw_rows: list[dict]) -> list[dict]:
 # CSV writers (upsert-style)
 # ---------------------------------------------------------------------------
 
-def upsert_summary(path: Path, new_rows: list[dict]) -> None:
-    keep = {}
-    if path.exists():
-        with path.open() as f:
-            for row in csv.DictReader(f):
-                keep[row["label"]] = row
-    for r in new_rows:
-        keep[r["label"]] = {k: str(v) for k, v in r.items()}
-    rows = list(keep.values())
-    if not rows:
-        return
-    with path.open("w", newline="") as f:  # union of columns: rows from parse_native_output.py carry no cycles
-        w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(k for r in rows for k in r)), restval="")
-        w.writeheader()
-        w.writerows(rows)
-
-
-def upsert_meta(path: Path, new_meta: list[dict]) -> None:
-    keep = {}
-    if path.exists():
-        with path.open() as f:
-            for row in csv.DictReader(f):
-                keep[row["friendly_name"]] = row
-    for m in new_meta:
-        keep[m["friendly_name"]] = {k: str(v) for k, v in m.items()}
+def upsert(path: Path, new_rows: list[dict], key: str) -> None:
+    """new rows replace the file's rows with the same key; columns = the union (rows from parse_native_output.py
+    carry no cycles)"""
+    keep = {r[key]: r for r in csv.DictReader(path.open())} if path.exists() else {}
+    keep.update({r[key]: {k: str(v) for k, v in r.items()} for r in new_rows})
     rows = list(keep.values())
     if not rows:
         return
     with path.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(k for r in rows for k in r)), restval="")
         w.writeheader()
         w.writerows(rows)
 
@@ -437,13 +417,13 @@ def main():
         print(f"    [{wall:6.1f}s]")
 
     if new_summary_rows:
-        upsert_summary(summary_path, new_summary_rows)
+        upsert(summary_path, new_summary_rows, "label")
         print(f"\n[+] Wrote {summary_path} (+{len(new_summary_rows)} rows)")
     if new_raw_rows:
         append_raw(raw_path, new_raw_rows)
         print(f"[+] Wrote {raw_path} (+{len(new_raw_rows)} samples)")
     if new_meta_rows:
-        upsert_meta(meta_path, new_meta_rows)
+        upsert(meta_path, new_meta_rows, "friendly_name")
         print(f"[+] Wrote {meta_path} (+{len(new_meta_rows)} variants)")
 
 

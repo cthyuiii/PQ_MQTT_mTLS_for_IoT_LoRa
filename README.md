@@ -543,7 +543,7 @@ PQ=~/chirpstack-pq ./scripts/setup_gateway_pi.sh <mac-ip> as923
 python3 network/virtual_gateway.py --selftest
 ```
 
-The region (`as923` or `eu868`) must be the same in `setup_gateway_pi.sh`, `virtual_gateway.py --region` and the
+The region (`as923`) must be the same in `setup_gateway_pi.sh`, `virtual_gateway.py --region` and the
 ChirpStack device profile. `virtual_gateway.py` reports every frame on channel 0 at DR0, which the LoRaWAN 1.1
 uplink MIC in `app_aead.c` assumes. ChirpStack drops frames from gateways it doesn't know: register the gateway ID
 (`--eui`, default `0102030405060708`) first. Frames go out `--gap` seconds apart (default 1): ChirpStack holds each
@@ -909,7 +909,7 @@ For the classical RSA/ECDSA sign-verify baseline, the real `openssl speed` works
 `openssl speed -seconds 3 rsa3072 ecdsap256 ed25519`.
 
 `signatures/reference/collect_reference_sizes.py` populates pk/sk/sig
-sizes for the reference-set algos (HAWK/FAEST/SQIsign from `api.h`) into `results/sig_meta_reference.csv`, so the workbook's size
+sizes for HAWK (from its `api.h`; the round 3 sets get theirs from `run_reference_benchmarks.py`) into `results/sig_meta_reference.csv`, so the workbook's size
 columns fill: run it before the Stage 1 table (`run_all.sh` does not call it).
 
 ---

@@ -45,8 +45,8 @@ upsert into `../results/*.csv` in the schema `to_customer_form.py` reads.
 sudo -E ./run_all.sh --only openssl --no-deps # macOS: real cycle counts (kperf needs root)
 ```
 
-Stages: `openssl` (EVP cycle benchmark), `sdith`, `faest` (generic harness),
-`hawk` (native bench, parsed), `sqisign` (cmake, parsed),
+Stages: `openssl` (EVP cycle benchmark), `sdith`, `faest`, `sqisign` (generic harness),
+`hawk` (native bench, parsed),
 `qruov` (NIST package download + generic harness), `tls` (TLS **and mTLS**
 handshake-latency sweep: builds `network/tls_handshake_timer`,
 self-hosts `openssl s_server`, sweeps every complete `certs/<sig>/` × KEM
@@ -73,9 +73,8 @@ No meson/ninja (FAEST is flattened), no jq, no GMP (SQIsign vendors mini-gmp).
 | Tool | Pi / Linux | macOS (Apple Silicon) |
 |---|---|---|
 | `openssl_sig_speed` (EVP/oqs-provider algos) | `perf_event_open` hardware counter; run `sudo sysctl kernel.perf_event_paranoid=1` once | private **kperf** framework (same technique as SQIsign's bench); **requires sudo**, fails soft to cycles=0 |
-| generic harness (`bench_template.c`: SDitH, FAEST, QR-UOV) | `perf_event_open` user-space cycles per call, as `openssl_sig_speed` (`mean_cycles` / `median_cycles`) | wall-clock only; cycles = 0 |
+| generic harness (`bench_template.c`: SDitH, FAEST, SQIsign, QR-UOV) | `perf_event_open` user-space cycles per call, as `openssl_sig_speed` (`mean_cycles` / `median_cycles`) | wall-clock only; cycles = 0 |
 | HAWK `bin/speed` | ms/µs natively | ms/µs natively |
-| SQIsign `benchmark_lvlN` | ms (`NO_CYCLE_COUNTER` build — mandatory, see gotchas) | ms (`NO_CYCLE_COUNTER`, used by the script) or megacycles (default build, needs sudo + `--cpu-mhz`) |
 
 The cycles column being 0 never invalidates the timing columns.
 
@@ -204,8 +203,6 @@ ensure `cc` can find the headers (`-I/opt/homebrew/opt/openssl@3/include`).
 | `undefined reference to 'randombytes'` | Most NIST refs ship `rng.c` in a sibling dir; list it in `extra_sources` |
 | Variant built but produces wrong sig sizes | Wrong parameter set selected by `#define` in api.h — check the variant subdir matches the level you want |
 | FAEST numbers ~50x too slow | Built without `HAVE_OPENSSL` (pure-C AES fallback) — install OpenSSL dev headers and rebuild |
-| SQIsign bench dies with SIGILL on Pi | Default build reads `PMCCNTR_EL0`; rebuild with `-DNO_CYCLE_COUNTER` (the Pi script does) |
-| SQIsign rows look 1000x off | Output unit mismatch — `(megacycles)` needs `--cpu-mhz`; `(milliseconds)` (NO_CYCLE_COUNTER build) needs no flag; the parser auto-detects from the captured file, so don't mix files |
 | `openssl_sig_speed` prints cycles=0 | Linux: `sudo sysctl kernel.perf_event_paranoid=1` (containers never expose perf). macOS: run with `sudo` (kperf is a private API and needs root). Timings stay valid |
 | `cp ... Resource deadlock avoided` (this repo on a Mac) | iCloud cloud-only placeholder file — open the folder in Finder and "Download Now", or work from a non-iCloud checkout |
 | `[-] EC:P-256: N/N verifies FAILED` from openssl_sig_speed | Should not happen since the June 2026 fix (sign loop used to clobber the verify signature buffer); if it does, the verify timings for that algo are invalid — investigate before using them |

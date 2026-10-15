@@ -64,10 +64,9 @@ SIGS = ["RSA2048", "RSA3072", "ECDSAP256", "ED25519",
 # NIST round 3 MAYO / SNOVA: oqs-provider 36cafae (liboqs main), certs in certs/round3 (run_all.sh round3 stage).
 # The pinned oqs-provider has only their round 2 sets, which round 3 replaced.
 SIGS_R3 = ["MAYO1", "MAYO2", "MAYO3", "MAYO5"] + [f"SNOVA{lvl}{v}" for lvl in "135" for v in "BKS"]
-# gen_certs.sh --deploy: the deployment checks' set (ML-DSA-44), served whenever certs/DEPLOY exists: mTLS / TLS with
-# server.crt, and two TLS listeners every client must refuse (revoked.crt, expired.crt). --deploy runs the host side.
-# the deployment checks' sets (gen_certs.sh --deploy): DEPLOY (ML-DSA-44, + the trust-anchor update and the signed KEM
-# exchange) and, with DEPLOY_SIGS=all, the same checks for the other certificate types (appended: ports stay)
+# the deployment checks' sets (gen_certs.sh --deploy), served whenever certs/<set> exists: mTLS / TLS with server.crt, and
+# two TLS listeners every client must refuse (revoked.crt, expired.crt); --deploy runs the host side. DEPLOY (ML-DSA-44,
+# + the trust-anchor update and the signed KEM exchange) and, with DEPLOY_SIGS=all, the other certificate types (ports stay)
 SIGS_DEPLOY = ["DEPLOY"] + [f"DEPLOY_{s}" for s in ("RSA2048", "RSA3072", "ECDSAP256", "ED25519", "MLDSA65", "MLDSA87",
                                                     "FALCON512", "FALCON1024")]
 PORT_OFFSET = {"mTLS": 0, "TLS": 100, "revoked": 200, "expired": 300}
@@ -381,12 +380,18 @@ def summarize(common: dict, rows: list[dict], msgs: list[dict], wholes: list[dic
     return out
 
 
+def clients(args) -> list:
+    """the built timers --clients picks: [(library, executable)]"""
+    t = [(name, exe) for name, exe in TIMERS if exe.exists()
+         and (not args.clients or any(c.strip().lower() in name.lower() for c in args.clients.split(",")))]
+    if not t:
+        raise SystemExit("build network/mqtt_tls_timer first (build_timer.sh openssl; wolfssl for the wolfSSL client)")
+    return t
+
+
 def run_clients(args, broker_failed: dict):
     board, summary, raw = args.board or board_name(), [], []
-    timers = [(name, exe) for name, exe in TIMERS if exe.exists()
-              and (not args.clients or any(c.strip().lower() in name.lower() for c in args.clients.split(",")))]
-    if not timers:
-        raise SystemExit("build network/mqtt_tls_timer first (see its header)")
+    timers = clients(args)
 
     def record(lib_name, sig, mode, aead, res, certs=(None, None)):
         common = dict(Board=board, Library=lib_name, Signature=sig, Group="" if mode == "plain" else args.group,
@@ -542,10 +547,7 @@ def run_deploy(args):
     if not sets:
         raise SystemExit(f"no deployment sets in {args.certs}: run scripts/gen_certs.sh --deploy <broker IP> "
                          "(DEPLOY_SIGS=all for every certificate type), then copy certs/ to both machines")
-    timers = [(name, exe) for name, exe in TIMERS if exe.exists()
-              and (not args.clients or any(c.strip().lower() in name.lower() for c in args.clients.split(",")))]
-    if not timers:
-        raise SystemExit("build network/mqtt_tls_timer first (build_timer.sh openssl; wolfssl for the wolfSSL client)")
+    timers = clients(args)
     summary, raw, refused = [], [], []
     for ds in sets:
         d = args.certs / ds
@@ -611,6 +613,11 @@ def write_csv(path: Path, rows: list[dict]):
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(rows)
+
+
+def merge_csv(path: Path, rows: list[dict], keep=lambda r: True):
+    """rows after the file's existing rows that keep() accepts (the ones this run doesn't measure again)"""
+    write_csv(path, ([r for r in csv.DictReader(path.open()) if keep(r)] if path.exists() else []) + rows)
 
 
 def main():

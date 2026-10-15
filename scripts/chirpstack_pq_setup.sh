@@ -37,23 +37,22 @@ M=$CS/configuration/mosquitto-pq
 mkdir -p "$P/stunnel" "$P/app" "$M"
 chmod 700 "$P"  # its keys: this user (and the containers, through Docker's file sharing) only
 
-cert() {  # name, then its X.509 extensions
-    "$OSSL" req -new -newkey ML-DSA-44 -nodes -keyout "$P/$1.key" -out "$P/$1.csr" -subj "/CN=$1" 2>/dev/null
-    printf '%s\n' "${@:2}" > "$P/$1.ext"
-    "$OSSL" x509 -req -in "$P/$1.csr" -CA "$P/ca.crt" -CAkey "$P/ca.key" -CAcreateserial -days 365 -extfile "$P/$1.ext" \
-        -out "$P/$1.crt" 2>/dev/null
-    rm -f "$P/$1.csr" "$P/$1.ext"
-    chmod 644 "$P/$1.key"  # ponytail: readable by the containers' users; a real deployment keeps keys 600, per service
-    echo "[+] $1 certificate (ML-DSA-44)"
+cert() {  # cert <folder> <CA (path without .crt / .key)> <name> <X.509 extensions...>: ML-DSA-44 key + certificate, CN=<name>
+    "$OSSL" req -new -newkey ML-DSA-44 -nodes -keyout "$1/$3.key" -out "$1/$3.csr" -subj "/CN=$3" 2>/dev/null
+    "$OSSL" x509 -req -in "$1/$3.csr" -CA "$2.crt" -CAkey "$2.key" -CAcreateserial -days 365 \
+        -extfile <(printf '%s\n' "${@:4}") -out "$1/$3.crt" 2>/dev/null
+    rm -f "$1/$3.csr"
+    [ "$1" != "$P" ] || chmod 644 "$1/$3.key"  # ponytail: readable by the containers' users; a real deployment keeps keys 600, per service
+    echo "[+] $3 certificate (ML-DSA-44) in $1"
 }
 if [ ! -f "$P/ca.crt" ]; then
     "$OSSL" req -x509 -new -newkey ML-DSA-44 -nodes -keyout "$P/ca.key" -out "$P/ca.crt" -days 365 \
         -subj "/CN=IoT-PQC ChirpStack backend CA" 2>/dev/null
     chmod 600 "$P/ca.key"
-    cert gateway "extendedKeyUsage=clientAuth"
+    cert "$P" "$P/ca" gateway "extendedKeyUsage=clientAuth"
 fi
 "$OSSL" x509 -in "$P/server.crt" -noout -ext subjectAltName 2>/dev/null | grep -q "IP Address:$IP$" ||
-    cert server "subjectAltName=DNS:mosquitto,DNS:localhost,IP:127.0.0.1,IP:$IP" "extendedKeyUsage=serverAuth"
+    cert "$P" "$P/ca" server "subjectAltName=DNS:mosquitto,DNS:localhost,IP:127.0.0.1,IP:$IP" "extendedKeyUsage=serverAuth"
 
 # ChirpStack's Mosquitto: OpenSSL's group list = the hybrid only, so a client without ML-KEM can't fall back to X25519
 printf 'openssl_conf = i\n[i]\nssl_conf = s\n[s]\nsystem_default = d\n[d]\nGroups = X25519MLKEM768\n' > "$P/openssl.cnf"
@@ -72,12 +71,7 @@ EOF
 
 # the broker's roles: chirpstack and application, issued by its client CA, ML-DSA-44 like the set (kept if present)
 for role in chirpstack application; do
-    [ -f "$APP_CERTS/$role.crt" ] && continue
-    "$OSSL" req -new -newkey ML-DSA-44 -nodes -keyout "$APP_CERTS/$role.key" -out "$APP_CERTS/$role.csr" -subj "/CN=$role" 2>/dev/null
-    "$OSSL" x509 -req -in "$APP_CERTS/$role.csr" -CA "$APP_CERTS/ClientCA.crt" -CAkey "$APP_CERTS/ClientCA.key" -CAcreateserial \
-        -days 365 -extfile <(echo "extendedKeyUsage=clientAuth") -out "$APP_CERTS/$role.crt" 2>/dev/null
-    rm -f "$APP_CERTS/$role.csr"
-    echo "[+] $role client certificate (ML-DSA-44) in $APP_CERTS"
+    [ -f "$APP_CERTS/$role.crt" ] || cert "$APP_CERTS" "$APP_CERTS/ClientCA" $role "extendedKeyUsage=clientAuth"
 done
 cp "$APP_CERTS/chirpstack.crt" "$P/app/client.crt"; cp "$APP_CERTS/chirpstack.key" "$P/app/client.key"; chmod 644 "$P/app/client.key"
 cat "$APP_CERTS/CA.crt" "$APP_CERTS/server.crt" > "$P/app/broker.pem"  # the chain's CA + the broker's own certificate (pinned)
@@ -99,29 +93,25 @@ sslVersionMin = TLSv1.3
 curves = X25519MLKEM768
 EOF
 
-# ChirpStack's config with its integration on the proxy (the gateway backends stay on its own Mosquitto)
-awk '/^[[:space:]]*\[integration\.mqtt\][[:space:]]*$/ {s = 1}
-     s == 1 && /^[[:space:]]*server=/ {sub(/server=.*/, "server=\"tcp://chirpstack-app-proxy:1883/\""); s = 2}
-     {print}' "$CS/configuration/chirpstack/chirpstack.toml" > "$CS/configuration/chirpstack-pq.toml"
-grep -q 'server="tcp://chirpstack-app-proxy:1883/"' "$CS/configuration/chirpstack-pq.toml" ||
-    { echo "no [integration.mqtt] server= line in chirpstack.toml" >&2; exit 1; }
-# the application's reply (chirpstack_app.py --reply) goes out in the uplink's RX1 window (1 s) only if ChirpStack waits
-# for it: 400 ms between handing the uplink to the integration and reading the device's queue (its default, 100 ms, is
-# shorter than the reply's trip through the Pi's broker; the uplink events themselves aren't delayed). DOWNLINK_DELAY=100ms:
-# ChirpStack's default again (finding 124)
+# ChirpStack's config: its integration on the proxy (the gateway backends stay on its own Mosquitto), the downlink wait
+# and the API secret. The application's reply (chirpstack_app.py --reply) goes out in the uplink's RX1 window (1 s) only
+# if ChirpStack waits for it: 400 ms between handing the uplink to the integration and reading the device's queue (its
+# default, 100 ms, is shorter than the reply's trip through the Pi's broker; the uplink events themselves aren't
+# delayed). DOWNLINK_DELAY=100ms: ChirpStack's default again (finding 124)
 DD=${DOWNLINK_DELAY:-400ms}
-awk -v d="$DD" '/^[[:space:]]*\[network\][[:space:]]*$/ {print; print "  get_downlink_data_delay=\"" d "\""; next}
-     /^[[:space:]]*get_downlink_data_delay=/ {next} {print}' "$CS/configuration/chirpstack-pq.toml" > "$CS/configuration/chirpstack-pq.toml.new"
-mv "$CS/configuration/chirpstack-pq.toml.new" "$CS/configuration/chirpstack-pq.toml"
-grep -q "get_downlink_data_delay=\"$DD\"" "$CS/configuration/chirpstack-pq.toml" || { echo "no [network] in chirpstack.toml" >&2; exit 1; }
 # ChirpStack's API secret (it signs the UI's and API's tokens): a random one, kept so a re-run doesn't log everyone out
 [ -s "$P/api_secret" ] || { "$OSSL" rand -base64 32 > "$P/api_secret"; chmod 600 "$P/api_secret"; }
 S=$(cat "$P/api_secret")
-awk -v s="$S" '/^[[:space:]]*\[api\][[:space:]]*$/ {a = 1}
-     a == 1 && /^[[:space:]]*secret=/ {sub(/secret=.*/, "secret=\"" s "\""); a = 2}
-     {print}' "$CS/configuration/chirpstack-pq.toml" > "$CS/configuration/chirpstack-pq.toml.new"
-mv "$CS/configuration/chirpstack-pq.toml.new" "$CS/configuration/chirpstack-pq.toml"
-grep -q "secret=\"$S\"" "$CS/configuration/chirpstack-pq.toml" || { echo "no [api] secret= line in chirpstack.toml" >&2; exit 1; }
+T=$CS/configuration/chirpstack-pq.toml
+awk -v d="$DD" -v s="$S" '/^[[:space:]]*\[/ {sec = $0; gsub(/[[:space:]]/, "", sec)}
+     sec == "[integration.mqtt]" && !m && /^[[:space:]]*server=/ {sub(/server=.*/, "server=\"tcp://chirpstack-app-proxy:1883/\""); m = 1}
+     sec == "[api]" && !a && /^[[:space:]]*secret=/ {sub(/secret=.*/, "secret=\"" s "\""); a = 1}
+     /^[[:space:]]*get_downlink_data_delay=/ {next}
+     {print}
+     /^[[:space:]]*\[network\][[:space:]]*$/ {print "  get_downlink_data_delay=\"" d "\""}' "$CS/configuration/chirpstack/chirpstack.toml" > "$T"
+grep -q 'server="tcp://chirpstack-app-proxy:1883/"' "$T" || { echo "no [integration.mqtt] server= line in chirpstack.toml" >&2; exit 1; }
+grep -q "get_downlink_data_delay=\"$DD\"" "$T" || { echo "no [network] in chirpstack.toml" >&2; exit 1; }
+grep -q "secret=\"$S\"" "$T" || { echo "no [api] secret= line in chirpstack.toml" >&2; exit 1; }
 
 cat > "$CS/docker-compose.override.yml" <<'EOF'
 # made by IoT-PQC scripts/chirpstack_pq_setup.sh: PQ TLS on both sides of ChirpStack. Remove this file to go back.

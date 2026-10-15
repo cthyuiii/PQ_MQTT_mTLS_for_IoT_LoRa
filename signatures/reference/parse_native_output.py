@@ -1,26 +1,17 @@
-"""Parse the output of native NIST reference benchmarks (HAWK, SQIsign) and append rows to
+"""Parse the output of a native NIST reference benchmark (HAWK) and append rows to
 results/sig_summary_reference.csv.
 
-Each upstream benchmark prints results in its own format.  This script tries
-several common patterns:
+Each upstream benchmark prints results in its own format. The format read:
 
     HAWK bin/speed                — "<op>: <N> ns" or "<op>: <N> cyc"
-    SQIsign apps/benchmark_lvlN   — "<op> | average <N> | ... (megacycles)"
 
-You tell it which algorithm family the file is from, plus optionally a
-default friendly-name prefix and a CPU MHz value (for cycle->ms conversion).
+You tell it which algorithm family the file is from.
 The parser emits a sig_summary_*.csv row per detected (algorithm, op) pair.
 
 Usage:
     python parse_native_output.py --algo HAWK \
         --input hawk_speed.txt \
-        --csv ../../results/sig_summary_reference.csv \
-        --cpu-mhz 3200
-
-    python parse_native_output.py --algo SQIsign \
-        --input sqisign_lvl3.txt --label SQIsign-NIST-III \
-        --csv ../../results/sig_summary_reference.csv \
-        --cpu-mhz 3200
+        --csv ../../results/sig_summary_reference.csv
 """
 
 from __future__ import annotations
@@ -57,10 +48,6 @@ def _row(label, *, mean_ms=None, p50_ms=None, stdev_ms=0.0, n=1):
     }
 
 
-def _cycles_to_ms(cycles: float, cpu_mhz: float) -> float:
-    return cycles / (cpu_mhz * 1000.0)
-
-
 def parse_hawk(text: str, **kwargs) -> list[dict]:
     """HAWK Reference_Implementation/bin/speed output format:
 
@@ -76,7 +63,7 @@ def parse_hawk(text: str, **kwargs) -> list[dict]:
       vv = verify                 (us)   <- standard verify, we use this
       vf = fast verify            (us)   <- experimental, skipped
 
-    HAWK's output is already in ms/us, so cpu_mhz isn't needed.
+    HAWK's output is already in ms/us.
     """
     rows = []
     # Match data lines like " 512:    2.19    56.00    34.65    50.58    41.16"
@@ -99,59 +86,8 @@ def parse_hawk(text: str, **kwargs) -> list[dict]:
     return rows
 
 
-def parse_sqisign(text: str, *, cpu_mhz: float | None = None,
-                  label: str | None = None, **kwargs) -> list[dict]:
-    """SQIsign apps/benchmark_lvlN output:
-        SQIsign_lvl3 (10 iterations)
-          keypair    | average  123.456 | stddev  ... | median  124.567 | min  ... | max  ...  (megacycles)
-          sign       | average ...
-          verify     | average ...
-
-    Unit depends on the build: with a working cycle counter (x86 rdtsc, Apple
-    Silicon) lines end in "(megacycles)" and --cpu-mhz is required. Built with
-    -DNO_CYCLE_COUNTER (the only safe option on Raspberry Pi / Linux-arm64,
-    where the bench would otherwise read PMCCNTR_EL0 and SIGILL), lines end in
-    "(milliseconds)" and the values are used as-is.
-    """
-    is_ms = "(milliseconds)" in text
-    if cpu_mhz is None and not is_ms:
-        print("[!] --cpu-mhz required for SQIsign (its output is in megacycles).",
-              file=sys.stderr)
-        return []
-    if label is None:
-        print("[!] --label required for SQIsign (e.g. SQIsign-NIST-III).",
-              file=sys.stderr)
-        return []
-    rows = []
-    for line in text.splitlines():
-        m = re.match(
-            r"\s*(keypair|sign|verify)\s*\|\s*average\s+([\d.]+)"
-            r"\s*\|\s*stddev\s+([\d.]+)"
-            r"\s*\|\s*median\s+([\d.]+)", line)
-        if not m:
-            continue
-        op = m.group(1)
-        if op == "keypair":
-            op = "keygen"                     # normalize to match other benches
-        avg_mcyc    = float(m.group(2))
-        stdev_mcyc  = float(m.group(3))
-        median_mcyc = float(m.group(4))
-        if is_ms:
-            # NO_CYCLE_COUNTER build: values are already milliseconds
-            mean_ms, p50_ms, stdev_ms = avg_mcyc, median_mcyc, stdev_mcyc
-        else:
-            # Convert megacycles to ms
-            mean_ms  = _cycles_to_ms(avg_mcyc * 1e6, cpu_mhz)
-            p50_ms   = _cycles_to_ms(median_mcyc * 1e6, cpu_mhz)
-            stdev_ms = _cycles_to_ms(stdev_mcyc * 1e6, cpu_mhz)
-        rows.append(_row(f"{label} {op}",
-                         mean_ms=mean_ms, p50_ms=p50_ms, stdev_ms=stdev_ms))
-    return rows
-
-
 PARSERS = {
     "HAWK":    parse_hawk,
-    "SQIsign": parse_sqisign,
 }
 
 
@@ -190,10 +126,6 @@ def main():
                                        "results" / "sig_summary_reference.csv",
                     type=Path,
                     help="Where to upsert rows (default: IoT-PQC/results/sig_summary_reference.csv)")
-    ap.add_argument("--cpu-mhz", type=float, default=None,
-                    help="CPU frequency in MHz (required for HAWK + SQIsign cycle->ms conversion)")
-    ap.add_argument("--label", type=str, default=None,
-                    help="Friendly label override (used by SQIsign to set NIST-I / III / V)")
     ap.add_argument("--dry-run", action="store_true",
                     help="Print parsed rows without writing CSV")
     args = ap.parse_args()
@@ -202,7 +134,7 @@ def main():
         sys.exit(f"[-] input file not found: {args.input}")
     text = args.input.read_text(errors="ignore")
     parser = PARSERS[args.algo]
-    rows = parser(text, cpu_mhz=args.cpu_mhz, label=args.label)
+    rows = parser(text)
     rows = [r for r in rows if r is not None]
 
     if not rows:

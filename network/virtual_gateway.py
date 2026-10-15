@@ -17,7 +17,7 @@ relay mode (PUB=pqc/down) can carry it to the device through a broker instead.
 """
 import argparse, base64, itertools, json, math, os, socket, sys, threading, time
 
-FREQ = {"as923": 923.2, "eu868": 868.1}  # channel 0 of each region, MHz
+FREQ = {"as923": 923.2}  # channel 0, MHz (AS923: Singapore)
 PUSH_DATA, PUSH_ACK, PULL_DATA, PULL_RESP, PULL_ACK, TX_ACK = range(6)
 
 

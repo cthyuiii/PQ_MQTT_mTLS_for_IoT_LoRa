@@ -140,10 +140,6 @@ python3 -c "import serial" 2>/dev/null \
     || echo "[!] pyserial missing (Pico runner): activate the venv and pip install -r requirements.txt"
 
 # ------------------------------------------------------- platform set-up --
-MHZ_ARG=()
-if [ -r /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq ]; then
-    MHZ_ARG=(--cpu-mhz $(( $(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq) / 1000 )))
-fi
 # PQ TLS needs OpenSSL >= 3.5: Homebrew's openssl@3 on macOS, the system one on Pi OS Trixie,
 # or OPENSSL_PREFIX (e.g. the customer's /opt/openssl-3.5) anywhere else.
 [ "$OS" = Darwin ] && OPENSSL_PREFIX="${OPENSSL_PREFIX:-$(brew --prefix openssl@3 2>/dev/null)}"
@@ -455,7 +451,6 @@ if stage pipeline pipeline "openssl,wolfssl,ascon-c" && need_broker pipeline; th
         || echo "[!] pipeline bench failed (or nothing matched --algo / --lib)"
 fi
 
-# -------------------------------------- 4. TLS + mTLS handshake sweep --
 # ---- 2c. KEM exchange through the broker: key pair -> PUBLISH -> responder encapsulates -> decapsulate --
 if stage kex mqtt liboqs && need_broker kex plain; then   # plain MQTT: no certificates
     log "KEM exchange as MQTT messages: Classic McEliece, HQC, ML-KEM-768 (public key out, ciphertext back)"
@@ -476,6 +471,7 @@ if stage deploy mqtt "openssl,liboqs" && need_broker deploy; then
     fi
 fi
 
+# -------------------------------------- 4. TLS + mTLS handshake sweep --
 if stage tls mqtt openssl && need_broker tls; then
     log "TLS + mTLS handshake sweep against $BROKER (full MQTT connections; every cert x 17 groups)"
     timer
@@ -504,7 +500,7 @@ if stage hawk pqc reference && has "$ALGOS" HAWK; then
         && make CC="$HAWK_CC" -s \
         && ./bin/speed > "$REF/hawk_results.txt" 2>&1 \
         && python3 "$REF/parse_native_output.py" --algo HAWK --input "$REF/hawk_results.txt" \
-              ${MHZ_ARG[@]+"${MHZ_ARG[@]}"} --csv "$RESULTS/sig_summary_reference.csv") \
+              --csv "$RESULTS/sig_summary_reference.csv") \
         || echo "[!] HAWK failed"
 fi
 
