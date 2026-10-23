@@ -1764,6 +1764,102 @@ Pico W's pipeline; no run of the new form yet)
        stunnel image and ChirpStack's Mosquitto don't, so links #1 and #2 would need images built with it. The Pico
        needs none of them: it has no TLS in the chain.
 
+125. [Mac; the Pi's side as containers on the Mac] **No plain MQTT anywhere in the chain: Mosquitto bridges in place of
+     stunnel (20 Oct).**
+     - **Why:** finding 123 left three plain MQTT hops inside the machines: on the Pi, the Gateway Bridge → stunnel
+       (127.0.0.1:18883); on the Mac, ChirpStack ↔ its Mosquitto (1883 inside Docker, 15 region connections, plus
+       127.0.0.1:1884 for local tools) and ChirpStack → stunnel (`chirpstack-app-proxy`). They never left a machine,
+       but the rule is no plain MQTT beyond the radio hop.
+     - **Now every MQTT hop is TLS 1.3.**
+       - Between machines: X25519MLKEM768 only, ML-DSA-44 on both sides, as before.
+       - Inside a machine: the Gateway Bridge (Go) and ChirpStack (Rust, rustls with ring) take no ML-DSA, and
+         ChirpStack no ML-KEM (117), so those hops use ECDSA P-256 certificates of a CA kept on that machine. The
+         Bridge's hop uses X25519MLKEM768 (Go offers it), ChirpStack's X25519.
+       - Why Mosquitto bridges: stunnel can't take TLS in and send TLS out in one service (it would need a plain hop
+         between two of its own), so Mosquitto bridges (eclipse-mosquitto 2.1.2, OpenSSL 3.5.8) re-encrypt in memory.
+       - On the Pi: `iot-pqc-gw-broker` (127.0.0.1:18883 → the Mac's :8883, `gateway.crt`).
+       - On the Mac, the door `mosquitto-pq` (:8883):
+         - X25519MLKEM768 only, a client certificate required;
+         - an ACL by certificate name: the gateway gets only its gateway topics;
+         - it bridges to ChirpStack's Mosquitto (TLS only, :8884, no port outside Docker; 1883 and 1884 are gone) and
+           to the MQTT broker as `chirpstack`.
+       - Mosquitto has no per-listener group setting, so the door (hybrid only) and ChirpStack's broker (which needs
+         X25519) run as two processes.
+       - The broker's certificate names only localhost, so the bridge checks the set's CA, which signs no other
+         certificate (clients come from ClientCA, gen_certs.sh). stunnel had pinned the certificate itself.
+     - **Tested on the Mac** (the Pi was off):
+       - **Set-up:** the Pi's side ran as containers sharing one network namespace, from `setup_gateway_pi.sh`'s
+         configs (`DRY=1`). A stand-in for the Pi's broker: Mosquitto 2.1.2 with the MLDSA44 set and the same
+         listener settings, ACL and CRL as `mqtt_bench.py`.
+       - **Connections, all TLS 1.3:**
+         - Bridge → bridge (`u'bridge'`; that broker allows only X25519MLKEM768, so Go negotiated it);
+         - bridge → door (`u'gateway'`);
+         - door → ChirpStack's Mosquitto (`u'door'`);
+         - ChirpStack's 16 connections (`u'chirpstack'`);
+         - door → broker (`u'chirpstack'`).
+       - **Uplinks:** host device 01234567, `lorawan11` FCnt 1035-1037, read at the application on the broker in
+         order.
+       - **Downlink:** a command the application published ("hello, all TLS") was verified and decrypted by the device
+         after FCnt 1099.
+       - **Refused at the door:**
+         - an X25519-only client (alert 40);
+         - a client with no certificate;
+         - plain MQTT;
+         - the gateway's certificate publishing an application event (nothing reached the broker).
+       - **Ports:** 8884 and 1884 are closed on the LAN.
+     - **Delay** (frame sent by the virtual gateway → event at a subscriber on the broker; one clock; 10 frames):
+       median 217.6 ms (213.8-225.6). Through stunnel it was 224.5 ms (119, one Mac). The extra hops cost nothing
+       measurable.
+     - **Not yet:** the Pi (rerun `setup_gateway_pi.sh`) and a Pico run.
+
+126. [Mac: host test, compile] **The reply carries the 256-bit layer too, and every layer is timed on its own (21 Oct).**
+     - **Why:** until now the application answered every uplink with plain `lorawan11` ("ack <FCnt>", FPort 1), so a
+       `lorawan11_e2e` device's reply had ChirpStack's AES-128 layer only. The Pico's cost of opening a 256-bit
+       downlink was known only from frames it sealed itself (124: 0.82 ms, against 0.38 ms for LoRaWAN 1.1 only, an
+       average over runs 123-124).
+     - **Now:** the reply to a `lorawan11_e2e` uplink is sealed by the application with the device's 256-bit layer
+       (AES-256-CTR + a 4-byte AES-256-CMAC tag, the device's derived key), on FPort 2. ChirpStack puts its AES-128
+       layer and MIC around it, the same nesting as the uplinks.
+       - The application seals the reply before ChirpStack picks the downlink's FCnt, so the 256-bit layer's blocks
+         use the FCnt of the uplink it answers, with Dir = 1. One reply per uplink, and uplink FCnts never repeat, so
+         no block is used twice; and an old reply fails the tag (it is bound to the uplink).
+       - The Pico opens both layers (`e2e_open_at`) and times them: `reply_open_cyc` / `reply_open256_cyc`. The
+         application times its own seal (`seal_ms`) next to its open (`open_ms`).
+       - Replies to `lorawan11` uplinks stay as they were (FPort 1).
+     - **Tested:**
+       - the application's reply bytes (pinned in its selftest) open with the Pico's code on the host; another FCnt
+         and a changed byte are refused (`aead_host_test`);
+       - `mqtt_parse_test` with the new columns; the round-trip firmware compiles (652,452 B).
+     - **Not yet:** run 125 on the board.
+
+127. [Mac: source read, nothing built] **Rebuilt, ChirpStack and its Gateway Bridge could do PQ TLS themselves; AES-256
+     LoRaWAN is better left out (23 Oct).** This updates 117, which holds for the stock images only.
+     - **ChirpStack (Rust):** v4.19.2 locks rustls 0.23.41 with only the `ring` provider (no ML-KEM, no ML-DSA). rustls
+       0.23.44 (7 Sep 2026) enables ML-DSA-44 / 65 / 87 certificates in its aws-lc-rs provider, both checking and
+       signing (`crypto/aws_lc_rs/sign.rs`, read in 0.23.46). Its `prefer-post-quantum` feature puts X25519MLKEM768
+       first.
+       - The patch: the workspace's rustls features `ring` → `aws_lc_rs` + `prefer-post-quantum`, and rustls ≥ 0.23.44.
+         `lapin` still pulls in `ring`, so `main` must also install aws-lc-rs as the default provider (one line).
+       - Nothing else needs changing: both MQTT clients (gateway backend, integration) use `ClientConfig::builder()`,
+         and the key loader passes PKCS#8 (OpenSSL's ML-DSA "PRIVATE KEY") through unchanged.
+       - To test first: aws-lc-rs reading OpenSSL 3.5's ML-DSA private-key format; the Docker build with aws-lc-sys.
+     - **Gateway Bridge (Go):** it is built with Go 1.26.5, which has the hybrid key exchange but no ML-DSA. Go 1.27
+       (Aug 2026) adds ML-DSA keys to `crypto/x509` and ML-DSA signatures to `crypto/tls`. The Bridge uses
+       `tls.LoadX509KeyPair` and a default `tls.Config`, so a rebuild with Go 1.27 may be all it needs (to test).
+     - **What it would remove:** both Mosquitto bridges (`iot-pqc-gw-broker` on the Pi, the door's bridge on the Mac).
+       The Gateway Bridge could reach the Mac's broker directly, and ChirpStack the Pi's broker, both with
+       ML-DSA-44 mTLS. That is two fewer TLS hops. The cost is two forked images to rebuild for every ChirpStack
+       release.
+     - **AES-256 in LoRaWAN itself: possible, not advised.**
+       - Cost: `lrwn`'s `AES128Key` appears 297 times in 35 files; the key derivations, the API / UI key fields and
+         every device's LoRaWAN stack would change, and the result is no longer LoRaWAN.
+       - Little gain: the 256-bit layer already runs end to end inside AES-128 (126), so ChirpStack only ever holds
+         AES-256 ciphertext. AES-128 is NIST's post-quantum category 1 baseline. And all-AES-256 LoRaWAN costs the
+         Pico +23–36 % (91).
+     - **Decision (23 Oct):** the team moves the server to AES-256 anyway. It will be done in a fork of ChirpStack
+       (not in this repo). The cipher is picked by key length (16 B → AES-128, 32 B → AES-256), with all four 1.1
+       session keys at 32 B. ABP comes first; the 256-bit end-to-end layer stays.
+
 ### Sources
 
 All links checked on 28 Sep 2026.
@@ -1825,6 +1921,31 @@ All links checked on 28 Sep 2026.
 44. NIST, *NIST Selects HQC as Fifth Algorithm for Post-Quantum Encryption* (11 Mar 2025: a draft in about a year, the final standard in 2027). <https://www.nist.gov/news-events/news/2025/03/nist-selects-hqc-fifth-algorithm-post-quantum-encryption>
 45. fixed-point-fndsa, *fxp-falcon-py*: the Python model of fixed-point Falcon (De Almeida Braga, Fouque, Lachguel, Prest; checked 12 Oct 2026, last commit 27 Jul 2026). <https://github.com/fixed-point-fndsa/fxp-falcon-py>
 
+**The code behind each round 3, HQC and AES / LoRaWAN result (links checked 21 Oct 2026)**
+
+46. SNOVA (spec 3.0): the team's site and code; in liboqs through PR #2562 (32). <https://snova.pqclab.org/>, <https://github.com/PQCLAB-SNOVA/SNOVA>
+47. MAYO (round 3, Sep 2026): the team's site; MAYO-C `74de637`, the code in liboqs. <https://pqmayo.org/>, <https://github.com/PQCMayo/MAYO-C/commit/74de637a7c4a7f9fafa888183bc05f5cf920cd2d>
+48. MQOM v3 (round 3): the team's site; mqom-v3 `df26239`, the code in liboqs. <https://mqom.org/>, <https://github.com/mqom/mqom-v3/commit/df26239dd22f194371003f403ec1a9920772b769>
+49. UOV (round 3): the team's site; pqov `fac2ec1`, the code in liboqs (UOV-Ip, UOV-Ip-pkc, UOV-Is-pkc). <https://www.uovsig.org/>, <https://github.com/pqov/pqov/commit/fac2ec1fe6d8ea508eab4b98eb5341e1eed930a4>
+50. liboqs main `b196b57a` (24 Sep 2026): the round 3 build of 46-49 (`R3_LIBOQS`, host and Pico). <https://github.com/open-quantum-safe/liboqs/commit/b196b57aa615c84d62cbf6a59a8bfc294e6747dd>
+51. QR-UOV round 3 package (spec v3.0, Aug 2026), NIST: `Reference_Implementation/ref`, the Pico's and the host's code. <https://csrc.nist.gov/csrc/media/Projects/pqc-dig-sig/documents/QR_UOV%20-%20Round3.zip>
+52. SQIsign: the team's site; the-sqisign `f417ebd` (23 Sep 2026, round 3). <https://sqisign.org/>, <https://github.com/SQISign/the-sqisign/commit/f417ebd4c2c336ad6a9feb6f9255f95fc03acc41>
+53. FAEST 3.0: the team's site; faest-ref `v3.0.0` (31 Aug 2026). <https://faest.info/>, <https://github.com/faest-sign/faest-ref/tree/v3.0.0>
+54. SDitH v3: the team's site; NIST round 3 package (31 Aug 2026). <https://sdith.org/>, <https://csrc.nist.gov/csrc/media/Projects/pqc-dig-sig/documents/sdith3_submission_package.zip>
+55. HQC specification, 22 Aug 2025 (the version in liboqs 0.16.0: HQC-1 / 3 / 5, and HQC-1 on the Pico W); the team's resources page. <https://pqc-hqc.org/doc/hqc_specifications_2025_08_22.pdf>, <https://pqc-hqc.org/resources.html>
+56. liboqs 0.16.0 release. <https://github.com/open-quantum-safe/liboqs/releases/tag/0.16.0>
+57. FIPS 197, *Advanced Encryption Standard (AES)*: AES-128 / AES-256, one 128-bit block for both. <https://csrc.nist.gov/pubs/fips/197/final>
+58. NIST SP 800-38A: block cipher modes, CTR (LoRaWAN's FRMPayload encryption and the 256-bit layer). <https://csrc.nist.gov/pubs/sp/800/38/a/final>
+59. NIST SP 800-38B: CMAC (LoRaWAN's MIC, the 256-bit layer's tag; the AES-256 CMAC test vector in `la_kat`). <https://csrc.nist.gov/pubs/sp/800/38/b/upd1/final>
+60. NIST SP 800-38C: CCM (the `aes128ccm` / `aes256ccm` schemes; example 1 in `la_kat`). <https://csrc.nist.gov/pubs/sp/800/38/c/upd1/final>
+61. NIST SP 800-38D: GCM (the `aes128gcm` / `aes256gcm` schemes). <https://csrc.nist.gov/pubs/sp/800/38/d/final>
+62. RFC 5869, *HKDF*: the per-device end-to-end keys (test case 1 in the application's selftest). <https://www.rfc-editor.org/rfc/rfc5869>
+63. LoRa Alliance, *LoRaWAN 1.1 Specification* (2017): the 1.1 keys (AppSKey, FNwkSIntKey, SNwkSIntKey), the two-CMAC uplink MIC, the downlink MIC. <https://lora-alliance.org/resource_hub/lorawan-specification-v1-1/>
+64. ChirpStack (v4, the network server; its LoRaWAN code in `lrwn/`). <https://www.chirpstack.io/>, <https://github.com/chirpstack/chirpstack>
+65. rustls releases: 0.23.44 (7 Sep 2026), "ML-DSA certificates … enabled by default in the aws-lc-rs crypto provider" (127). <https://github.com/rustls/rustls/releases>
+66. Go 1.27 release notes: `crypto/mldsa`; ML-DSA in `crypto/x509` and `crypto/tls` (TLS 1.3) (127). <https://go.dev/doc/go1.27>
+67. ChirpStack Gateway Bridge: `go.mod`, `Dockerfile` (golang:1.26.5), `internal/integration/mqtt/auth/auth.go` (127). <https://github.com/chirpstack/chirpstack-gateway-bridge>
+
 ## In progress
 
 - **ChirpStack as the network server** (branch `LoRa_1.1_implementation`): done, findings 115-121 (steps in
@@ -1839,10 +1960,10 @@ All links checked on 28 Sep 2026.
 
 - **Fixed-point Falcon / FN-DSA:** none of liboqs, wolfSSL or PQClean has one yet (89); fxp-falcon-py is a Python
   model only, not for the Pico (122).
-- **TLS 1.3 resumption:** saves the device's signature on a reconnect, but the LoRa chain's TLS links (stunnel,
-  ChirpStack, the application) stay connected, and a LoRaWAN device has no TLS of its own.
+- **TLS 1.3 resumption:** saves the device's signature on a reconnect, but the LoRa chain's TLS links (the Mosquitto
+  bridges, ChirpStack, the application) stay connected, and a LoRaWAN device has no TLS of its own.
 - **SLH-DSA as the chain's root** (124): tested on the Mac (SLH-DSA-SHA2-128s CA, ML-DSA-44 leaves); in the chain it
-  adds about 5.4 KB per certificate sent. Falcon / MAYO / SNOVA on links #1-#2 need stunnel and Mosquitto images
+  adds about 5.4 KB per certificate sent. Falcon / MAYO / SNOVA on links #1-#2 need the bridges' Mosquitto image
   built with oqs-provider.
 - **ESP32 port**, pending the board.
 

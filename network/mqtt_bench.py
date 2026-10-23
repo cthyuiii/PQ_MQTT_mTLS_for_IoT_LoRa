@@ -367,7 +367,9 @@ def summarize(common: dict, rows: list[dict], msgs: list[dict], wholes: list[dic
         air = [float(m["air_us"]) for m in msgs if m.get("air_us")]  # the Pico's UDP uplink to the air (ChirpStack runs)
         if air:
             out.update(**stats("air", air, "us"))
-        for k in ("seal_cyc", "open_cyc"):  # the Pico's CPU cycles (air-only ChirpStack firmware)
+        for k in ("seal_cyc", "open_cyc", "seal256_cyc", "open256_cyc", "reply_open_cyc", "reply_open256_cyc"):
+            # the Pico's CPU cycles (air-only ChirpStack firmware); *256: lorawan11_e2e's 256-bit layer on its own;
+            # reply_open: the application's reply opened
             v = [float(m[k]) for m in msgs if m.get(k)]
             if v:
                 out.update(**stats(k[:-4], v, "cyc"))

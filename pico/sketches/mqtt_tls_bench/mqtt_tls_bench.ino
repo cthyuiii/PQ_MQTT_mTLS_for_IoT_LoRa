@@ -59,8 +59,9 @@
 //   makes no broker connection at all (MT_AIR_ONLY, mode "air"): it seals each reading, opens it again (its open cost)
 //   and sends it over the air, as a LoRa device does; mTLS starts at the gateway's link. Its msg rows add seal / open
 //   in CPU cycles (rp2040.getCycleCount: SysTick, every core clock). REPLY_WAIT_MS=<ms> (-> MT_DOWN_WAIT_MS): the round
-//   trip, the device waiting after each uplink for the application's reply (chirpstack_app.py --reply: a downlink on
-//   FPort 1 reading "ack <FCnt>") that comes back through ChirpStack and the gateway, verified here (reply_us).
+//   trip, the device waiting after each uplink for the application's reply (chirpstack_app.py --reply: a downlink
+//   reading "ack <FCnt>", in the uplink's scheme) that comes back through ChirpStack and the gateway, verified here
+//   (reply_us; its open: reply_open_cyc / reply_open256_cyc).
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -69,6 +70,8 @@
 #include <wolfssl/ssl.h>
 #include <hardware/structs/watchdog.h>  // scratch registers survive a watchdog reboot: which block hung
 #include "mt_secrets.h"
+static uint32_t la_mark;  // lorawan11_e2e: the cycle count between its two layers (lora_aead.h's LA_MARK)
+#define LA_MARK() (la_mark = rp2040.getCycleCount())
 #include "lora_aead.h"
 #ifdef MT_KEX_ONLY  // + HQC-1 through liboqs 0.16 (kem_wolf.h)
 #define KW_LIBOQS
@@ -435,40 +438,50 @@ static bool lora_load() {  // true: keys, DevAddr and FCnt (= the saved reservat
 
 #ifdef MT_AIR_ONLY
 static WiFiUDP air;  // the uplink as a radio would send it: one datagram to the virtual gateway (and its downlinks back)
-#define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us,seal_cyc,open_cyc,reply_us"
-// the air columns: the UDP send, seal / open in CPU cycles, the round trip; air and reply empty when not measured
-static const char *air_col(uint32_t us, uint32_t seal_cyc, uint32_t open_cyc, uint32_t reply_us) {
-  static char s[64], a[12], r[12];
-  a[0] = r[0] = 0;
-  if (us) snprintf(a, sizeof a, "%lu", (unsigned long)us);
-  if (reply_us) snprintf(r, sizeof r, "%lu", (unsigned long)reply_us);
-  snprintf(s, sizeof s, ",%s,%lu,%lu,%s", a, (unsigned long)seal_cyc, (unsigned long)open_cyc, r);
+#define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us,seal_cyc,open_cyc,reply_us,seal256_cyc,open256_cyc," \
+                "reply_open_cyc,reply_open256_cyc"
+// the air columns: the UDP send, seal / open in CPU cycles, the round trip, the 256-bit layer's own share of seal /
+// open (lorawan11_e2e only), and the application's reply opened (cycles, and its 256-bit layer's share); empty when
+// not measured
+enum { AIR_COLS = 8 };
+static const char *air_col(const uint32_t *v) {  // AIR_COLS values
+  static char s[12 * AIR_COLS];
+  int n = 0;
+  for (int i = 0; i < AIR_COLS; i++) n += snprintf(s + n, sizeof s - n, v[i] ? ",%lu" : ",", (unsigned long)v[i]);
   return s;
 }
 #else
 #define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B"
-static const char *air_col(uint32_t, uint32_t, uint32_t, uint32_t) { return ""; }
+enum { AIR_COLS = 8 };
+static const char *air_col(const uint32_t *) { return ""; }
 #endif
 #ifdef MT_DOWN_WAIT_MS
 #ifndef MT_AIR_GAP_MS
 #define MT_AIR_GAP_MS 1050  // uplinks this far apart: virtual_gateway.py's --gap (1 s) + 50 ms, so none waits in its queue
 #endif
 static uint32_t last_up;  // millis() of the last uplink sent
-// the application's reply to uplink `up`: a LoRaWAN 1.1 downlink on FPort 1 reading "ack <up>", back over the air.
-// -> us from t_sent to the reply verified (MIC with SNwkSIntKey, decrypted with the AppSKey), 0 if none in time.
-// ponytail: no AFCntDown check, so a replayed downlink isn't refused; add it when downlinks carry commands
-static uint32_t await_reply(uint32_t t_sent, uint32_t up) {
+// the application's reply to uplink `up`: a LoRaWAN 1.1 downlink reading "ack <up>", back over the air, in the block's
+// scheme: lorawan11 (FPort 1), or lorawan11_e2e (FPort 2: the 256-bit layer inside, its blocks on `up`, lora_aead.h).
+// -> us from t_sent to the reply verified (MIC with SNwkSIntKey, decrypted with the AppSKey; then the tag and the
+// 256-bit layer), 0 if none in time; cyc / cyc256: its open in cycles, and the 256-bit layer's share.
+// ponytail: no AFCntDown check, so a replayed downlink isn't refused; add it when downlinks carry commands (the 256-bit
+// layer's tag is bound to `up`, so an old lorawan11_e2e reply already fails it)
+static uint32_t await_reply(uint32_t t_sent, uint32_t up, uint32_t *cyc, uint32_t *cyc256) {
   char want[16];
-  int wl = snprintf(want, sizeof want, "ack %lu", (unsigned long)up), fp = lw_fport;
+  int wl = snprintf(want, sizeof want, "ack %lu", (unsigned long)up);
   while (micros() - t_sent < MT_DOWN_WAIT_MS * 1000u) {
     rp2040.wdt_reset();
     if (air.parsePacket() <= 0) continue;
     int n = air.read(frame, sizeof frame);
-    if (n != HDR + wl + 4 || frame[0] != 0x60 || (frame[5] & 0x0F)) continue;  // unconfirmed down, no FOpts, our size
-    lw_fport = 1;  // the reply is lorawan11 on FPort 1, also in the lorawan11_e2e blocks (same LoRaWAN keys)
-    bool ok = lw_open(wl) == 0 && !memcmp(out, want, wl);
-    lw_fport = fp;
-    if (ok) return micros() - t_sent;
+    if (n != HDR + wl + (e2e ? 8 : 4) || frame[0] != 0x60 || (frame[5] & 0x0F)) continue;  // unconfirmed down, no FOpts, our size
+    la_mark = 0;
+    uint32_t c0 = rp2040.getCycleCount();
+    bool ok = (e2e ? e2e_open_at(wl, up & 0xFFFF) : lw_open(wl)) == 0 && !memcmp(out, want, wl);
+    uint32_t c1 = rp2040.getCycleCount();
+    if (!ok) continue;
+    *cyc = c1 - c0;
+    if (la_mark) *cyc256 = c1 - la_mark;
+    return micros() - t_sent;
   }
   return 0;
 }
@@ -490,7 +503,7 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
 #endif
   for (int m = 0; m < msgs; m++) {
     char s[48];
-    uint32_t cyc_seal = 0, cyc_open = 0, reply_us = 0;
+    uint32_t cyc_seal = 0, cyc_open = 0, reply_us = 0, seal256 = 0, open256 = 0, reply_cyc = 0, reply256 = 0;
 #ifdef MT_DOWN_WAIT_MS
     while (!down && millis() - last_up < MT_AIR_GAP_MS) { rp2040.wdt_reset(); delay(1); }
 #endif
@@ -505,15 +518,19 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
       save_us[nsaves++ % 16] = micros() - s0;
     }
 #endif
+    la_mark = 0;
     uint32_t t0 = micros(), c0 = rp2040.getCycleCount();
     if (sc.seal(MT_PAYLOAD)) return "seal failed";
     cyc_seal = rp2040.getCycleCount() - c0;
+    if (la_mark) seal256 = la_mark - c0;  // lorawan11_e2e seals its 256-bit layer first
     uint32_t t1 = micros();
 #ifdef MT_AIR_ONLY  // no broker: the device opens its own frame (its open cost); the air send follows
     uint32_t tx0 = c->tx, rx0 = c->rx, t2 = t1;
+    la_mark = 0;
     c0 = rp2040.getCycleCount();
     bool ok = sc.open(MT_PAYLOAD) == 0 && !memcmp(out, pt, MT_PAYLOAD);
     cyc_open = rp2040.getCycleCount() - c0;
+    if (la_mark) open256 = cyc_open - (la_mark - c0);  // and opens it last
 #else
     int h = 0;
     pkt[h++] = 0x30; h += put_len(pkt + h, 2 + tl + fl);
@@ -539,13 +556,14 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     uint32_t t4 = micros();
     if (!down && air.beginPacket(AIR_HOST, AIR_PORT)) { air.write(frame, fl); air.endPacket(); air_us = micros() - t4; }
 #ifdef MT_DOWN_WAIT_MS
-    if (!down) { last_up = millis(); reply_us = await_reply(t4, fcnt); }  // fcnt: this uplink's (seal counted it)
+    if (!down) { last_up = millis(); reply_us = await_reply(t4, fcnt, &reply_cyc, &reply256); }  // fcnt: this uplink's
 #endif
 #endif
     STEP(S_SERIAL);
+    const uint32_t cols[AIR_COLS] = {air_us, cyc_seal, cyc_open, reply_us, seal256, open256, reply_cyc, reply256};
     if (report) Serial.printf("msg,%d,%d,%lu,%lu,%lu,%lu,%lu%s\n", iter, m, (unsigned long)(t1 - t0),
                               (unsigned long)(t2 - t1), (unsigned long)(t3 - t2), (unsigned long)(c->tx - tx0),
-                              (unsigned long)(c->rx - rx0), air_col(air_us, cyc_seal, cyc_open, reply_us));
+                              (unsigned long)(c->rx - rx0), air_col(cols));
   }
   if (report && msgs > 0)
     Serial.printf("whole,%d,%.3f,%.3f,%d\n", iter, first / 1e3, (micros() - t_conn) / 1e3, msgs);

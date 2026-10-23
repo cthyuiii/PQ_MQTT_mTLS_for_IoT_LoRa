@@ -130,27 +130,35 @@ static int lw_open(int len) {
   memcpy(out, frame + HDR, len); lw_crypt(fc, out, len);
   return 0;
 }
+#ifndef LA_MARK
+#define LA_MARK()  // between lorawan11_e2e's two layers: the sketch times them apart there (the host test: nothing)
+#endif
 static int e2e_seal(int len) {  // inner AES-256-CTR + 4 bytes of AES-256-CMAC over B0 | it, then the LoRaWAN layer
   uint8_t b[16], t[16];
   header(++fcnt & 0xFFFF);
   memcpy(frame + HDR, pt, len); ctr_crypt(&e2e_ctr, fcnt & 0xFFFF, frame + HDR, len);
   block(b, 0x49, fcnt & 0xFFFF, (uint8_t)len); cmac(&cm_e2e, b, frame + HDR, len, t); memcpy(frame + HDR + len, t, 4);
+  LA_MARK();  // the 256-bit layer is done; the LoRaWAN (AES-128) layer goes around it
   ctr_crypt(&lw_ctr, fcnt & 0xFFFF, frame + HDR, len + 4);
   mic(HDR + len + 4, fcnt & 0xFFFF, frame + HDR + len + 4);
   return 0;
 }
-static int e2e_open(int len) {
+// ic: the FCnt in the 256-bit layer's blocks. The frame's own, except on the application's reply: it seals that before
+// ChirpStack picks the downlink's FCnt, so it uses the FCnt of the uplink it answers (Dir = 1; one reply per uplink)
+static int e2e_open_at(int len, uint32_t ic) {
   uint32_t fc = frame[6] | frame[7] << 8;
   uint8_t m[4], b[16], t[16];
   if (frame[8] != lw_fport) return -1;
   mic(HDR + len + 4, fc, m);
   if (ct_differ(m, frame + HDR + len + 4, 4)) return -1;
   memcpy(out, frame + HDR, len + 4); ctr_crypt(&lw_ctr, fc, out, len + 4);
-  block(b, 0x49, fc, (uint8_t)len); cmac(&cm_e2e, b, out, len, t);
+  LA_MARK();  // the LoRaWAN (AES-128) layer is off; the 256-bit layer follows
+  block(b, 0x49, ic, (uint8_t)len); cmac(&cm_e2e, b, out, len, t);
   if (ct_differ(t, out + len, 4)) return -1;
-  ctr_crypt(&e2e_ctr, fc, out, len);
+  ctr_crypt(&e2e_ctr, ic, out, len);
   return 0;
 }
+static int e2e_open(int len) { return e2e_open_at(len, frame[6] | frame[7] << 8); }
 static int gcm_seal(int len) {
   uint8_t n[16];
   header(++fcnt & 0xFFFF); nonce(n, fcnt & 0xFFFF);

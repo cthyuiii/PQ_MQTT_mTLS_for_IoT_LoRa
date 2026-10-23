@@ -168,9 +168,12 @@ names = re.findall(r'\{"(\w+)", WOLFSSL_', ino)
 assert len(names) == 13 and set(names) <= set(bmm.SWEEP_GROUPS), set(names) - set(bmm.SWEEP_GROUPS)
 # the air-only ChirpStack firmware: no connection (zero row), its own cycle and round-trip columns, labelled "air"
 air = r.mqtt_blocks(f"=== x on RP2040 ===\n#block pipeline air lorawan11 up\n#lib none (LoRa air only)\n{H}\n"
-                    "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us,seal_cyc,open_cyc,reply_us\n"
-                    "0,0,0,0,0,0,0,0,0,0,0,0,0\nmsg,0,0,705,0,638,0,0,214,141020,127630,640100\n"
-                    "msg,0,1,707,0,640,0,0,216,141410,128010,\n#end\n")
+                    "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us,seal_cyc,open_cyc,reply_us,seal256_cyc,open256_cyc,"
+                    "reply_open_cyc,reply_open256_cyc\n"
+                    "0,0,0,0,0,0,0,0,0,0,0,0,0\nmsg,0,0,705,0,638,0,0,214,141020,127630,640100,96000,84000,163000,86000\n"
+                    "msg,0,1,707,0,640,0,0,216,141410,128010,,96400,84400,,\n#end\n")
 sa = bmm.summarize({}, air[0]["rows"], air[0]["msgs"])
 assert (sa["seal_median_cyc"], sa["open_median_cyc"], sa["replies"], sa["reply_median_ms"]) == (141215.0, 127820.0, 1, 640.1), sa
+assert (sa["seal256_median_cyc"], sa["open256_median_cyc"]) == (96200.0, 84200.0), sa
+assert (sa["reply_open_median_cyc"], sa["reply_open256_median_cyc"]) == (163000.0, 86000.0), sa
 print("mqtt_parse_test: OK")

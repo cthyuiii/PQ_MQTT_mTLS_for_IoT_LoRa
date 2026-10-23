@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
-# PQ TLS on both sides of ChirpStack (README section 0.4):
+# TLS on every MQTT hop around ChirpStack, PQ on every hop between machines (README section 0.4):
 #
-#   gateway → stunnel ═PQ═► ChirpStack [its Mosquitto :8883 → ChirpStack] → stunnel ═PQ═► MQTT broker ═PQ═► application
+#   gateway ═PQ═► mosquitto-pq ─TLS─► ChirpStack's Mosquitto ─TLS─► ChirpStack, and back:
+#   ChirpStack ─TLS─► its Mosquitto ─TLS─► mosquitto-pq ═PQ═► MQTT broker ═PQ═► application
 #
-#   ChirpStack's Mosquitto  where gateways publish (ChirpStack reads gateways only through a broker): + listener 8883,
-#                           TLS 1.3, X25519MLKEM768 only, ML-DSA-44 certificates (its own CA, configuration/pq/), a
-#                           client certificate required. ChirpStack reads it inside its compose network; its plain
-#                           1883 is on 127.0.0.1:1884 of this Mac only, no longer on the LAN.
-#   ChirpStack → MQTT       ChirpStack's application events (its MQTT integration) go through stunnel
-#                           (scripts/stunnel, Alpine's OpenSSL 3.5) to the project's PQ MQTT broker
-#                           (BROKER_ACL=1 ./run_all.sh --serve-broker; its ML-DSA-44 mTLS listener is :18835).
-#                           ChirpStack's own TLS can't (finding 117). The proxy pins the broker's own certificate (the
-#                           benchmark set names only localhost, so its CA alone would accept any certificate it issued).
+#   mosquitto-pq            the door on the LAN: listener 8883, TLS 1.3, X25519MLKEM768 only (OPENSSL_CONF), ML-DSA-44
+#                           certificates (its own CA, configuration/pq/), a client certificate required, an ACL per
+#                           certificate name (gateways: their gateway topics only). It bridges the gateway topics and
+#                           ChirpStack's application topics to ChirpStack's Mosquitto, and the application topics on
+#                           to the project's PQ MQTT broker (BROKER_ACL=1 ./run_all.sh --serve-broker, ML-DSA-44 mTLS
+#                           :18835) as `chirpstack`. That broker's certificate names only localhost, so the bridge
+#                           checks its set's CA, which signs no other certificate (gen_certs.sh), not the name.
+#   ChirpStack's Mosquitto  TLS only (listener 8884, no port outside the compose network): ChirpStack's TLS (rustls with
+#                           ring) has no ML-KEM and no ML-DSA (finding 117), so this hop uses ECDSA P-256 certificates
+#                           of a second CA (configuration/pq/local/) and X25519. It never leaves the Mac.
 #   Roles on the broker     client certificates of the broker's client CA (APP_CERTS, default certs/MLDSA44) named
-#                           chirpstack (this proxy) and application (copy to the Pi), next to the devices' pqc-client;
+#                           chirpstack (the bridge) and application (copy to the Pi), next to the devices' pqc-client;
 #                           with BROKER_ACL=1 the broker's ACL gives each only its own topics.
 #   ChirpStack's API secret a random one (configuration/pq/api_secret, kept across runs) instead of the compose default.
 # All of it is docker-compose.override.yml plus new files: the compose file and its configs stay untouched, and
 # `rm docker-compose.override.yml && docker compose up -d --remove-orphans` goes back. Existing certificates are kept
-# (the Pi has copies); the broker's is remade if <mac-ip> isn't in it.
+# (the Pi has copies); the door's is remade if <mac-ip> isn't in it.
 #
 #   bash scripts/chirpstack_pq_setup.sh <mac-ip> <mqtt-broker host:port> [chirpstack-docker folder, default ~/chirpstack-docker]
 set -euo pipefail
@@ -29,21 +31,25 @@ CS=${3:-$HOME/chirpstack-docker}
 APP_CERTS=${APP_CERTS:-$R/certs/MLDSA44}
 OSSL=${OSSL:-$(command -v brew >/dev/null && echo "$(brew --prefix openssl@3)/bin/openssl" || echo openssl)}
 [ -f "$CS/docker-compose.yml" ] || { echo "no $CS/docker-compose.yml (chirpstack-docker)" >&2; exit 1; }
-for f in CA.crt server.crt ClientCA.crt ClientCA.key; do
+for f in CA.crt ClientCA.crt ClientCA.key; do
     [ -f "$APP_CERTS/$f" ] || { echo "no $APP_CERTS/$f (the MQTT broker's set, gen_certs.sh; the client CA key stays on this Mac)" >&2; exit 1; }
 done
 P=$CS/configuration/pq
+L=$P/local
 M=$CS/configuration/mosquitto-pq
-mkdir -p "$P/stunnel" "$P/app" "$M"
+ML=$CS/configuration/mosquitto-local
+CC=$CS/configuration/chirpstack-pq
+mkdir -p "$P/app" "$L" "$M" "$ML" "$CC"
 chmod 700 "$P"  # its keys: this user (and the containers, through Docker's file sharing) only
 
-cert() {  # cert <folder> <CA (path without .crt / .key)> <name> <X.509 extensions...>: ML-DSA-44 key + certificate, CN=<name>
-    "$OSSL" req -new -newkey ML-DSA-44 -nodes -keyout "$1/$3.key" -out "$1/$3.csr" -subj "/CN=$3" 2>/dev/null
+ALG=ML-DSA-44
+cert() {  # cert <folder> <CA (path without .crt / .key)> <name> <X.509 extensions...>: $ALG key + certificate, CN=<name>
+    "$OSSL" req -new -newkey $ALG -nodes -keyout "$1/$3.key" -out "$1/$3.csr" -subj "/CN=$3" 2>/dev/null
     "$OSSL" x509 -req -in "$1/$3.csr" -CA "$2.crt" -CAkey "$2.key" -CAcreateserial -days 365 \
         -extfile <(printf '%s\n' "${@:4}") -out "$1/$3.crt" 2>/dev/null
     rm -f "$1/$3.csr"
-    [ "$1" != "$P" ] || chmod 644 "$1/$3.key"  # ponytail: readable by the containers' users; a real deployment keeps keys 600, per service
-    echo "[+] $3 certificate (ML-DSA-44) in $1"
+    [[ $1 != "$P"* ]] || chmod 644 "$1/$3.key"  # ponytail: readable by the containers' users; a real deployment keeps keys 600, per service
+    echo "[+] $3 certificate (${ALG%% *}) in $1"
 }
 if [ ! -f "$P/ca.crt" ]; then
     "$OSSL" req -x509 -new -newkey ML-DSA-44 -nodes -keyout "$P/ca.key" -out "$P/ca.crt" -days 365 \
@@ -53,19 +59,77 @@ if [ ! -f "$P/ca.crt" ]; then
 fi
 "$OSSL" x509 -in "$P/server.crt" -noout -ext subjectAltName 2>/dev/null | grep -q "IP Address:$IP$" ||
     cert "$P" "$P/ca" server "subjectAltName=DNS:mosquitto,DNS:localhost,IP:127.0.0.1,IP:$IP" "extendedKeyUsage=serverAuth"
+# the hops inside the Mac: ECDSA P-256 (ChirpStack's TLS takes nothing else of these)
+ALG="ec -pkeyopt ec_paramgen_curve:P-256"
+if [ ! -f "$L/ca.crt" ]; then
+    "$OSSL" req -x509 -new -newkey $ALG -nodes -keyout "$L/ca.key" -out "$L/ca.crt" -days 365 \
+        -subj "/CN=IoT-PQC ChirpStack local CA" 2>/dev/null
+    chmod 600 "$L/ca.key"
+fi
+[ -f "$L/mosquitto.crt" ] || cert "$L" "$L/ca" mosquitto "subjectAltName=DNS:mosquitto" "extendedKeyUsage=serverAuth"
+for c in chirpstack door; do [ -f "$L/$c.crt" ] || cert "$L" "$L/ca" $c "extendedKeyUsage=clientAuth"; done
+ALG=ML-DSA-44
 
-# ChirpStack's Mosquitto: OpenSSL's group list = the hybrid only, so a client without ML-KEM can't fall back to X25519
+# the door's OpenSSL group list = the hybrid only, so a client without ML-KEM can't fall back to X25519 (its bridges too)
 printf 'openssl_conf = i\n[i]\nssl_conf = s\n[s]\nsystem_default = d\n[d]\nGroups = X25519MLKEM768\n' > "$P/openssl.cnf"
-cat > "$M/mosquitto.conf" <<'EOF'
-# ChirpStack's broker with a PQ listener for gateways (made by IoT-PQC scripts/chirpstack_pq_setup.sh)
-listener 1883
-allow_anonymous true
-# TLS 1.3 with X25519MLKEM768 only (OPENSSL_CONF), ML-DSA-44 certificates, a client certificate required
+cat > "$M/acl" <<'EOF'
+user gateway
+topic write +/gateway/+/event/#
+topic write +/gateway/+/state/#
+topic read +/gateway/+/command/#
+EOF
+chmod 600 "$M/acl"  # Mosquitto loads it before dropping to its user; world-readable ACLs are deprecated
+cat > "$M/mosquitto.conf" <<EOF
+# ChirpStack's PQ door (made by IoT-PQC scripts/chirpstack_pq_setup.sh): TLS 1.3, X25519MLKEM768 only, ML-DSA-44
+allow_anonymous false
 listener 8883
 cafile /mosquitto/pq/ca.crt
 certfile /mosquitto/pq/server.crt
 keyfile /mosquitto/pq/server.key
 require_certificate true
+use_identity_as_username true
+tls_version tlsv1.3
+acl_file /mosquitto/config/acl
+
+# to ChirpStack's Mosquitto (compose network): TLS 1.3, ECDSA certificates
+connection chirpstack
+address mosquitto:8884
+topic +/gateway/+/event/# out 0
+topic +/gateway/+/state/# out 0
+topic +/gateway/+/command/# in 0
+topic application/+/device/+/event/# in 0
+topic application/+/device/+/command/# out 0
+bridge_cafile /mosquitto/pq/local/ca.crt
+bridge_certfile /mosquitto/pq/local/door.crt
+bridge_keyfile /mosquitto/pq/local/door.key
+bridge_tls_version tlsv1.3
+remote_clientid pq-door
+cleansession true
+notifications false
+
+# to the MQTT broker: ML-DSA-44 mTLS as chirpstack; its set's CA is checked, not the name (localhost only)
+connection broker
+address $APP
+topic application/+/device/+/event/# out 0
+topic application/+/device/+/command/# in 0
+bridge_cafile /mosquitto/pq/app/ca.crt
+bridge_certfile /mosquitto/pq/app/client.crt
+bridge_keyfile /mosquitto/pq/app/client.key
+bridge_insecure true
+bridge_tls_version tlsv1.3
+remote_clientid chirpstack-bridge
+cleansession true
+notifications false
+EOF
+cat > "$ML/mosquitto.conf" <<'EOF'
+# ChirpStack's Mosquitto (made by IoT-PQC scripts/chirpstack_pq_setup.sh): TLS only, inside the compose network
+allow_anonymous false
+listener 8884
+cafile /tls/ca.crt
+certfile /tls/mosquitto.crt
+keyfile /tls/mosquitto.key
+require_certificate true
+use_identity_as_username true
 tls_version tlsv1.3
 EOF
 
@@ -74,77 +138,72 @@ for role in chirpstack application; do
     [ -f "$APP_CERTS/$role.crt" ] || cert "$APP_CERTS" "$APP_CERTS/ClientCA" $role "extendedKeyUsage=clientAuth"
 done
 cp "$APP_CERTS/chirpstack.crt" "$P/app/client.crt"; cp "$APP_CERTS/chirpstack.key" "$P/app/client.key"; chmod 644 "$P/app/client.key"
-cat "$APP_CERTS/CA.crt" "$APP_CERTS/server.crt" > "$P/app/broker.pem"  # the chain's CA + the broker's own certificate (pinned)
-cp "$R/scripts/stunnel/Dockerfile" "$P/stunnel/Dockerfile"
-cat > "$P/stunnel/stunnel.conf" <<EOF
-; ChirpStack's MQTT integration -> plain on chirpstack-app-proxy:1883 (compose network) -> PQ TLS to the MQTT broker
-foreground = yes
-pid =
-[chirpstack-integration]
-client = yes
-accept = 0.0.0.0:1883
-connect = $APP
-CAfile = /pq/app/broker.pem
-cert = /pq/app/client.crt
-key = /pq/app/client.key
-verifyChain = yes
-verifyPeer = yes
-sslVersionMin = TLSv1.3
-curves = X25519MLKEM768
-EOF
+cp "$APP_CERTS/CA.crt" "$P/app/ca.crt"
 
-# ChirpStack's config: its integration on the proxy (the gateway backends stay on its own Mosquitto), the downlink wait
-# and the API secret. The application's reply (chirpstack_app.py --reply) goes out in the uplink's RX1 window (1 s) only
-# if ChirpStack waits for it: 400 ms between handing the uplink to the integration and reading the device's queue (its
-# default, 100 ms, is shorter than the reply's trip through the Pi's broker; the uplink events themselves aren't
-# delayed). DOWNLINK_DELAY=100ms: ChirpStack's default again (finding 124)
+# ChirpStack's config: every MQTT connection on its Mosquitto over TLS (the gateway backend of each region, and its
+# integration), the downlink wait and the API secret. The application's reply (chirpstack_app.py --reply) goes out in
+# the uplink's RX1 window (1 s) only if ChirpStack waits for it: 400 ms between handing the uplink to the integration
+# and reading the device's queue (its default, 100 ms, is shorter than the reply's trip through the Pi's broker; the
+# uplink events themselves aren't delayed). DOWNLINK_DELAY=100ms: ChirpStack's default again (finding 124)
 DD=${DOWNLINK_DELAY:-400ms}
 # ChirpStack's API secret (it signs the UI's and API's tokens): a random one, kept so a re-run doesn't log everyone out
 [ -s "$P/api_secret" ] || { "$OSSL" rand -base64 32 > "$P/api_secret"; chmod 600 "$P/api_secret"; }
 S=$(cat "$P/api_secret")
-T=$CS/configuration/chirpstack-pq.toml
-awk -v d="$DD" -v s="$S" '/^[[:space:]]*\[/ {sec = $0; gsub(/[[:space:]]/, "", sec)}
-     sec == "[integration.mqtt]" && !m && /^[[:space:]]*server=/ {sub(/server=.*/, "server=\"tcp://chirpstack-app-proxy:1883/\""); m = 1}
+TLS='  ca_cert="/tls/ca.crt"\n  tls_cert="/tls/chirpstack.crt"\n  tls_key="/tls/chirpstack.key"'
+for f in "$CS"/configuration/chirpstack/region_*.toml; do
+    sed -e 's|server="tcp://\$MQTT_BROKER_HOST:1883"|server="ssl://mosquitto:8884"|' -e 's|ca_cert=""|ca_cert="/tls/ca.crt"|' \
+        -e 's|tls_cert=""|tls_cert="/tls/chirpstack.crt"|' -e 's|tls_key=""|tls_key="/tls/chirpstack.key"|' "$f" > "$CC/${f##*/}"
+    [ "$(grep -c -E 'server="ssl://mosquitto:8884"|"/tls/(ca|chirpstack)\.(crt|key)"' "$CC/${f##*/}")" = 4 ] ||
+        { echo "$f: no gateway backend server / ca_cert / tls_cert / tls_key lines to set" >&2; exit 1; }
+done
+T=$CC/chirpstack.toml
+awk -v d="$DD" -v s="$S" -v tls="$TLS" '/^[[:space:]]*\[/ {sec = $0; gsub(/[[:space:]]/, "", sec)}
+     sec == "[integration.mqtt]" && !m && /^[[:space:]]*server=/ {sub(/server=.*/, "server=\"ssl://mosquitto:8884/\"\n" tls); m = 1}
      sec == "[api]" && !a && /^[[:space:]]*secret=/ {sub(/secret=.*/, "secret=\"" s "\""); a = 1}
      /^[[:space:]]*get_downlink_data_delay=/ {next}
      {print}
      /^[[:space:]]*\[network\][[:space:]]*$/ {print "  get_downlink_data_delay=\"" d "\""}' "$CS/configuration/chirpstack/chirpstack.toml" > "$T"
-grep -q 'server="tcp://chirpstack-app-proxy:1883/"' "$T" || { echo "no [integration.mqtt] server= line in chirpstack.toml" >&2; exit 1; }
+grep -q 'server="ssl://mosquitto:8884/"' "$T" || { echo "no [integration.mqtt] server= line in chirpstack.toml" >&2; exit 1; }
 grep -q "get_downlink_data_delay=\"$DD\"" "$T" || { echo "no [network] in chirpstack.toml" >&2; exit 1; }
 grep -q "secret=\"$S\"" "$T" || { echo "no [api] secret= line in chirpstack.toml" >&2; exit 1; }
+! grep -r -q -E '^[[:space:]]*server="tcp://' "$CC" || { echo "a plain MQTT server is left in $CC" >&2; exit 1; }
 
 cat > "$CS/docker-compose.override.yml" <<'EOF'
-# made by IoT-PQC scripts/chirpstack_pq_setup.sh: PQ TLS on both sides of ChirpStack. Remove this file to go back.
+# made by IoT-PQC scripts/chirpstack_pq_setup.sh: TLS on every MQTT hop, PQ between machines. Remove this file to go back.
 services:
-  mosquitto:
-    ports: !override
-      - "127.0.0.1:1884:1883"
+  mosquitto:  # ChirpStack's broker: TLS only, no port outside the compose network
+    ports: !reset []
+    volumes: !override
+      - ./configuration/mosquitto-local/:/mosquitto/config/
+      - ./configuration/pq/local/ca.crt:/tls/ca.crt:ro
+      - ./configuration/pq/local/mosquitto.crt:/tls/mosquitto.crt:ro
+      - ./configuration/pq/local/mosquitto.key:/tls/mosquitto.key:ro
+  mosquitto-pq:  # the door for gateways and the bridge to the MQTT broker: X25519MLKEM768 only, ML-DSA-44
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
       - "8883:8883"
     environment:
       - OPENSSL_CONF=/mosquitto/pq/openssl.cnf
-    volumes: !override
+    volumes:
       - ./configuration/mosquitto-pq/:/mosquitto/config/
       - ./configuration/pq/:/mosquitto/pq/:ro
-  chirpstack-app-proxy:
-    build: ./configuration/pq/stunnel
-    image: iot-pqc/stunnel
-    restart: unless-stopped
-    volumes:
-      - ./configuration/pq/stunnel/stunnel.conf:/etc/stunnel/stunnel.conf:ro
-      - ./configuration/pq/:/pq/:ro
-  chirpstack:
-    volumes:
-      - ./configuration/chirpstack-pq.toml:/etc/chirpstack/chirpstack.toml:ro
     depends_on:
-      - chirpstack-app-proxy
-  # the stock bridges listen on the LAN (UDP 1700, Basics Station 3001) and feed Mosquitto in plain, past the PQ
-  # listener: off unless asked for (docker compose --profile stock up -d)
+      - mosquitto
+  chirpstack:
+    volumes: !override
+      - ./configuration/chirpstack-pq/:/etc/chirpstack/:ro
+      - ./configuration/pq/local/ca.crt:/tls/ca.crt:ro
+      - ./configuration/pq/local/chirpstack.crt:/tls/chirpstack.crt:ro
+      - ./configuration/pq/local/chirpstack.key:/tls/chirpstack.key:ro
+  # the stock bridges listen on the LAN (UDP 1700, Basics Station 3001) and publish in plain to a listener that no
+  # longer exists: off (docker compose --profile stock up -d would start them, without a broker to talk to)
   chirpstack-gateway-bridge:
     profiles: [stock]
   chirpstack-gateway-bridge-basicstation:
     profiles: [stock]
 EOF
 echo "[+] $CS/docker-compose.override.yml (MQTT broker: $APP)"
-echo "next:  cd $CS && docker compose up -d --build --force-recreate --remove-orphans mosquitto chirpstack-app-proxy chirpstack"
+echo "next:  cd $CS && docker compose up -d --force-recreate --remove-orphans mosquitto mosquitto-pq chirpstack"
 echo "Pi:    rsync -a $P/{ca.crt,gateway.crt,gateway.key} <pi-user>@<pi-ip>:chirpstack-pq/   (and certs/ without CA keys, README 0.1)"
 echo "UI:    change the admin password (top right: admin > Change password); the API secret is new, so log in again"

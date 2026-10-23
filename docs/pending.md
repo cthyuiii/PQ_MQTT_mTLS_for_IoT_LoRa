@@ -3,7 +3,8 @@
 What this branch still needs: a simulated ChirpStack network (no radio) that accepts our LoRaWAN 1.1 frames,
 with 256-bit protection end to end and PQ TLS on every network link. How to run it: README section 0.4.
 Results: docs/findings.md 115-120.
-Chain: device ─ air ─► gateway ─ stunnel ═PQ═► ChirpStack ─ stunnel ═PQ═► MQTT broker ═PQ═► application.
+Chain: device ─ air ─► gateway ─TLS─► bridge ═PQ═► door ─TLS─► ChirpStack ─TLS─► door ═PQ═► MQTT broker ═PQ═► application
+(no plain MQTT; finding 125).
 Labels: **G&B** = Gateway & Backend, **B&R** = Benchmarking & Reproducibility.
 
 ## Status: done (10 Oct 2026)
@@ -76,7 +77,8 @@ inside the Pi, as on a real gateway). **Device** = the Mac host client, or the P
 11. [x] Downlinks: a downlink queued in ChirpStack went out after the next uplink → bridge → virtual gateway →
     `PUB=pqc/down` relay → the device's watcher verified its 1.1 MIC and decrypted it (finding 116).
 12. [ ] OTAA join (KIV).
-13. [x] stunnel, a TLS proxy (`scripts/stunnel`: Alpine 3.23, OpenSSL 3.5.8), in front of the Gateway Bridge
+13. [x] (Replaced on 20 Oct by Mosquitto bridges, TLS on every hop: finding 125; `scripts/stunnel` removed. Steps 13-14
+    as first built:) stunnel, a TLS proxy (`scripts/stunnel`: Alpine 3.23, OpenSSL 3.5.8), in front of the Gateway Bridge
     (`PQ=... setup_gateway_pi.sh`) and of ChirpStack (a container in its compose network): both speak plain MQTT only
     on their own machine; on the network TLS 1.3, X25519MLKEM768, ML-DSA-44 client certificates (finding 118).
 14. [x] PQ on both sides of ChirpStack (`scripts/chirpstack_pq_setup.sh`), as required: gateway → stunnel →

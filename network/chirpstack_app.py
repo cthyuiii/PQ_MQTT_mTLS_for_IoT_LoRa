@@ -2,7 +2,8 @@
 """The application behind ChirpStack (docs/pending.md steps 8 and 10): reads ChirpStack's uplink events, removes the
 lorawan11_e2e layer (AES-256-CTR, FPort 2) that ChirpStack can't, and times ChirpStack's part of the trip.
 
-    RAW=1 SUB='application/+/device/+/event/up' network/mqtt_tls_timer <chirpstack-host> 1884 1 0 \\
+    RAW=1 SUB='application/+/device/+/event/up' GROUP=X25519MLKEM768 network/mqtt_tls_timer 127.0.0.1 18835 1 0 \\
+      certs/MLDSA44/CA.crt certs/MLDSA44/application.crt certs/MLDSA44/application.key \\
       | python3 network/chirpstack_app.py --e2e-key <64 hex> [--sent vgw.log --csv results/chirpstack_delay_<tag>.csv]
     ... | python3 network/chirpstack_app.py --e2e-master-file <file>     # per-device keys from one master key
     python3 network/chirpstack_app.py --e2e-master-file <file> --derive <DevEUI>   # provisioning: a device's key
@@ -18,7 +19,8 @@ application holds (--e2e-master-file, 64 hex): key = HKDF-SHA-256(master, "IoT-P
 from the event. Each device is provisioned with its own key only (--derive prints it), so one device's key exposes no
 other's, and ChirpStack never holds any of them. --sent: the virtual gateway's output on the same machine (same clock): delay = event received -
 frame sent, per DevAddr and FCnt = ChirpStack's de-duplication wait + its processing + the MQTT hops on the way.
---reply: answer each uplink that opens with a downlink, FPort 1, "ack <FCnt>": a ChirpStack command written as a
+--reply: answer each uplink that opens with a downlink "ack <FCnt>" (FPort 1; to a lorawan11_e2e uplink, FPort 2 with
+the device's 256-bit layer, its blocks on the uplink's FCnt with Dir = 1): a ChirpStack command written as a
 "pub <topic> <payload>" line to a FIFO that mqtt_tls_timer's relay mode (PUB=) publishes on its own mTLS session (the
 application certificate). ChirpStack sends it in the uplink's RX1 window, and the device times the round trip. With
 --sent the virtual gateway's "downlink" lines give the legs at the Pi: gateway -> application, the application's own
@@ -55,18 +57,29 @@ def ossl(*args, data=b""):
     return subprocess.run([OSSL, *args], input=data, capture_output=True, check=True).stdout
 
 
+def e2e_tag(key, devaddr_be, fcnt, c, down=0):
+    """lorawan11_e2e's 4-byte tag: AES-256-CMAC(AES-256(key, 02|0^15) | AES-256(key, 03|0^15), B0 | ciphertext)[:4]"""
+    kmac = ossl("enc", "-aes-256-ecb", "-nopad", "-K", key.hex(), data=bytes([2] + [0] * 15 + [3] + [0] * 15))
+    return bytes.fromhex(ossl("mac", "-cipher", "AES-256-CBC", "-macopt", f"hexkey:{kmac.hex()}", "CMAC",
+                              data=block(0x49, devaddr_be, fcnt, len(c), down) + c).decode().strip())[:4]
+
+
 def e2e_open(key, devaddr_be, fcnt, data):
-    """lorawan11_e2e's inner layer: ciphertext | 4-byte tag -> the reading, or None if the tag doesn't verify. The tag's
-    key = AES-256(key, 02|0^15) | AES-256(key, 03|0^15); tag = AES-256-CMAC(that key, B0 | ciphertext)[:4]"""
+    """lorawan11_e2e's inner layer: ciphertext | 4-byte tag -> the reading, or None if the tag doesn't verify"""
     if len(data) < 4:
         return None
     c, tag = data[:-4], data[-4:]
-    kmac = ossl("enc", "-aes-256-ecb", "-nopad", "-K", key.hex(), data=bytes([2] + [0] * 15 + [3] + [0] * 15))
-    mac = ossl("mac", "-cipher", "AES-256-CBC", "-macopt", f"hexkey:{kmac.hex()}", "CMAC",
-               data=block(0x49, devaddr_be, fcnt, len(c)) + c).decode().strip()
-    if not hmac.compare_digest(bytes.fromhex(mac)[:4], tag):  # constant time
+    if not hmac.compare_digest(e2e_tag(key, devaddr_be, fcnt, c), tag):  # constant time
         return None
     return ctr(key, block(1, devaddr_be, fcnt, 1), c)
+
+
+def e2e_seal_reply(key, devaddr_be, up_fcnt, text):
+    """the reply's inner layer (Dir = 1): ciphertext | tag, its blocks on the FCnt of the uplink it answers, since
+    ChirpStack picks the downlink's own FCnt only when it sends it. One reply per uplink, so a block is never reused;
+    ChirpStack puts its AES-128 layer and MIC around it"""
+    c = ctr(key, block(1, devaddr_be, up_fcnt, 1, down=1), text)
+    return c + e2e_tag(key, devaddr_be, up_fcnt, c, down=1)
 
 
 def ctr(key, iv, data):
@@ -102,12 +115,14 @@ class SentLog:
         return self.at.get((da, fcnt & 0xFFFF))  # the frame carries FCnt's low 16 bits
 
 
-def reply_line(ev, fcnt):
-    """--reply: the answer to one uplink event, a ChirpStack downlink command on FPort 1 reading "ack <FCnt>", as
-    mqtt_tls_timer's relay mode takes it"""
+def reply_line(ev, fcnt, e2e_key=None):
+    """--reply: the answer to one uplink event, a ChirpStack downlink command reading "ack <FCnt>", as mqtt_tls_timer's
+    relay mode takes it: FPort 1, or for a lorawan11_e2e uplink (FPort 2) sealed with the device's 256-bit layer too"""
     info = ev.get("deviceInfo", {})
-    eui = info.get("devEui", "")
-    cmd = {"devEui": eui, "confirmed": False, "fPort": 1, "data": base64.b64encode(f"ack {fcnt}".encode()).decode()}
+    eui, data, fp = info.get("devEui", ""), f"ack {fcnt}".encode(), 1
+    if int(ev.get("fPort", 0)) == 2 and e2e_key:
+        data, fp = e2e_seal_reply(e2e_key, ev.get("devAddr", ""), fcnt, data), 2
+    cmd = {"devEui": eui, "confirmed": False, "fPort": fp, "data": base64.b64encode(data).decode()}
     return f"pub application/{info.get('applicationId', '')}/device/{eui}/command/down {json.dumps(cmd, separators=(',', ':'))}\n"
 
 
@@ -169,6 +184,15 @@ def selftest():
     topic, cmd = reply_line(ev, 878).split()[1:]
     assert topic == "application/a1/device/e2af8c50008974f8/command/down"
     assert base64.b64decode(json.loads(cmd)["data"]) == b"ack 878" and json.loads(cmd)["fPort"] == 1
+    # the reply to a lorawan11_e2e uplink: the 256-bit layer on the uplink's FCnt, Dir = 1 (pinned; the Pico's
+    # e2e_open_at opens these bytes in pico/tests/aead_host_test), its tag refusing another FCnt or direction
+    k = bytes([0x44] * 32)
+    r = e2e_seal_reply(k, "01020304", 65, b"ack 65")
+    assert r.hex() == "44dc2cca568932bbe4e5", r.hex()
+    assert ctr(k, block(1, "01020304", 65, 1, down=1), r[:-4]) == b"ack 65"
+    assert e2e_open(k, "01020304", 65, r) is None and r[-4:] != e2e_tag(k, "01020304", 66, r[:-4], down=1)
+    cmd = json.loads(reply_line(dict(ev, fPort=2, devAddr="01020304"), 65, k).split()[2])
+    assert cmd["fPort"] == 2 and base64.b64decode(cmd["data"]) == r
     rs = [dict(devaddr="01234568", sent_s=10.0, recv_s=10.25, delay_ms=250.0, reply_s=10.27),
           dict(devaddr="01234568", sent_s=11.0, recv_s=11.25, delay_ms=250.0, reply_s=None)]
     n, gw_app, app, back = legs(rs, [(9.0, "01234568"), (10.6, "01234568"), (10.7, "01234569")])
@@ -209,14 +233,19 @@ def main():
             except (IndexError, ValueError):
                 continue  # not an event line
             dev_key = device_key(master, ev.get("deviceInfo", {}).get("devEui", "")) if master else key
-            da, fc, fp, text = reading(ev, dev_key)
+            t0 = time.perf_counter()
+            da, fc, fp, text = reading(ev, dev_key)  # FPort 2: the tag check and the AES-256 layer off
+            open_ms = (time.perf_counter() - t0) * 1e3
             ts = sent.time_of(da, fc) if sent else None
             d = (t - ts) * 1e3 if ts is not None else None
-            row = dict(devaddr=da, fcnt=fc, fport=fp, sent_s=ts, recv_s=t, delay_ms=d, reading=text)
+            row = dict(devaddr=da, fcnt=fc, fport=fp, sent_s=ts, recv_s=t, delay_ms=d, open_ms=open_ms, reading=text)
             if reply:
                 ans = fp in (1, 2) and not text.startswith("REJECTED")
+                t0 = time.perf_counter()
+                line = reply_line(ev, fc, dev_key) if ans else None  # FPort 2: the reply's 256-bit layer
+                row["seal_ms"] = (time.perf_counter() - t0) * 1e3 if ans else None
                 if ans:
-                    reply.write(reply_line(ev, fc))
+                    reply.write(line)
                 row["reply_s"] = time.time() if ans else None
             rows.append(row)
             print(f"recv {t:.6f} DevAddr {da} FCnt {fc} FPort {fp}" + (f" delay {d:.1f} ms" if d is not None else "")
