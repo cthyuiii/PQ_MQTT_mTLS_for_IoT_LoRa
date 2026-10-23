@@ -9,3 +9,22 @@ esp32,MQTT/TLS SNOVA_III_S round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15
 esp32,MQTT/TLS SNOVA_V_K round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
 esp32,MQTT/TLS SNOVA_V_B round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
 esp32,MQTT/TLS SNOVA_V_S round 3 (wolfSSL+liboqs),,,,,,,,,,,,,,,,,,,,,,,OK (15 MQTT blocks),liboqs-r3
+esp32,MQTT/TLS RSA-2048 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+esp32,MQTT/TLS RSA-3072 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+esp32,MQTT/TLS ECDSA-P256 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,6/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+esp32,MQTT KEM exchange (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,2/6 blocks failed: tcp connect failed (no listener?),wolfssl+bearssl+ascon-c
+esp32,"MQTT KEM exchange, small X25519 (wolfSSL)",,,,,,,,,,,,,,,,,,,,,,,OK (6 MQTT blocks),wolfssl+bearssl+ascon-c
+esp32,MQTT/TLS Ed25519 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,9/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+esp32,MQTT/TLS ML-DSA-65 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,5/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+esp32,MQTT/TLS ML-DSA-87 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,4/41 blocks failed: tls handshake failed: received alert fatal error,wolfssl+bearssl+ascon-c
+esp32,MQTT/TLS Falcon-512 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,18/41 blocks failed: tcp connect failed (no listener?),wolfssl+bearssl+ascon-c
+esp32,MQTT/TLS Falcon-1024 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,23/41 blocks failed: tls handshake failed: out of memory error,wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,1/16 blocks failed: hung during TLS handshake after 11 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks RSA-2048 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks RSA-3072 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,1/7 blocks failed: tcp connect failed (no listener?),wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks ECDSA-P256 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,1/7 blocks failed: tcp connect failed (no listener?),wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks ML-DSA-65 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,1/7 blocks failed: hung during TLS handshake after 12 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks ML-DSA-87 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,1/7 blocks failed: hung during TLS handshake after 7 recorded connections (watchdog reset),wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks Falcon-512 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,OK (7 MQTT blocks),wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks Falcon-1024 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,"2/7 blocks failed: tls handshake failed: Buffer error, output too small or input too big",wolfssl+bearssl+ascon-c
+esp32,MQTT deployment checks Ed25519 (wolfSSL),,,,,,,,,,,,,,,,,,,,,,,2/7 blocks failed: tls handshake failed: error state on socket,wolfssl+bearssl+ascon-c
