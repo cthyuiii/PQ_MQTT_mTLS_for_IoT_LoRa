@@ -1,0 +1,4 @@
+[submodule "network/chirpstack"]
+	path = network/chirpstack
+	url = https://github.com/cthyuiii/chirpstack.git
+	branch = iot-pqc

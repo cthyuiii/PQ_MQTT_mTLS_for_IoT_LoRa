@@ -1860,6 +1860,34 @@ Pico W's pipeline; no run of the new form yet)
        (not in this repo). The cipher is picked by key length (16 B → AES-128, 32 B → AES-256), with all four 1.1
        session keys at 32 B. ABP comes first; the 256-bit end-to-end layer stays.
 
+128. [Mac: built and run] **Our ChirpStack build does PQ mTLS itself: X25519MLKEM768 + ML-DSA-44, straight to the
+     broker (24 Oct, branch `feature/custom-chirpstack-server`).**
+     - **The build:** ChirpStack v4.19.2 with the patch from 127 (rustls 0.23.46 on aws-lc-rs 1.18.2,
+       `prefer-post-quantum`, aws-lc-rs installed as the provider in `main()`). `scripts/chirpstack/Dockerfile` builds
+       the UI and the server inside Docker (Rust step 6 min 24 s on the Mac); image `iot-pqc/chirpstack:4.19.2-pq`,
+       179 MB.
+     - **The test:** a stand-in broker on the Mac (Mosquitto 2.1.2, OpenSSL 3.6) that accepts only X25519MLKEM768
+       and ML-DSA-44 client certificates of MLDSA44's client CA, with no ACL or CRL. As a control, an X25519-only
+       client was refused (alert 40) and a hybrid one got `X25519MLKEM768` / `mldsa44`.
+       - ChirpStack's MQTT integration, pointed straight at it with the `chirpstack` certificate, connected (TLS 1.3)
+         and subscribed to `application/+/device/+/command/+`. No door bridge was involved.
+       - A downlink command published there with the `application` certificate reached ChirpStack and was queued for
+         the device (`device_queue_item` row, then deleted).
+       - No errors or warnings in ChirpStack's log, including its gateway-side links to its own Mosquitto (ECDSA).
+     - **Needed for the Pi broker:** rustls checks the server's name, and MLDSA44's `server.crt` named only
+       localhost / 127.0.0.1. `gen_certs.sh --server-names <set> IP:… DNS:…` reissues it with the same CA and key.
+     - **On the Pi broker (192.168.50.133:18835, no ACL / CRL; built from the fork, commit `b4d894d1`):**
+       - ChirpStack connected with its ML-DSA-44 certificate. A downlink command from the Pi (`application`
+         certificate) was received and queued; the test row was deleted afterwards. No errors or warnings.
+       - A capture of a fresh handshake (container restarted, `tcpdump` on the Mac): ChirpStack's ClientHello offers
+         X25519MLKEM768, X25519, secp256r1, secp384r1, sends key shares X25519MLKEM768 (1,216 B) + X25519, and lists
+         mldsa44 / 65 / 87 among its signature schemes. The broker's ServerHello picks X25519MLKEM768 (share
+         1,120 B), TLS 1.3.
+       - The certificates are encrypted in TLS 1.3, but both sides hold only ML-DSA-44 ones, and the broker requires
+         a client certificate.
+     - **Not yet:** uplinks (ChirpStack takes them only as gateway events: the gateway is KIV); AES-256 (milestone
+       2); ChirpStack's other hop, to its own Mosquitto for gateway topics, still uses ECDSA certificates.
+
 ### Sources
 
 All links checked on 28 Sep 2026.

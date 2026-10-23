@@ -192,6 +192,22 @@ if [ "${1:-}" = --client-crl ]; then
   exit 0
 fi
 
+# --- --server-names <set> <name>...: the set's server.crt again, naming the broker the way its clients reach it ------
+# For clients that check the name (rustls in our ChirpStack build). The set's CA and server.key stay, so the devices'
+# CA.crt and every client certificate stay valid. Names in subjectAltName form, e.g. IP:192.168.50.132.
+if [ "${1:-}" = --server-names ]; then
+  L=${2:-}; shift 2 2>/dev/null
+  [ -n "$L" ] && [ $# -gt 0 ] || { echo "usage: $0 --server-names <set> IP:<address>|DNS:<name>..."; exit 1; }
+  P=""; case $L in FALCON*|*MAYO*|*SNOVA*) P=$OQS_PROV ;; esac
+  ( cd "$L" 2>/dev/null && [ -f CA.key ] || { echo "[!] $L: no $CERTS/$L/CA.key (it stays on the Mac)"; exit 1; }
+    san="subjectAltName=DNS:localhost,IP:127.0.0.1$(printf ',%s' "$@")"
+    "$OSSL" req $P -new -key server.key -subj /CN=localhost -out s.csr &&
+      "$OSSL" x509 $P -req -in s.csr -CA CA.crt -CAkey CA.key -CAcreateserial -days 365 -extfile <(echo "$san") \
+        -out server.crt 2>/dev/null && rm s.csr && "$OSSL" verify $P -CAfile CA.crt server.crt >/dev/null || exit 1
+    echo "[+] $L: server.crt now names $("$OSSL" x509 -in server.crt -noout -ext subjectAltName | tail -1 | xargs)" ) || exit 1
+  exit 0
+fi
+
 # --- native sigs (default provider) ---------------------------------------
 [ -z "$ONLY_OQS" ] && for PAIR in $PQC_NATIVE; do
   gen "${PAIR%%:*}" "" -algorithm "${PAIR#*:}" || echo "[!] ${PAIR%%:*} failed (is this OpenSSL 3.5+?)"
