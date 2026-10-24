@@ -1888,6 +1888,25 @@ Pico W's pipeline; no run of the new form yet)
      - **Not yet:** uplinks (ChirpStack takes them only as gateway events: the gateway is KIV); AES-256 (milestone
        2); ChirpStack's other hop, to its own Mosquitto for gateway topics, still uses ECDSA certificates.
 
+129. [Mac: built and run] **The Gateway Bridge does PQ mTLS once rebuilt with Go 1.27, with no code change (24 Oct).**
+     - **The build:** upstream master (`a5ae780`, 6 Oct 2026; its own image uses Go 1.26.5), built with
+       `golang:1.27-alpine`. Built twice: as-is (`go.mod` says go 1.25) and with `go.mod` raised to 1.27. Both
+       build in about a minute.
+     - **One catch: the key file's format.** Go 1.27's `crypto/x509` refuses OpenSSL 3.5's default ML-DSA private key,
+       which holds both the seed and the expanded key ("not supported, use … ml-dsa.output_formats=seed-only").
+       `openssl pkey -provparam ml-dsa.output_formats=seed-only` rewrites the same key pair (public key unchanged;
+       52-byte PKCS#8 instead of 2.6 KB); the certificate stays as it is.
+     - **The test:** the stand-in broker from 128 (X25519MLKEM768 only, ML-DSA-44 client certificates required) with
+       an ML-DSA-44 `gateway` certificate.
+       - Both builds connected ("connected to mqtt broker"; the broker saw `u'gateway'`).
+       - Go's ClientHello offers X25519MLKEM768 first (1,216-B share, plus X25519) and mldsa44 / 65 / 87; the broker
+         chose X25519MLKEM768.
+       - The build with `go.mod` raised also offers SecP256r1MLKEM768 and SecP384r1MLKEM1024 (Go 1.26's defaults).
+         ML-DSA is offered either way, so `go.mod` needn't change.
+     - **What it would remove:** the Pi's Mosquitto bridge (`iot-pqc-gw-broker`). The Gateway Bridge can connect to
+       the Mac's PQ door itself. No fork is needed (no source change), only our Dockerfile and a seed-only key.
+     - **Not yet:** the Pi (arm64, the same image); the chain with uplinks; a release tag instead of master.
+
 ### Sources
 
 All links checked on 28 Sep 2026.
