@@ -1895,7 +1895,7 @@ Pico W's pipeline; no run of the new form yet)
      - **One catch: the key file's format.** Go 1.27's `crypto/x509` refuses OpenSSL 3.5's default ML-DSA private key,
        which holds both the seed and the expanded key ("not supported, use … ml-dsa.output_formats=seed-only").
        `openssl pkey -provparam ml-dsa.output_formats=seed-only` rewrites the same key pair (public key unchanged;
-       52-byte PKCS#8 instead of 2.6 KB); the certificate stays as it is.
+       54-byte PKCS#8 instead of 2,626 B); the certificate stays as it is.
      - **The test:** the stand-in broker from 128 (X25519MLKEM768 only, ML-DSA-44 client certificates required) with
        an ML-DSA-44 `gateway` certificate.
        - Both builds connected ("connected to mqtt broker"; the broker saw `u'gateway'`).
