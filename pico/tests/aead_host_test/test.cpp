@@ -15,7 +15,7 @@ int main() {
   bad |= !ccm_kat();     printf("CCM KAT (SP 800-38C ex. 1)    %s\n", ccm_kat() ? "OK" : "FAIL");
   srand(7);
   for (int i = 0; i < 32; i++) k_app[i] = (uint8_t)rand();
-  for (int i = 0; i < 16; i++) { k_nwk[i] = (uint8_t)rand(); k_nwk2[i] = (uint8_t)rand(); }
+  for (int i = 0; i < 32; i++) { k_nwk[i] = (uint8_t)rand(); k_nwk2[i] = (uint8_t)rand(); }
   for (int i = 0; i < 32; i++) k_e2e[i] = (uint8_t)rand();
   static unsigned char ref[300];
   for (int k = 0; k < LA_N; k++)  // every scheme, both directions: the Pico's frame == app_aead's
@@ -38,7 +38,7 @@ int main() {
     }
   {  // the round trip's reply to a lorawan11_e2e uplink (mqtt_tls_bench await_reply): the application's 256-bit layer
      // (chirpstack_app.py selftest: e2e key 44.., DevAddr 01020304, uplink FCnt 65, "ack 65") inside ChirpStack's
-     // AES-128 layer + downlink MIC at its own FCnt (9); opened on the uplink's FCnt, refused on another or changed
+     // AES-256 layer + downlink MIC at its own FCnt (9); opened on the uplink's FCnt, refused on another or changed
     int ke = 0;
     for (int k = 0; k < LA_N; k++) if (!strcmp(LA[k].name, "lorawan11_e2e")) ke = k;
     memset(k_e2e, 0x44, 32); la_setup(ke); down = 1;

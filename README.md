@@ -75,7 +75,8 @@ pinned at commit `b4d894d1`. The whole change is one commit, `Cargo.toml` + `chi
 On this branch the fork also does AES-256 LoRaWAN (`docs/aes256_lorawan.md`): every key is 32 bytes (64 hex
 characters in the API and UI), every MIC and encryption AES-256 / AES-256-CMAC, for 1.0.x and 1.1, ABP and OTAA. Most
 of it is in `lrwn` (`aes256.rs`, `keys.rs`'s `kdf()`, `phy_payload.rs`). It takes AES-256 devices only; its image is
-`iot-pqc/chirpstack:4.19.2-pq-aes256`.
+`iot-pqc/chirpstack:4.19.2-pq-aes256`. The test device without a radio, `mqtt_tls_timer` with `AIR=1` (`app_aead.c`),
+does the same: ABP, and OTAA (`OTAA=1.0.3`, `1.0.4` or `1.1`).
 
 Working with the submodule:
 
@@ -111,8 +112,9 @@ git -C network/chirpstack log --oneline -1     # the fork commit this branch bui
 ├── network/
 │   ├── chirpstack/             ← the ChirpStack fork (submodule)
 │   ├── mqtt_bench.py           ← the broker (one Mosquitto per certificate type) and the host benches' driver
-│   ├── mqtt_tls_timer.c        ← MQTT client over TLS / mTLS (OpenSSL), the LoRaWAN pipeline, raw frames, downlinks
-│   ├── app_aead.{c,h}          ← LoRaWAN 1.0.x / 1.1 frames, the 256-bit layer inside them (lorawan11_e2e)
+│   ├── mqtt_tls_timer.c        ← MQTT client over TLS / mTLS (OpenSSL), the LoRaWAN pipeline, raw frames, downlinks;
+│   │                             AIR=1: the test device (ABP, or an OTAA join first)
+│   ├── app_aead.{c,h}          ← AES-256 LoRaWAN 1.0.x / 1.1 frames and joins, the 256-bit layer inside (lorawan11_e2e)
 │   ├── chirpstack_app.py       ← the application behind ChirpStack: opens the 256-bit layer, replies
 │   ├── virtual_gateway.py      ← stand-in LoRa gateway (Semtech UDP), until a packet forwarder replaces it
 │   └── broker_hs_timing.c, hs_timing_openssl.c, wire_stats.h, provenance.py, build_*.sh
@@ -173,8 +175,7 @@ mosquitto_pub -h localhost -p 18835 --cafile $C/CA.crt --cert $C/application.crt
 sudo tcpdump -i en0 -s 0 -w hs.pcap 'tcp port 18835 and host <pi-ip>' &   # then restart chirpstack (compose restart)
 ```
 
-**Check the gateway path** (a gateway `0102030405060708` and an ABP 1.1 device `01234567` registered in ChirpStack,
-as on `LoRa_1.1_implementation`):
+**Check the gateway path** (a gateway `0102030405060708` registered in ChirpStack, and a device: below):
 
 ```bash
 # Mac: the Bridge is connected, and ChirpStack's log has no MQTT errors
@@ -184,13 +185,30 @@ as on `LoRa_1.1_implementation`):
 C=certs/MLDSA44
 mosquitto_sub -h localhost -p 18835 --cafile $C/CA.crt --cert $C/application.crt --key $C/application.key \
   -t 'as923/gateway/+/event/up' -t 'application/+/device/+/event/up' -v
-# Mac, two terminals in network/: the stand-in gateway, then three LoRaWAN 1.1 uplinks from the device over the "air"
+# Mac, two terminals in network/: the stand-in gateway, then three uplinks from the device over the "air"
 python3 virtual_gateway.py --air 127.0.0.1:1680
-K=$(python3 -c "print('11'*32+'22'*16+'33'*16+'44'*32)")
-AIR=1 DEV_ADDR=01234567 APP_KEYS=$K AEAD=lorawan11 MSGS=3 ./mqtt_tls_timer 127.0.0.1 1680 1 0
 ```
 
 Each uplink shows twice on the Pi: once as the gateway's event, once as ChirpStack's decrypted event.
+
+**The device, six ways.** In ChirpStack, a device profile per case (region AS923; MAC version 1.0.3, 1.0.4 or 1.1.0;
+OTAA on or off) and a device on it; its keys are 64 hex characters. JOIN_EUI defaults to `0000000000000000`.
+
+```bash
+# Mac, network/. ABP 1.1, DevAddr 01234567: APP_KEYS = AppSKey | FNwkSIntKey | SNwkSIntKey (as in ChirpStack's
+# activation; its NwkSEncKey is ChirpStack's only: this tool sends no MAC commands and doesn't read ChirpStack's)
+K=$(python3 -c "print('11'*32+'22'*32+'33'*32)")
+AIR=1 DEV_ADDR=01234567 APP_KEYS=$K AEAD=lorawan11_256 MSGS=3 AIR_LISTEN=5 ./mqtt_tls_timer 127.0.0.1 1680 1 0
+# ABP 1.0.3 and 1.0.4 (the same frames; the profile tells them apart): AppSKey | NwkSKey | (unused)
+AIR=1 DEV_ADDR=01234568 APP_KEYS=$K AEAD=aes256ctr MSGS=3 AIR_LISTEN=5 ./mqtt_tls_timer 127.0.0.1 1680 1 0
+# OTAA 1.0.3 (random DevNonce) or 1.0.4 (0, 1, 2, ... in ~/.cache/iot-pqc/devnonce_<DevEUI>): the AppKey
+OTAA=1.0.4 DEV_EUI=<DevEUI> APP_KEY=<64 hex> AIR=1 MSGS=3 AIR_LISTEN=5 ./mqtt_tls_timer 127.0.0.1 1680 1 0
+# OTAA 1.1 (DevNonce counted as 1.0.4's): the NwkKey and the AppKey
+OTAA=1.1 DEV_EUI=<DevEUI> NWK_KEY=<64 hex> APP_KEY=<64 hex> AIR=1 MSGS=3 AIR_LISTEN=5 ./mqtt_tls_timer 127.0.0.1 1680 1 0
+```
+
+With OTAA the first row is `join,<version>,<DevNonce>,<DevAddr>,<ms>`; `down,...` rows are downlinks (e.g. from
+`chirpstack_app.py --reply`). A wrong key or profile ends with the reason (no join-accept; the other LoRaWAN version).
 
 ## Tests
 
@@ -198,6 +216,7 @@ Each uplink shows twice on the Pi: once as the gateway's event, once as ChirpSta
 bash pico/tests/aead_host_test/run.sh          # the Pico's LoRaWAN / AES / Ascon code = the host's, frame for frame
 bash pico/tests/deploy_host_test/run.sh        # the deployment firmware's checks (not used on this branch)
 python3 pico/tests/mqtt_parse_test.py          # Pico log → results CSV
+AEAD=lorawan11_256 MSGS=1 AIR=1 network/mqtt_tls_timer 127.0.0.1 9 1 0   # its self-test (V1-V10 incl.), then 1 frame
 python3 network/virtual_gateway.py --selftest
 python3 network/chirpstack_app.py --selftest
 ```

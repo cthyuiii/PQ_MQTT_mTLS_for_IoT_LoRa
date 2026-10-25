@@ -1,6 +1,7 @@
 /* app_aead.c - see app_aead.h. LoRaWAN layouts follow the LoRaWAN 1.0.x / 1.1 specifications
  * (FRMPayload encryption, 4.3.3; MIC, 4.4); app_aead_selftest() checks them against a published LoRaWAN
- * 1.0.x uplink (lora-packet README), a 1.1 downlink MIC (brocaar/lorawan), and CMAC against RFC 4493.
+ * 1.0.x uplink (lora-packet README), a 1.1 downlink MIC (brocaar/lorawan), and CMAC against RFC 4493; the AES-256
+ * frames, joins and key derivation against V1-V10 (scripts/aes256_vectors.sh, docs/aes256_lorawan.md).
  * Data-frame crypto is identical in LoRaWAN 1.0.0-1.0.4. */
 #include "app_aead.h"
 
@@ -24,11 +25,13 @@ static const char *const LABELS[] = {"none", "LoRaWAN-1.0.x AES-128-CTR+CMAC", "
                                      "AES-256-CTR+CMAC (LoRaWAN 1.0.x frame, 256-bit keys)",
                                      "AES-256-CTR+2xCMAC (LoRaWAN 1.1 frame, 256-bit keys)", "AES-128-GCM", "AES-256-GCM",
                                      "AES-128-CCM", "AES-256-CCM", "Ascon-AEAD128",
-                                     "LoRaWAN-1.1 AES-128-CTR+2xCMAC around AES-256-CTR+CMAC (end to end)"};
+                                     "LoRaWAN-1.1 AES-256-CTR+2xCMAC around AES-256-CTR+CMAC (end to end)"};
 enum { CCM_N = 13 };  /* CCM nonce bytes (L = 2: payloads up to 64 KiB), as IEEE 802.15.4's CCM* */
 
 static int kind = -1;
-static unsigned char k_app[32], k_nwk[16], k_nwk2[16], k_e2e[32], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
+static unsigned char k_app[32], k_nwk[32], k_nwk2[32], k_e2e[32], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
+/* the 1.1 uplink MIC's TxDr and TxCh (B1): 0 = what virtual_gateway.py reports, channel 0 at DR0 */
+static unsigned char tx_dr, tx_ch;
 static EVP_CIPHER_CTX *ctr, *ctr_e2e, *gcm, *ccm;
 static EVP_MAC_CTX *cmac_f, *cmac_s, *cmac_e2e;
 static int is_ctr(void) { return kind == LW10 || kind == LW11 || kind == CTR256 || kind == LW11_256 || kind == LW11_E2E; }
@@ -49,7 +52,7 @@ static EVP_MAC_CTX *cmac_new(const unsigned char *key, int len) {
 static void cmac(EVP_MAC_CTX *c, const unsigned char b[16], const unsigned char *msg, int n, unsigned char out[16]) {
     size_t l;
     EVP_MAC_init(c, NULL, 0, NULL);
-    EVP_MAC_update(c, b, 16);
+    if (b) EVP_MAC_update(c, b, 16);
     EVP_MAC_update(c, msg, n);
     EVP_MAC_final(c, out, &l, 16);
 }
@@ -79,17 +82,11 @@ static void rebuild(void) {  /* (re)key every context from the current keys */
     EVP_MAC_CTX_free(cmac_f); EVP_MAC_CTX_free(cmac_s); EVP_MAC_CTX_free(cmac_e2e);
     ctr = ctr_e2e = gcm = ccm = NULL; cmac_f = cmac_s = cmac_e2e = NULL;
     if (is_ctr()) {
+        int kl = kind == LW10 || kind == LW11 ? 16 : 32;  /* the AES-128 frames: each key's first 16 bytes */
         ctr = EVP_CIPHER_CTX_new();
-        int k256 = kind == CTR256 || kind == LW11_256;
-        EVP_EncryptInit_ex(ctr, k256 ? EVP_aes_256_ctr() : EVP_aes_128_ctr(), NULL, k_app, NULL);
-        if (k256) {  /* 256-bit CMAC keys from the two 128-bit network keys: F = nwk | nwk2, S (1.1) = nwk2 | nwk. Benchmark
-                      * keys: a deployment would hold two independent 256-bit keys; the cost per CMAC is the same */
-            unsigned char kf[32], ks[32];
-            memcpy(kf, k_nwk, 16); memcpy(kf + 16, k_nwk2, 16); memcpy(ks, k_nwk2, 16); memcpy(ks + 16, k_nwk, 16);
-            cmac_f = cmac_new(kf, 32);
-            if (kind == LW11_256) cmac_s = cmac_new(ks, 32);
-        } else cmac_f = cmac_new(k_nwk, 16);
-        if (kind == LW11 || kind == LW11_E2E) cmac_s = cmac_new(k_nwk2, 16);
+        EVP_EncryptInit_ex(ctr, kl == 32 ? EVP_aes_256_ctr() : EVP_aes_128_ctr(), NULL, k_app, NULL);
+        cmac_f = cmac_new(k_nwk, kl);                   /* FNwkSIntKey; 1.0.x: NwkSKey */
+        if (is_lw11()) cmac_s = cmac_new(k_nwk2, kl);   /* SNwkSIntKey */
         if (kind == LW11_E2E) {  /* the inner layer, under k_e2e, a key the network server never holds: AES-256-CTR, and
                                   * a 4-byte AES-256-CMAC tag under k_mac = AES-256(k_e2e, 02|0^15) | AES-256(k_e2e, 03|0^15)
                                   * (blocks the CTR's A_i, first byte 01, never equal) */
@@ -133,7 +130,7 @@ int app_aead_init(const char *name) {
 }
 void app_aead_set_keys(const unsigned char *app, const unsigned char *nwk, const unsigned char *nwk2,
                        const unsigned char *d) {
-    memcpy(k_app, app, 32); memcpy(k_nwk, nwk, 16); memcpy(k_nwk2, nwk2, 16); memcpy(devaddr, d, 4);
+    memcpy(k_app, app, 32); memcpy(k_nwk, nwk, 32); memcpy(k_nwk2, nwk2, 32); memcpy(devaddr, d, 4);
     rebuild();
 }
 void app_aead_set_e2e_key(const unsigned char *k) { memcpy(k_e2e, k, 32); rebuild(); }
@@ -154,8 +151,9 @@ static void mic(const unsigned char *msg, int n, int down, uint32_t fcnt, unsign
         SNwkSIntKey, B0 with ConfFCnt = 0 (no ACK); 1.0.x downlinks are the same B0 under NwkSKey, below */
     cmac(cmac_f, b0, msg, n, f);
     if (!is_lw11()) { memcpy(out, f, 4); return; }  /* 1.0.x, and the 256-bit-key variant of its frame */
-    /* 1.1 uplink: B1 = 0x49 | ConfFCnt | TxDr | TxCh | Dir | DevAddr | FCnt | 0 | len; with ConfFCnt,
-     * TxDr, TxCh = 0 its bytes equal B0, the second key is what differs. MIC = cmacS[0..1] | cmacF[0..1] */
+    /* 1.1 uplink: B1 = 0x49 | ConfFCnt (2) | TxDr | TxCh | Dir | DevAddr | FCnt | 0 | len, ConfFCnt = 0 (no ACK).
+     * MIC = cmacS(B1 | msg)[0..1] | cmacF(B0 | msg)[0..1] */
+    b0[3] = tx_dr; b0[4] = tx_ch;
     cmac(cmac_s, b0, msg, n, s);
     out[0] = s[0]; out[1] = s[1]; out[2] = f[0]; out[3] = f[1];
 }
@@ -219,10 +217,11 @@ int app_open(const unsigned char *in, int len, unsigned char *pt) {
     uint32_t fcnt = in[6] | in[7] << 8;  /* 16 bits on the wire, as in LoRaWAN */
     int down = in[0] >> 5 & 1;           /* MType 010 / 100 up, 011 / 101 down */
     memcpy(devaddr, in + 1, 4);          /* the frame's DevAddr, as a network server looks the session up */
-    const unsigned char *ct = in + APP_HDR;
-    int n, body = len - app_aead_overhead();
+    int fo = is_ctr() ? in[5] & 0x0F : 0; /* FOptsLen: a LoRaWAN frame's MAC commands, under the MIC, left as they are */
+    const unsigned char *ct = in + APP_HDR + fo;
+    int n, body = len - app_aead_overhead() - fo;
     unsigned char iv[16], m[4];
-    if (body < 0 || in[8] != fport()) return -1;
+    if (body < 0 || in[8 + fo] != fport()) return -1;
     switch (kind) {
     case NONE:
         memcpy(pt, ct, body);
@@ -265,6 +264,73 @@ int app_open(const unsigned char *in, int len, unsigned char *pt) {
 #endif
     }
     return -1;
+}
+
+static void cmac_once(const unsigned char key[32], const unsigned char *m, int n, unsigned char out[16]) {
+    EVP_MAC_CTX *c = cmac_new(key, 32);
+    cmac(c, NULL, m, n, out);
+    EVP_MAC_CTX_free(c);
+}
+/* a 32-byte key from LoRaWAN's 16-byte derivation block: NIST SP 800-108's KDF in counter mode with AES-256-CMAC, the
+ * block as the label, no context, L = 256: CMAC(root, i | block | 00 | 00000100) for i = 1, 2 (4-byte big-endian) */
+static void kdf(const unsigned char root[32], const unsigned char b[16], unsigned char out[32]) {
+    unsigned char m[25] = {0};
+    memcpy(m + 4, b, 16);
+    m[23] = 1;  /* m[20] = the separator 00, m[21..24] = L = 256 */
+    for (int i = 0; i < 2; i++) {
+        m[3] = (unsigned char)(i + 1);
+        cmac_once(root, m, 25, out + 16 * i);
+    }
+}
+
+int app_join_request(const unsigned char root[32], const unsigned char join_eui[8], const unsigned char dev_eui[8],
+                     uint16_t dev_nonce, unsigned char out[23]) {
+    unsigned char t[16];
+    out[0] = 0x00;  /* MHDR: join-request */
+    memcpy(out + 1, join_eui, 8); memcpy(out + 9, dev_eui, 8);
+    out[17] = dev_nonce; out[18] = dev_nonce >> 8;
+    cmac_once(root, out, 19, t);
+    memcpy(out + 19, t, 4);
+    return 23;
+}
+
+int app_join_accept(int v11, const unsigned char *in, int len, const unsigned char root[32], const unsigned char *app_key,
+                    const unsigned char join_eui[8], const unsigned char dev_eui[8], uint16_t dev_nonce,
+                    unsigned char keys[96], unsigned char devaddr4[4]) {
+    unsigned char p[33], m[48], t[16], b[16], k[32];
+    int x, n = 0;
+    if ((len != 17 && len != 33) || in[0] != 0x20 || (v11 && !app_key)) return -1;
+    /* the server AES-decrypts the accept, so the device AES-encrypts each block to read it */
+    EVP_CIPHER_CTX *e = EVP_CIPHER_CTX_new();
+    EVP_EncryptInit_ex(e, EVP_aes_256_ecb(), NULL, root, NULL);
+    EVP_CIPHER_CTX_set_padding(e, 0);
+    p[0] = in[0];
+    EVP_EncryptUpdate(e, p + 1, &x, in + 1, len - 1);
+    EVP_CIPHER_CTX_free(e);
+    /* p = MHDR | JoinNonce (3) | NetID (3) | DevAddr (4) | DLSettings | RxDelay | [CFList (16)] | MIC (4) */
+    if ((p[11] >> 7) != v11) return -2;  /* OptNeg: set by a 1.1 device profile */
+    if (v11) {  /* 1.1: the MIC is under JSIntKey, over JoinReqType (FF) | JoinEUI | DevNonce | the accept */
+        memset(b, 0, 16); b[0] = 0x06; memcpy(b + 1, dev_eui, 8);
+        kdf(root, b, k);
+        m[n++] = 0xFF; memcpy(m + n, join_eui, 8); n += 8; m[n++] = dev_nonce; m[n++] = dev_nonce >> 8;
+    } else memcpy(k, root, 32);
+    memcpy(m + n, p, len - 4); n += len - 4;
+    cmac_once(k, m, n, t);
+    OPENSSL_cleanse(k, sizeof k);
+    if (CRYPTO_memcmp(t, p + len - 4, 4)) return -1;
+    /* the session keys: id | JoinNonce | NetID (1.0.x) or JoinEUI (1.1) | DevNonce | zeros; ids 02 AppSKey, 01
+     * FNwkSIntKey / NwkSKey, 03 SNwkSIntKey (1.1's NwkSEncKey, 04, isn't derived: this code never decrypts FOpts) */
+    static const unsigned char ids[2][3] = {{0x02, 0x01, 0x01}, {0x02, 0x01, 0x03}};
+    for (int i = 0; i < 3; i++) {
+        memset(b, 0, 16);
+        b[0] = ids[v11][i];
+        memcpy(b + 1, p + 1, 3);
+        if (v11) { memcpy(b + 4, join_eui, 8); b[12] = dev_nonce; b[13] = dev_nonce >> 8; }
+        else { memcpy(b + 4, p + 4, 3); b[7] = dev_nonce; b[8] = dev_nonce >> 8; }
+        kdf(v11 && i == 0 ? app_key : root, b, keys + 32 * i);
+    }
+    memcpy(devaddr4, p + 7, 4);
+    return 0;
 }
 
 static int unhex(const char *h, unsigned char *out) {
@@ -344,7 +410,7 @@ int app_aead_selftest(void) {
         }
     }
     /* 4. lorawan11 and lorawan11_e2e share keys, MIC and counter: FPort keeps them apart, each rejects the other's frame */
-    memset(k_app, 1, 32); memset(k_nwk, 2, 16); memset(k_nwk2, 3, 16); memset(k_e2e, 4, 32);
+    memset(k_app, 1, 32); memset(k_nwk, 2, 32); memset(k_nwk2, 3, 32); memset(k_e2e, 4, 32);
     for (int k = 0; k < 2; k++) {
         kind = k ? LW11_E2E : LW11; rebuild();
         int n = app_seal(0, 9, src, 51, buf);
@@ -364,6 +430,63 @@ int app_aead_selftest(void) {
         EVP_EncryptInit_ex(ctr, NULL, NULL, NULL, iv); EVP_EncryptUpdate(ctr, buf + APP_HDR, &x, buf + APP_HDR, 51);
         mic(buf, APP_HDR + 51, 0, 11, buf + APP_HDR + 51);  /* a valid MIC again */
         bad |= app_open(buf, n, pt) != -1;
+    }
+    /* 6. AES-256 LoRaWAN: V1-V10 (docs/aes256_lorawan.md; bytes from the openssl command, scripts/aes256_vectors.sh).
+     * Not here: V2 and V4 (a confirmed frame's ACK, ConfFCnt in the MIC: this code sends unconfirmed frames only) */
+    {
+        const char *rd = "{\"seq\":1,\"temp_c\":21.5,\"rh\":48}";  /* the 31-byte reading */
+        unsigned char ks[96], da[4], je[8], de[8], root[32], app[32], f[64];
+        int n;
+        unhex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", k_app);
+        unhex("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f", k_nwk);
+        unhex("404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f", k_nwk2);
+        unhex("67452301", devaddr);
+        kind = LW11_256; tx_dr = 2; tx_ch = 1; rebuild();
+        /* V1: a 1.1 uplink, FCnt 1, TxDr 2, TxCh 1 */
+        fl = unhex("406745230100010001eeccb898c8050f10c7774eefebb3632aa0bc573cc34bf30be2ae0f576c01271238d44f", f);
+        bad |= app_seal(0, 1, (const unsigned char *)rd, 31, buf) != fl || memcmp(buf, f, fl) != 0;
+        bad |= app_open(f, fl, pt) != 31 || memcmp(pt, rd, 31) != 0;
+        tx_dr = tx_ch = 0;
+        /* V3: a 1.1 downlink with MAC commands in FOpts (encrypted, skipped here), AFCntDown 5 */
+        fl = unhex("606745230103050032fd3c01df219942a8cef152", f);
+        bad |= app_open(f, fl, pt) != 4 || memcmp(pt, "\x01\x02\x03\x04", 4) != 0;
+        f[13] ^= 1; bad |= app_open(f, fl, pt) != -1;  /* one bit of the payload */
+        /* V5: a 1.0.x uplink, FOpts in the clear */
+        kind = CTR256;
+        unhex("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f", k_nwk);
+        rebuild();
+        fl = unhex("406745230103010006730701eeccb898c8050f10c7774eefebb3632aa0bc573cc34bf30be2ae0f576c012713808b44", f);
+        bad |= app_open(f, fl, pt) != 31 || memcmp(pt, rd, 31) != 0;
+        /* V6: a 1.0.x downlink on FPort 0 (MAC commands under NwkSKey): its MIC; app_open leaves FPort 0 alone */
+        fl = unhex("606745230120040000442794bf53f1e5ff9c", f);
+        mic(f, fl - 4, 1, 4, t);
+        bad |= memcmp(t, f + fl - 4, 4) != 0 || app_open(f, fl, pt) != -1;
+        /* V7-V10: the joins, JoinEUI 1122334455667788, DevEUI 0102030405060708 (wire order), DevNonce 1 */
+        unhex("8877665544332211", je); unhex("0807060504030201", de);
+        unhex("a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf", root);  /* 1.0.x AppKey */
+        fl = unhex("00887766554433221108070605040302010100bc001704", f);
+        bad |= app_join_request(root, je, de, 1, buf) != 23 || memcmp(buf, f, 23) != 0;              /* V7 */
+        fl = unhex("202dfba0e58af087a565171f76ae4720ce", f);                                        /* V8 */
+        bad |= app_join_accept(0, f, fl, root, NULL, je, de, 1, ks, da) != 0 || memcmp(da, "\x67\x45\x23\x01", 4) != 0;
+        unhex("1d25efdb4e5bda08d8d3e6b9134e3a6b8b8fc5b5001f72b2a13f7bc2ba75ce6d", want); bad |= memcmp(ks, want, 32) != 0;
+        unhex("24e1abfe96dadf7c39554fbeef6fbcaf1eb40db3a0bad61f5262da0841d493d4", want);
+        bad |= memcmp(ks + 32, want, 32) != 0 || memcmp(ks + 64, want, 32) != 0;
+        bad |= app_join_accept(1, f, fl, root, root, je, de, 1, ks, da) != -2;  /* a 1.0.x accept, read as 1.1 */
+        f[5] ^= 1; bad |= app_join_accept(0, f, fl, root, NULL, je, de, 1, ks, da) >= 0;  /* changed: refused */
+        unhex("c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf", root);  /* 1.1 NwkKey */
+        unhex("e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff", app);   /* 1.1 AppKey */
+        fl = unhex("0088776655443322110807060504030201010084b19606", f);
+        bad |= app_join_request(root, je, de, 1, buf) != 23 || memcmp(buf, f, 23) != 0;              /* V9 */
+        fl = unhex("204e91a3c904b43c2f393db3159f8abbfc", f);                                        /* V10 */
+        bad |= app_join_accept(1, f, fl, root, app, je, de, 1, ks, da) != 0 || memcmp(da, "\x67\x45\x23\x01", 4) != 0;
+        unhex("b0fcc761250f51aea1620b827eeef9ef18b84b1099658423c01fa486040cbdcc", want); bad |= memcmp(ks, want, 32) != 0;
+        unhex("ee721af87f630a64f6943a8bbb3fafe2442dace93331ba441c8601fc05f07523", want); bad |= memcmp(ks + 32, want, 32) != 0;
+        unhex("5aa0dfcfacbf19288136a689ab18c1bb6685dae2529a016823b210fbb178cde5", want); bad |= memcmp(ks + 64, want, 32) != 0;
+        bad |= app_join_accept(0, f, fl, root, NULL, je, de, 1, ks, da) != -2;  /* a 1.1 accept, read as 1.0.x */
+        bad |= app_join_accept(1, f, fl, root, app, je, de, 2, ks, da) != -1;  /* 1.1's MIC covers the DevNonce */
+        n = unhex("00", f);  /* a join-accept's length is 17 or 33 */
+        bad |= app_join_accept(1, f, n, root, app, je, de, 1, ks, da) != -1;
+        memcpy(devaddr, dev_saved, 4);
     }
     if (saved == NONE) app_aead_init("none");
     else if (saved > 0) app_aead_init(APP_AEAD_NAMES[saved - 1]);

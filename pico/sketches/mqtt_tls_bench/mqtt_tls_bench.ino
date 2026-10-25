@@ -50,10 +50,10 @@
 //   and refuse blocks only, for any certificate type (-DWB_<ALG>): the trust-anchor update, the signed KEM exchange
 //   and FCnt in flash stay in the ML-DSA-44 firmware. The refuse lines also give the CRL's load time (crl_load_us:
 //   wolfSSL verifies the CRL's signature with the CA when it is loaded, once per block's context) and its size.
-//   -DMT_LORA_FIXED (APP_KEYS, 192 hex, and DEV_ADDR in the environment: run_benchmarks.py writes them into mt_secrets.h):
+//   -DMT_LORA_FIXED (APP_KEYS, 256 hex, and DEV_ADDR in the environment: run_benchmarks.py writes them into mt_secrets.h):
 //   one fixed LoRaWAN device that a network server (ChirpStack) knows, instead of random keys and DevAddr per boot. Its
 //   FCnt is kept in flash as the deployment firmware's (reserved FCNT_GAP ahead), and the pipeline sends the frames
-//   ChirpStack accepts: lorawan11 and lorawan11_e2e. Uplinks reach ChirpStack through network/virtual_gateway.py:
+//   our ChirpStack accepts: lorawan11_256 and lorawan11_e2e. Uplinks reach ChirpStack through network/virtual_gateway.py:
 //   with AIR=<host:port> in the environment each uplink also goes there as one UDP datagram (the "air", --air), after
 //   its message is timed; without it the gateway reads them from the broker (watch mode, RAW=1). With AIR the device
 //   makes no broker connection at all (MT_AIR_ONLY, mode "air"): it seals each reading, opens it again (its open cost)
@@ -175,7 +175,7 @@ static const char *const REFUSE[] = {"wrong-name", "revoked", "expired"};
 #ifdef MT_ALL_SCHEMES
 static const int PIPE[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 #elif defined(MT_LORA_FIXED)
-static const int PIPE[] = {2, 10};  // lorawan11, lorawan11_e2e
+static const int PIPE[] = {4, 10};  // lorawan11_256, lorawan11_e2e (AES-256 LoRaWAN: what our ChirpStack accepts)
 #else
 static const int PIPE[] = {2, 4, 10};  // lorawan11, lorawan11_256, lorawan11_e2e
 #endif
@@ -411,13 +411,13 @@ static bool subscribe(Conn *c, const char *filter) {  // QoS 0, packet id 1, wai
 // the LoRaWAN state in flash (/lora.bin): DevAddr, keys and an FCnt reservation. Frames below the reservation may
 // have been sent; the board saves a new one FCNT_GAP frames ahead before it reaches it, so after any reboot or crash
 // FCnt resumes at the saved value and never repeats under these keys (one flash write per FCNT_GAP frames).
-struct LoraState { uint32_t magic, fcnt; uint8_t devaddr[4], k_app[32], k_nwk[16], k_nwk2[16]; };
-static const uint32_t LORA_MAGIC = 0x4C57534B;
+struct LoraState { uint32_t magic, fcnt; uint8_t devaddr[4], k_app[32], k_nwk[32], k_nwk2[32]; };
+static const uint32_t LORA_MAGIC = 0x4C573332;  // "LW32": 32-byte network keys (a file from before isn't read)
 static uint32_t fcnt_reserved, save_us[16], nsaves;
 static bool fcnt_persist;  // the fcnt blocks: save reservations while sending
 static bool lora_save(uint32_t upto) {
   LoraState st = {LORA_MAGIC, upto, {}, {}, {}, {}};
-  memcpy(st.devaddr, devaddr, 4); memcpy(st.k_app, k_app, 32); memcpy(st.k_nwk, k_nwk, 16); memcpy(st.k_nwk2, k_nwk2, 16);
+  memcpy(st.devaddr, devaddr, 4); memcpy(st.k_app, k_app, 32); memcpy(st.k_nwk, k_nwk, 32); memcpy(st.k_nwk2, k_nwk2, 32);
   File f = LittleFS.open("/lora.bin", "w");
   bool ok = f && f.write((const uint8_t *)&st, sizeof st) == sizeof st;
   if (f) f.close();
@@ -430,7 +430,7 @@ static bool lora_load() {  // true: keys, DevAddr and FCnt (= the saved reservat
   bool ok = f && f.read((uint8_t *)&st, sizeof st) == sizeof st && st.magic == LORA_MAGIC;
   if (f) f.close();
   if (!ok) return false;
-  memcpy(devaddr, st.devaddr, 4); memcpy(k_app, st.k_app, 32); memcpy(k_nwk, st.k_nwk, 16); memcpy(k_nwk2, st.k_nwk2, 16);
+  memcpy(devaddr, st.devaddr, 4); memcpy(k_app, st.k_app, 32); memcpy(k_nwk, st.k_nwk, 32); memcpy(k_nwk2, st.k_nwk2, 32);
   fcnt = st.fcnt;
   return true;
 }
@@ -461,7 +461,7 @@ static const char *air_col(const uint32_t *) { return ""; }
 #endif
 static uint32_t last_up;  // millis() of the last uplink sent
 // the application's reply to uplink `up`: a LoRaWAN 1.1 downlink reading "ack <up>", back over the air, in the block's
-// scheme: lorawan11 (FPort 1), or lorawan11_e2e (FPort 2: the 256-bit layer inside, its blocks on `up`, lora_aead.h).
+// scheme: lorawan11_256 (FPort 1), or lorawan11_e2e (FPort 2: the 256-bit layer inside, its blocks on `up`, lora_aead.h).
 // -> us from t_sent to the reply verified (MIC with SNwkSIntKey, decrypted with the AppSKey; then the tag and the
 // 256-bit layer), 0 if none in time; cyc / cyc256: its open in cycles, and the 256-bit layer's share.
 // ponytail: no AFCntDown check, so a replayed downlink isn't refused; add it when downlinks carry commands (the 256-bit
@@ -1000,15 +1000,15 @@ void setup() {
   for (int i = 0; i < 32; i++) k_e2e[i] = rp2040.hwrand32();
 #ifdef MT_LORA_FIXED  // the build's device (mt_secrets.h); FCnt goes on from flash only if flash holds the same device
   restored = restored && !memcmp(devaddr, LORA_DEVADDR, 4) && !memcmp(k_app, LORA_KEYS, 32) &&
-             !memcmp(k_nwk, LORA_KEYS + 32, 16) && !memcmp(k_nwk2, LORA_KEYS + 48, 16);
-  memcpy(devaddr, LORA_DEVADDR, 4); memcpy(k_app, LORA_KEYS, 32); memcpy(k_nwk, LORA_KEYS + 32, 16);
-  memcpy(k_nwk2, LORA_KEYS + 48, 16); memcpy(k_e2e, LORA_KEYS + 64, 32);
+             !memcmp(k_nwk, LORA_KEYS + 32, 32) && !memcmp(k_nwk2, LORA_KEYS + 64, 32);
+  memcpy(devaddr, LORA_DEVADDR, 4); memcpy(k_app, LORA_KEYS, 32); memcpy(k_nwk, LORA_KEYS + 32, 32);
+  memcpy(k_nwk2, LORA_KEYS + 64, 32); memcpy(k_e2e, LORA_KEYS + 96, 32);
   fcnt_persist = true;  // every pipeline block: a network server must never see FCnt go back
   if (!restored) fcnt = 0;
 #else
   if (!restored) {
     for (int i = 0; i < 32; i++) k_app[i] = rp2040.hwrand32();
-    for (int i = 0; i < 16; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
+    for (int i = 0; i < 32; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
     for (int i = 0; i < 4; i++) devaddr[i] = rp2040.hwrand32();
     fcnt = 0;
   }
@@ -1021,7 +1021,7 @@ void setup() {
 #else
   for (int i = 0; i < 32; i++) k_app[i] = rp2040.hwrand32();
   for (int i = 0; i < 32; i++) k_e2e[i] = rp2040.hwrand32();
-  for (int i = 0; i < 16; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
+  for (int i = 0; i < 32; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
 #endif
   WiFi.mode(WIFI_STA);
   WiFi.noLowPowerMode();

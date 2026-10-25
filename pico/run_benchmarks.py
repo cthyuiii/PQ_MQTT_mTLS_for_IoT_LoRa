@@ -132,8 +132,8 @@ SKETCHES = [
                             ("ECDSA-P256", "ECDSA_P256", "ECDSAP256"), ("Ed25519", "ED25519", "ED25519"),
                             ("ML-DSA-65", "MLDSA65", "MLDSA65"), ("ML-DSA-87", "MLDSA87", "MLDSA87"),
                             ("Falcon-512", "FALCON512", "FALCON512"), ("Falcon-1024", "FALCON1024", "FALCON1024"))],
-    # one fixed LoRaWAN device for ChirpStack (branch LoRa_1.1_implementation, docs/pending.md step 7): APP_KEYS (192 hex)
-    # and DEV_ADDR from the environment, FCnt in flash (LittleFS), lorawan11 + lorawan11_e2e, few messages (the virtual
+    # one fixed LoRaWAN device for ChirpStack (branch LoRa_1.1_implementation, docs/pending.md step 7): APP_KEYS (256 hex)
+    # and DEV_ADDR from the environment, FCnt in flash (LittleFS), lorawan11_256 + lorawan11_e2e, few messages (the virtual
     # gateway hands ChirpStack one frame a second). With AIR the device makes no broker connection (mode "air": seal,
     # open, send over the air), as in the chain mTLS starts at the gateway. Run it with its own --tag: not benchmark rows.
     S("mqtt_tls_bench", "MQTT ChirpStack device ML-DSA-44 (wolfSSL)", 600, BOTH, 0,
@@ -181,10 +181,10 @@ def mqtt_secrets(sig, gen, lora=False):
             return f"NO_CERTS: {d} (gen_certs.sh --deploy <broker IP>) and certs/ECDSAP256 (the old root)"
         blobs += [("SRV_DER", der("server.crt")), ("OLD_CA_DER", der(old)),
                   ("UPD_PUB", open(os.path.join(d, "update.pub"), "rb").read())]
-    if lora:  # DEV_ADDR as ChirpStack shows it (big-endian) -> wire order; APP_KEYS = app 32 | nwk 16 | nwk2 16 | e2e 32
+    if lora:  # DEV_ADDR as ChirpStack shows it (big-endian) -> wire order; APP_KEYS = app 32 | nwk 32 | nwk2 32 | e2e 32
         k, d = os.environ.get("APP_KEYS", ""), os.environ.get("DEV_ADDR", "")
-        if not (re.fullmatch(r"[0-9a-fA-F]{192}", k) and re.fullmatch(r"[0-9a-fA-F]{8}", d)):
-            return "NO_LORA_KEYS: export APP_KEYS (192 hex) and DEV_ADDR (8 hex), the device registered in ChirpStack"
+        if not (re.fullmatch(r"[0-9a-fA-F]{256}", k) and re.fullmatch(r"[0-9a-fA-F]{8}", d)):
+            return "NO_LORA_KEYS: export APP_KEYS (256 hex) and DEV_ADDR (8 hex), the device registered in ChirpStack"
         blobs += [("LORA_KEYS", bytes.fromhex(k)), ("LORA_DEVADDR", bytes.fromhex(d)[::-1])]
         air = os.environ.get("AIR", "")  # host:port of virtual_gateway.py --air: the uplinks as UDP datagrams too
         if air:

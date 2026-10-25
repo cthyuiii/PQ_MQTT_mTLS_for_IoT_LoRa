@@ -21,9 +21,11 @@
  * DOWN=1 sends downlink frames (MHDR 0x60, Dir = 1: what a network server sends a device) instead of uplinks.
  *
  * Payloads are a readable reading ({"seq":N,...} padded to PAYLOAD bytes) on topic pqc/pipe/<pid>.
- * APP_KEYS (128 hex chars: 32 B app key, 16 B + 16 B network keys; + 64 for lorawan11_e2e's 32 B inner key) replaces
- * the per-process random keys, so another process holding the same keys can decrypt (mqtt_bench.py --watch sets it).
- * The LoRaWAN keys a network server needs: AppSKey = app key bytes 0-15, FNwkSIntKey = bytes 32-47, SNwkSIntKey = 48-63.
+ * APP_KEYS (192 hex chars: the app key and two network keys, 32 B each; + 64 for lorawan11_e2e's 32 B inner key)
+ * replaces the per-process random keys, so another process holding the same keys can decrypt (mqtt_bench.py --watch
+ * sets it). As ChirpStack's ABP keys (AES-256 LoRaWAN, docs/aes256_lorawan.md): AppSKey = hex chars 0-63, FNwkSIntKey
+ * (1.0.x: NwkSKey) = 64-127, SNwkSIntKey = 128-191 (unused in 1.0.x). NwkSEncKey stays with ChirpStack: this tool sends
+ * no MAC commands and leaves ChirpStack's as they are.
  * DEV_ADDR (8 hex, as ChirpStack shows it, e.g. 01234567; needs APP_KEYS): one fixed device instead of a DevAddr per
  * process. Its frame counter then outlives the process, as a device's does: FCNT_FILE (default
  * ~/.cache/iot-pqc/fcnt_<DEV_ADDR>) holds a reservation FCNT_GAP frames ahead, taken under a lock, so a restart (or a
@@ -42,6 +44,15 @@
  * air (network/virtual_gateway.py --air), and each of MSGS sealed uplinks goes there as one UDP datagram. AIR_LISTEN=<s>:
  * then wait that long for downlinks on the same socket (Class A: after an uplink), check and print them. Rows:
  *   air,idx,fcnt,seal_us,send_us    down,fcnt,<scheme>,<reading>    (send_us: the sendto(), not LoRa airtime)
+ *
+ * OTAA (air mode; OTAA = 1.0.3, 1.0.4 or 1.1, the version of the device's profile in ChirpStack): the device joins
+ * first. It sends a join-request (DEV_EUI, and JOIN_EUI, default 0000000000000000: 16 hex as ChirpStack shows them;
+ * APP_KEY for 1.0.x, NWK_KEY and APP_KEY for 1.1: 64 hex each), checks the join-accept virtual_gateway.py sends back
+ * (within JOIN_WAIT s, default 10), then sends its MSGS uplinks under the session keys and DevAddr the join made
+ * (aes256ctr for 1.0.x, lorawan11_256 for 1.1; FCnt from 1). DevNonce: random in 1.0.3; 0, 1, 2, ... in 1.0.4 and 1.1,
+ * kept in DEVNONCE_FILE (default ~/.cache/iot-pqc/devnonce_<DEV_EUI>), as ChirpStack refuses one it has seen. Row:
+ *   join,version,dev_nonce,dev_addr,join_ms   (request sent -> accept checked: ChirpStack and the hops; a radio adds
+ *                                               LoRaWAN's 5 s join-accept delay)
  *
  * Relay mode (PUB = topic prefix, e.g. "pqc/down"): reads virtual_gateway.py's "downlink <time> <frame hex>"
  * lines on stdin and PUBLISHes each frame on <PUB>/<DevAddr>: a network server's downlink back to the device.
@@ -324,15 +335,15 @@ static void reading(unsigned char *pt, int payload, int seq) {
     memcpy(pt, s, n < payload ? n : payload);
 }
 static int have_keys, have_e2e, have_dev;
-static unsigned char keys[96], dev_fixed[4];
+static unsigned char keys[128], dev_fixed[4];
 static void use_shared_keys(void) {  /* APP_KEYS -> app_aead (after app_aead_init / selftest) */
     /* processes share these keys (so a watcher can decrypt): a DevAddr per process keeps their nonces apart, unless
      * DEV_ADDR makes them one device (then FCNT_FILE keeps its counter unique) */
     pid_t pid = getpid();
     unsigned char devaddr[4] = {pid & 0xFF, pid >> 8 & 0xFF, pid >> 16 & 0xFF, 0x26};
     if (have_dev) memcpy(devaddr, dev_fixed, 4);
-    if (have_keys) app_aead_set_keys(keys, keys + 32, keys + 48, devaddr);
-    if (have_e2e) app_aead_set_e2e_key(keys + 64);
+    if (have_keys) app_aead_set_keys(keys, keys + 32, keys + 64, devaddr);
+    if (have_e2e) app_aead_set_e2e_key(keys + 96);
 }
 /* PUBLISH (QoS 0) of topic + data, built in pkt -> packet length */
 static int publish_packet(unsigned char *pkt, const char *topic, const unsigned char *data, size_t len) {
@@ -341,6 +352,26 @@ static int publish_packet(unsigned char *pkt, const char *topic, const unsigned 
     pkt[h++] = tl >> 8; pkt[h++] = tl & 0xFF; memcpy(pkt + h, topic, tl);
     memcpy(pkt + h + tl, data, len);
     return h + tl + (int)len;
+}
+
+/* n bytes from env var `name`'s 2n hex chars; rev: reversed (an EUI as ChirpStack shows it -> wire order) */
+static void env_hex(const char *name, const char *h, unsigned char *out, int n, int rev) {
+    if (!h || (int)strlen(h) != 2 * n) {
+        char why[48]; snprintf(why, sizeof why, "needs %d hex chars", 2 * n); die(name, why);
+    }
+    for (int i = 0; i < n; i++) {
+        unsigned v = 0;
+        if (!isxdigit((unsigned char)h[2 * i]) || sscanf(h + 2 * i, "%2x", &v) != 1) die(name, "not hex");
+        out[rev ? n - 1 - i : i] = (unsigned char)v;
+    }
+}
+/* path = env var `env`, else ~/.cache/iot-pqc/<name> (made if missing) */
+static void cache_file(char *path, size_t n, const char *env, const char *name) {
+    const char *home = getenv("HOME") ? getenv("HOME") : ".";
+    if (getenv(env)) { snprintf(path, n, "%s", getenv(env)); return; }
+    snprintf(path, n, "%s/.cache", home); mkdir(path, 0700);
+    snprintf(path, n, "%s/.cache/iot-pqc", home); mkdir(path, 0700);
+    snprintf(path, n, "%s/.cache/iot-pqc/%s", home, name);
 }
 
 /* the frame counter: runs on across connections, so no key sees one twice. With DEV_ADDR it also outlives the
@@ -616,6 +647,58 @@ static int open_any(const unsigned char *f, int fl, unsigned char *pt) {
     return n;
 }
 
+/* OTAA (see the header): the version, the root keys and EUIs (wire order) */
+static const char *otaa;
+static int v11;
+static unsigned char root_key[32], app_key[32], dev_eui[8], join_eui[8];
+static uint16_t dev_nonce(void) {  /* random in 1.0.3; else the next of a counter in a file, saved before it's used */
+    unsigned char r[24] = {0};
+    if (!strcmp(otaa, "1.0.3")) {
+        FILE *f = fopen("/dev/urandom", "rb");
+        if (!f || fread(r, 1, 2, f) != 2) die("/dev/urandom", strerror(errno));
+        fclose(f);
+        return (uint16_t)(r[0] | r[1] << 8);
+    }
+    char path[512], name[32];
+    snprintf(name, sizeof name, "devnonce_%02x%02x%02x%02x%02x%02x%02x%02x", dev_eui[7], dev_eui[6], dev_eui[5], dev_eui[4],
+             dev_eui[3], dev_eui[2], dev_eui[1], dev_eui[0]);
+    cache_file(path, sizeof path, "DEVNONCE_FILE", name);
+    int fd = open(path, O_RDWR | O_CREAT, 0600);
+    if (fd < 0 || flock(fd, LOCK_EX)) die(path, strerror(errno));
+    uint32_t v = pread(fd, r, sizeof r - 1, 0) > 0 ? (uint32_t)strtoul((char *)r, NULL, 10) : 0;
+    if (v > 0xFFFF) die("DevNonce", "all 65,536 used: a new DevEUI, or clear the device's DevNonces in ChirpStack");
+    int l = snprintf((char *)r, sizeof r, "%u\n", v + 1);
+    if (ftruncate(fd, 0) || pwrite(fd, r, l, 0) != l || fsync(fd)) die(path, strerror(errno));
+    close(fd);
+    return (uint16_t)v;
+}
+/* join-request out, join-accept back on the same socket (virtual_gateway.py sends it to where the request came from);
+ * the session it makes takes APP_KEYS' and DEV_ADDR's place */
+static void air_join(int fd, const struct addrinfo *ai) {
+    unsigned char jr[23], ja[64], k[96], d[4];
+    uint16_t dn = dev_nonce();
+    app_join_request(root_key, join_eui, dev_eui, dn, jr);
+    printf("join,version,dev_nonce,dev_addr,join_ms\n");
+    double t0 = now_ms(), wait = getenv("JOIN_WAIT") ? atof(getenv("JOIN_WAIT")) : 10;
+    if (sendto(fd, jr, sizeof jr, 0, ai->ai_addr, ai->ai_addrlen) != (ssize_t)sizeof jr) die("air send failed", strerror(errno));
+    struct timeval tmo = {1, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tmo, sizeof tmo);
+    while (now_ms() < t0 + wait * 1e3) {
+        int n = (int)recv(fd, ja, sizeof ja, 0), r;
+        if (n < 1 || ja[0] >> 5 != 1) continue;  /* MType 001: join-accept */
+        if ((r = app_join_accept(v11, ja, n, root_key, app_key, join_eui, dev_eui, dn, k, d)) == -2)
+            die("join-accept", v11 ? "the device's profile in ChirpStack is LoRaWAN 1.0.x, not OTAA=1.1"
+                                   : "the device's profile in ChirpStack is LoRaWAN 1.1, not OTAA=1.0.x");
+        if (r < 0) { printf("join,REJECTED (its MIC fails: other keys, or another DevNonce),%d B\n", n); continue; }
+        memcpy(keys, k, sizeof k); memcpy(dev_fixed, d, 4); have_keys = have_dev = 1;
+        use_shared_keys();
+        printf("join,%s,%u,%02x%02x%02x%02x,%.3f\n", otaa, dn, d[3], d[2], d[1], d[0], now_ms() - t0);
+        fflush(stdout);
+        return;
+    }
+    die("no join-accept", "within JOIN_WAIT s (virtual_gateway.py --air running? the device and its keys in ChirpStack?)");
+}
+
 /* air mode: the device's side of the radio (see the header) */
 static void air_device(const char *host, const char *port, int msgs, int payload, double listen_s) {
     static unsigned char pt[1024], fr[1024 + 64], out[1024];
@@ -623,6 +706,7 @@ static void air_device(const char *host, const char *port, int msgs, int payload
     hints.ai_socktype = SOCK_DGRAM;
     if (getaddrinfo(host, port, &hints, &ai) != 0) die("cannot resolve", host);
     int fd = socket(ai->ai_family, SOCK_DGRAM, 0);
+    if (otaa) air_join(fd, ai);
     printf("#aead %s (%s), uplink over the air (UDP to %s:%s), %d B payload + %d B overhead\nair,idx,fcnt,seal_us,send_us\n",
            app_aead_label(), app_aead_library(), host, port, payload, app_aead_overhead());
     for (int m = 0; m < msgs; m++) {
@@ -640,10 +724,11 @@ static void air_device(const char *host, const char *port, int msgs, int payload
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tmo, sizeof tmo);
     for (double end = now_ms() + listen_s * 1e3; now_ms() < end;) {
         int fl = (int)recv(fd, fr, sizeof fr, 0), n;
-        if (fl < APP_HDR + 4) continue;
-        if (fr[5] & 0x0F) printf("down,%d,-,MAC commands in FOpts (not decoded)\n", fr[6] | fr[7] << 8);
-        else if ((n = open_any(fr, fl, out)) < 0) printf("down,%d,REJECTED (no scheme verifies),%d B\n", fr[6] | fr[7] << 8, fl);
-        else printf("down,%d,%s,%.*s\n", fr[6] | fr[7] << 8, app_aead_label(), n, (const char *)out);
+        if (fl < 12 || fr[0] >> 5 != 3) continue;  /* MType 011: unconfirmed data down */
+        int fc = fr[6] | fr[7] << 8, fo = fr[5] & 0x0F, fp = fl >= 13 + fo ? fr[8 + fo] : -1;  /* FPort; -1 = none */
+        if (fp <= 0) printf("down,%d,-,%s (not decoded)\n", fc, fp == 0 ? "MAC commands on FPort 0" : fo ? "MAC commands in FOpts" : "empty");
+        else if ((n = open_any(fr, fl, out)) < 0) printf("down,%d,REJECTED (no scheme verifies),%d B\n", fc, fl);
+        else printf("down,%d,%s%s,%.*s\n", fc, app_aead_label(), fo ? " (+ MAC commands in FOpts)" : "", n, (const char *)out);
         fflush(stdout);
     }
     freeaddrinfo(ai);
@@ -739,13 +824,22 @@ int main(int argc, char **argv) {
     const char *hex = getenv("APP_KEYS"), *sub = getenv("SUB"), *pub = getenv("PUB"), *da = getenv("DEV_ADDR");
     if (hex) {
         int n = (int)strlen(hex) / 2;
-        if (strlen(hex) != 128 && strlen(hex) != 192) die("APP_KEYS", "needs 128 hex chars (+ 64: lorawan11_e2e's key)");
-        for (int i = 0; i < n; i++) {
-            unsigned v = 0;
-            if (!isxdigit((unsigned char)hex[2 * i]) || sscanf(hex + 2 * i, "%2x", &v) != 1) die("APP_KEYS", "not hex");
-            keys[i] = (unsigned char)v;
-        }
-        have_keys = 1; have_e2e = n == 96;
+        if (strlen(hex) != 192 && strlen(hex) != 256) die("APP_KEYS", "needs 192 hex chars (+ 64: lorawan11_e2e's key)");
+        env_hex("APP_KEYS", hex, keys, n, 0);
+        have_keys = 1; have_e2e = n == 128;
+    }
+    if ((otaa = getenv("OTAA"))) {
+        v11 = !strcmp(otaa, "1.1");
+        if (!v11 && strcmp(otaa, "1.0.3") && strcmp(otaa, "1.0.4")) die("OTAA", "1.0.3, 1.0.4 or 1.1");
+        if (!getenv("AIR") || !atoi(getenv("AIR"))) die("OTAA", "needs AIR=1 (the join goes over the air)");
+        if (hex || da) die("OTAA", "the join makes the session keys and the DevAddr: no APP_KEYS or DEV_ADDR");
+        env_hex(v11 ? "NWK_KEY" : "APP_KEY", getenv(v11 ? "NWK_KEY" : "APP_KEY"), root_key, 32, 0);
+        if (v11) env_hex("APP_KEY", getenv("APP_KEY"), app_key, 32, 0);
+        env_hex("DEV_EUI", getenv("DEV_EUI"), dev_eui, 8, 1);
+        env_hex("JOIN_EUI", getenv("JOIN_EUI") ? getenv("JOIN_EUI") : "0000000000000000", join_eui, 8, 1);
+        const char *want = v11 ? "lorawan11_256" : "aes256ctr";
+        if (getenv("AEAD") && strcmp(aead, want)) die("OTAA picks the frames itself, AEAD", v11 ? "lorawan11_256 for 1.1" : "aes256ctr for 1.0.x");
+        aead = want;
     }
     if (da) {  /* as ChirpStack shows it (big-endian); the frame carries it little-endian */
         char *end;
@@ -754,13 +848,9 @@ int main(int argc, char **argv) {
         if (!hex) die("DEV_ADDR", "needs APP_KEYS (a fixed device has fixed keys)");
         for (int i = 0; i < 4; i++) dev_fixed[i] = (unsigned char)(v >> 8 * i);
         have_dev = 1;
-        const char *home = getenv("HOME") ? getenv("HOME") : ".";
-        if (getenv("FCNT_FILE")) snprintf(fcnt_path, sizeof fcnt_path, "%s", getenv("FCNT_FILE"));
-        else {
-            snprintf(fcnt_path, sizeof fcnt_path, "%s/.cache", home); mkdir(fcnt_path, 0700);
-            snprintf(fcnt_path, sizeof fcnt_path, "%s/.cache/iot-pqc", home); mkdir(fcnt_path, 0700);
-            snprintf(fcnt_path, sizeof fcnt_path, "%s/.cache/iot-pqc/fcnt_%s", home, da);
-        }
+        char name[32];
+        snprintf(name, sizeof name, "fcnt_%s", da);
+        cache_file(fcnt_path, sizeof fcnt_path, "FCNT_FILE", name);
     }
     if (msgs > 0) {
         if (payload < 1 || payload > 1024) die("PAYLOAD must be 1..1024 bytes", "");

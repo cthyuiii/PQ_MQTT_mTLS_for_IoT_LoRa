@@ -44,8 +44,9 @@ broker (`./run_all.sh --serve-broker`, :18835). **Device** = the Pico W.
      MIC compares; V1-V10 as tests (25 Oct, uncommitted in `network/chirpstack`)
    - [x] the rest of the fork: KEKs, the API and UI (64 hex characters), its 215 tests; the image
      `iot-pqc/chirpstack:4.19.2-pq-aes256` (25 Oct)
-   - [ ] host tool (`app_aead.c`, `mqtt_tls_timer`): independent 32-byte keys, 1.0.x frames, OTAA, the 1.0.3 / 1.0.4
-     DevNonce; reproduces V1-V10; the Pico's `lora_aead.h` gets the same keys
+   - [x] host tool (`app_aead.c`, `mqtt_tls_timer AIR=1`, 26 Oct): 32-byte keys, 1.0.x and 1.1 frames, OTAA, the
+     1.0.3 / 1.0.4 / 1.1 DevNonce; its self-test reproduces V1, V3, V5-V10; the Pico's `lora_aead.h` the same keys.
+     Tested against an openssl stand-in for ChirpStack (docs/aes256_lorawan.md), not yet against ChirpStack
    - [ ] end to end, six cases (1.0.3, 1.0.4, 1.1 × ABP, OTAA): host tool → virtual gateway → ChirpStack → broker → app
    - [ ] the Pico on the radio: LoRaMac-node v4.7.0 fork (secure element), Arm's Pico port moved to v4.7.0, an SX1262
      board file

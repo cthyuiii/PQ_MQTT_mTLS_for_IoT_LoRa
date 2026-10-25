@@ -5,13 +5,14 @@
 //   none       header + plaintext (the unprotected reference)
 //   lorawan10  LoRaWAN 1.0.x: AES-128-CTR (A_i blocks) + AES-128-CMAC over B0 | frame, 4-byte MIC
 //   lorawan11  LoRaWAN 1.1: same encryption; uplink MIC from two CMACs (two keys), downlink MIC from one (SNwkSIntKey)
-//   aes256ctr  the 1.0.x frame with 256-bit keys (AES-256-CTR + AES-256-CMAC; CMAC key = k_nwk | k_nwk2)
-//   lorawan11_256  the 1.1 frame with 256-bit keys (AES-256-CTR; 1.1 MIC rules, CMAC keys F = k_nwk | k_nwk2, S = k_nwk2 | k_nwk)
-//   lorawan11_e2e  a standard lorawan11 frame (AES-128; FPort 2) around AES-256-CTR (same A_i blocks) + a 4-byte
+//   aes256ctr  LoRaWAN 1.0.x with AES-256 (our ChirpStack): AES-256-CTR + AES-256-CMAC, NwkSKey = k_nwk
+//   lorawan11_256  LoRaWAN 1.1 with AES-256: AES-256-CTR; 1.1 MIC rules, FNwkSIntKey = k_nwk, SNwkSIntKey = k_nwk2
+//   lorawan11_e2e  a lorawan11_256 frame (FPort 2) around AES-256-CTR (same A_i blocks) + a 4-byte
 //              AES-256-CMAC tag (key derived from k_e2e, as app_aead.c): a network server holding the LoRaWAN keys removes
 //              the outer layer, only the application checks the tag and reads the payload
 //   aes128gcm / aes256gcm, aes128ccm / aes256ccm, ascon: header as AAD, nonce DevAddr | FCnt (32 bits) | Dir | zeros
 //              (GCM 12 bytes, CCM 13, Ascon 16), 16-byte tag
+// Keys are 32 bytes; the AES-128 frames (benchmarks only, our ChirpStack refuses them) use each key's first 16.
 // AES: BearSSL bundled in arduino-pico (constant-time aes_ct; neither chip has an AES engine). BearSSL has no CMAC,
 // so CMAC is built on its AES-CBC (RFC 4493). Ascon: official ascon-c 'armv6m_lowsize' (Cortex-M0 assembly,
 // NIST SP 800-232), in src/. la_kat() checks CMAC (128 / 256), CCM, LoRaWAN and Ascon against published vectors
@@ -32,7 +33,7 @@ int crypto_aead_decrypt(unsigned char *m, unsigned long long *mlen, unsigned cha
 }
 
 enum { HDR = 9, MAXP = 222, TAG = 16, CCM_N = 13 };
-static uint8_t k_app[32], k_nwk[16], k_nwk2[16], k_e2e[32], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
+static uint8_t k_app[32], k_nwk[32], k_nwk2[32], k_e2e[32], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
 static uint8_t lw_fport = 1;  // FPort: 2 marks lorawan11_e2e (same keys and MIC as lorawan11), as app_aead.c
 static uint8_t pt[MAXP], frame[HDR + MAXP + TAG], out[MAXP + TAG];
 static uint32_t fcnt;  // the device's frame counter: runs on across schemes and connections (a key never sees an
@@ -211,16 +212,15 @@ static const la_scheme LA[] = {
   {"aes128ccm", "AES-128-CCM", "BearSSL (arduino-pico)", ccm_seal, ccm_open, TAG},
   {"aes256ccm", "AES-256-CCM", "BearSSL (arduino-pico)", ccm_seal, ccm_open, TAG},
   {"ascon", "Ascon-AEAD128", "ascon-c armv6m_lowsize", ascon_seal, ascon_open, TAG},
-  {"lorawan11_e2e", "LoRaWAN-1.1 AES-128-CTR+2xCMAC around AES-256-CTR+CMAC (end to end)", "BearSSL (arduino-pico)",
+  {"lorawan11_e2e", "LoRaWAN-1.1 AES-256-CTR+2xCMAC around AES-256-CTR+CMAC (end to end)", "BearSSL (arduino-pico)",
    e2e_seal, e2e_open, 8}};
 enum { LA_N = sizeof LA / sizeof *LA };
-// key schedules for scheme k from the current keys (k_app, k_nwk, k_nwk2, k_e2e); the "256" schemes use 256-bit keys
+// key schedules for scheme k from the current keys (k_app, k_nwk, k_nwk2, k_e2e); the "256" schemes and lorawan11_e2e
+// use the whole 32 bytes, the others the first 16
 static void la_setup(int k) {
-  int kl = strstr(LA[k].name, "256") ? 32 : 16;
-  uint8_t nk[32], nk2[32];  // the 256-bit CMAC keys, as app_aead.c: F = k_nwk | k_nwk2, S (1.1) = k_nwk2 | k_nwk
-  memcpy(nk, k_nwk, 16); memcpy(nk + 16, k_nwk2, 16); memcpy(nk2, k_nwk2, 16); memcpy(nk2 + 16, k_nwk, 16);
   lw11 = !strncmp(LA[k].name, "lorawan11", 9);
   e2e = !strcmp(LA[k].name, "lorawan11_e2e"); lw_fport = e2e ? 2 : 1;
+  int kl = strstr(LA[k].name, "256") || e2e ? 32 : 16;
   if (e2e) {  // AES-256-CTR under k_e2e; the tag's key = AES-256(k_e2e, 02|0^15) | AES-256(k_e2e, 03|0^15), as app_aead.c
     uint8_t km[32] = {2}, iv[16] = {0};
     br_aes_ct_cbcenc_keys ek;
@@ -232,7 +232,7 @@ static void la_setup(int k) {
     cmac_init(&cm_e2e, km, 32);
   }
   br_aes_ct_ctr_init(&lw_ctr, k_app, kl);
-  cmac_init(&cm_f, kl == 32 ? nk : k_nwk, kl); cmac_init(&cm_s, kl == 32 ? nk2 : k_nwk2, kl);
+  cmac_init(&cm_f, k_nwk, kl); cmac_init(&cm_s, k_nwk2, kl);
   br_aes_ct_ctr_init(&gcm_aes, k_app, kl); br_gcm_init(&gcm, &gcm_aes.vtable, br_ghash_ctmul32);
   br_aes_ct_ctrcbc_init(&ccm_aes, k_app, kl); br_ccm_init(&ccm, &ccm_aes.vtable);
 }

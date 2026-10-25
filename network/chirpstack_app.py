@@ -11,8 +11,8 @@ lorawan11_e2e layer (AES-256-CTR, FPort 2) that ChirpStack can't, and times Chir
     python3 network/chirpstack_app.py --selftest
 
 Input: mqtt_tls_timer's RAW lines ("<unix time> <topic> <payload hex>"), each payload one ChirpStack JSON event.
-FPort 1 = a lorawan11 reading (ChirpStack already decrypted it); FPort 2 = lorawan11_e2e: AES-256-CTR ciphertext + a
-4-byte AES-256-CMAC tag, checked and decrypted here with the e2e key (APP_KEYS hex chars 128-191; the tag's key derived
+FPort 1 = a lorawan11_256 reading (ChirpStack already decrypted it); FPort 2 = lorawan11_e2e: AES-256-CTR ciphertext + a
+4-byte AES-256-CMAC tag, checked and decrypted here with the e2e key (APP_KEYS hex chars 192-255; the tag's key derived
 from it) and blocks from the event's devAddr and fCnt, by the openssl command (no new Python dependency).
 Keys: one e2e key for every device (--e2e-key, the test set-up), or per device from a master key that only the
 application holds (--e2e-master-file, 64 hex): key = HKDF-SHA-256(master, "IoT-PQC lorawan11_e2e v1" | DevEUI), DevEUI
@@ -77,7 +77,7 @@ def e2e_open(key, devaddr_be, fcnt, data):
 def e2e_seal_reply(key, devaddr_be, up_fcnt, text):
     """the reply's inner layer (Dir = 1): ciphertext | tag, its blocks on the FCnt of the uplink it answers, since
     ChirpStack picks the downlink's own FCnt only when it sends it. One reply per uplink, so a block is never reused;
-    ChirpStack puts its AES-128 layer and MIC around it"""
+    ChirpStack puts its AES-256 LoRaWAN layer and MIC around it"""
     c = ctr(key, block(1, devaddr_be, up_fcnt, 1, down=1), text)
     return c + e2e_tag(key, devaddr_be, up_fcnt, c, down=1)
 
@@ -202,7 +202,7 @@ def selftest():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--e2e-key", help="lorawan11_e2e's 32-byte key, 64 hex (APP_KEYS hex chars 128-191)")
+    ap.add_argument("--e2e-key", help="lorawan11_e2e's 32-byte key, 64 hex (APP_KEYS hex chars 192-255)")
     ap.add_argument("--e2e-master-file", help="the application's master key (64 hex in a file): per-device keys")
     ap.add_argument("--derive", metavar="DEVEUI", help="with --e2e-master-file: print that device's key (64 hex), exit")
     ap.add_argument("--sent", help="the virtual gateway's output (same machine): per-frame delay")

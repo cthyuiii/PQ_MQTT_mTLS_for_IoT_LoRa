@@ -12,7 +12,8 @@ TxCh = TxDr = 0, and ChirpStack recomputes them from what the gateway reports. E
 LoRa airtime at DR0, computed (a 64-byte frame: 2.8 s), which a UDP datagram doesn't take. Only uplinks are forwarded
 (join request, data up). Prints the send time of each frame (for ChirpStack's delay). A downlink from ChirpStack
 is acknowledged and printed as "downlink <time> ... <frame hex>". With --air it also goes back over the air: to the
-address the device's last uplink came from (mqtt_tls_timer AIR=1 listens there). From stdin, mqtt_tls_timer's
+address the device's last uplink came from (mqtt_tls_timer AIR=1 listens there), a join-accept to where the last
+join-request came from. From stdin, mqtt_tls_timer's
 relay mode (PUB=pqc/down) can carry it to the device through a broker instead.
 """
 import argparse, base64, itertools, json, math, os, socket, sys, threading, time
@@ -69,7 +70,8 @@ def frames(a, air, seen):
         while True:
             phy, addr = air.recvfrom(512)
             if is_uplink(phy):
-                seen[phy[4:0:-1].hex()] = addr
+                # a join-request has no DevAddr. ponytail: one joining device at a time; key it by DevEUI if several
+                seen[phy[4:0:-1].hex() if phy[0] >> 5 else "join"] = addr
                 yield phy
     else:
         for line in sys.stdin:
@@ -89,7 +91,8 @@ def listen(sock, eui, sent, acked, air, seen):
         elif data[3] == PULL_RESP:  # last token = the frame: mqtt_tls_timer's relay mode (PUB=) passes it on
             tx = json.loads(data[4:])["txpk"]
             phy = base64.b64decode(tx["data"])
-            to = seen.get(phy[4:0:-1].hex()) if air and phy[0] >> 5 in (3, 5) else None  # data down: back on air
+            mtype = phy[0] >> 5  # 1 join-accept, 3 / 5 data down: back on air
+            to = None if not air else seen.get("join") if mtype == 1 else seen.get(phy[4:0:-1].hex()) if mtype in (3, 5) else None
             if to:
                 air.sendto(phy, to)
             print(f"downlink {time.time():.6f} tmst={tx.get('tmst')} freq={tx.get('freq')} datr={tx.get('datr')} "

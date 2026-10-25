@@ -5,7 +5,8 @@ or AES-256-CMAC**, for LoRaWAN 1.0.3, 1.0.4 and 1.1, with ABP and with OTAA. Oth
 the 4-byte MIC are LoRaWAN's own. It isn't standard LoRaWAN: our devices work only with our ChirpStack, and the
 other way round.
 
-Done: the rules and the test vectors (below), and ChirpStack (25 Oct, below). Not started: the host tool, the Pico.
+Done: the rules and the test vectors, ChirpStack (25 Oct) and the test device (26 Oct), below. Next: the six cases
+against our ChirpStack. Not started: the Pico on the radio.
 
 ## What the test vectors are for
 
@@ -54,15 +55,42 @@ How it was tested: `cargo test -p lrwn --all-features` (181 and 8 doc examples),
 AES-256 key-wrap example), `-p chirpstack --features postgres` (215, against Postgres and Redis in Docker; the MQTT,
 Kafka and AMQP integration tests are behind a feature and weren't run). The image: `iot-pqc/chirpstack:4.19.2-pq-aes256`.
 
-### Test device: our host tool (`network/app_aead.c`, `mqtt_tls_timer`)
+### Test device: done (26 Oct), our host tool (`network/app_aead.c`, `mqtt_tls_timer` with `AIR=1`)
 
-- **Keys:** `lorawan11_256` builds its 32-byte network keys today by joining two 16-byte keys. It moves to four
-  independent 32-byte keys. `aes256ctr` (the 1.0.x frame) moves to two.
-- **OTAA:** it sends a join-request, then reads and checks the join-accept. Then it derives the session keys (each one
-  is two CMACs, which the tool already has) and sends frames with them.
-- **1.0.3 and 1.0.4:** the DevNonce is random (1.0.3) or a counter kept in a file (1.0.4).
-- **Self-test:** it reproduces V1-V10, as it already checks NIST's answers.
-- **The Pico's Wi-Fi path** (`lora_aead.h`) gets the same key change.
+- **Keys:** the network keys are 32 bytes (they were 16, and the 256-bit schemes joined two of them). `aes256ctr` is
+  1.0.x with AES-256 (AppSKey, NwkSKey), `lorawan11_256` is 1.1 (AppSKey, FNwkSIntKey, SNwkSIntKey). `APP_KEYS` is 192
+  hex characters, + 64 for lorawan11_e2e's key. The tool doesn't hold NwkSEncKey: it sends no MAC commands and leaves
+  ChirpStack's as they are (1.1 encrypts them with it).
+- **The 1.1 uplink MIC:** B1 carries TxDr and TxCh (0 through the virtual gateway: channel 0, DR0).
+- **OTAA** (`OTAA=1.0.3`, `1.0.4` or `1.1`): the join-request; the join-accept decrypted, its OptNeg bit checked
+  against the version and its MIC checked; the session keys with the KDF (two CMACs each); then the uplinks, FCnt from 1.
+  `virtual_gateway.py --air` now sends the join-accept back to where the join-request came from.
+- **The DevNonce:** random in 1.0.3; a counter from 0 in 1.0.4 and 1.1, saved before it's used, in
+  `~/.cache/iot-pqc/devnonce_<DevEUI>`.
+- **Downlinks with MAC commands:** a frame with FOpts opens (its payload); FPort 0 and FOpts are reported, not decoded.
+- **lorawan11_e2e:** its outer frame is lorawan11_256 now (it was the AES-128 1.1 frame, for the stock ChirpStack), so
+  its timings from before 26 Oct had an AES-128 outer frame.
+- **The AES-128 schemes** (lorawan10, lorawan11, aes128gcm, aes128ccm) stay for the benchmark comparison, on each key's
+  first 16 bytes. Our ChirpStack refuses their frames.
+- **The Pico's Wi-Fi path** (`lora_aead.h`, `mqtt_tls_bench.ino`, `run_benchmarks.py`): the same 32-byte keys,
+  `APP_KEYS` 256 hex characters; the flash record has a new magic number, so an old one isn't read; the ChirpStack
+  device's frames are lorawan11_256 and lorawan11_e2e.
+
+How it was tested:
+
+- `app_aead_selftest()` (it runs before every run with `MSGS` > 0) reproduces V1, V3, V5, V6 (its MIC) and V7-V10 (the
+  join-requests, the join-accepts and the keys from them). It refuses a changed frame, a changed join-accept, a
+  join-accept read as the other version, and a 1.1 join-accept for another DevNonce. Not V2 and V4: they acknowledge a
+  confirmed frame (ConfFCnt in the MIC), and the tool sends unconfirmed frames only. Four deliberate bugs (the KDF's
+  length field, B1's TxDr and TxCh swapped, the DevNonce's byte order, FOpts not skipped) each made it fail.
+- The air path on the Mac: the device → `virtual_gateway.py --air` → a stand-in for the Gateway Bridge and ChirpStack
+  that does the network server's AES-256 part with the `openssl` command only (it builds the join-accept, derives the
+  keys, checks every uplink's MIC and answers each with a downlink). OTAA 1.0.3, 1.0.4 and 1.1 (1.0.4 and 1.1 twice:
+  DevNonce 1, then 2), ABP 1.0.x and 1.1: every uplink verified, every downlink opened. A wrong AppKey: refused. A 1.0.4
+  device on a 1.1 profile: the device says so. For DevNonce 1 the stand-in's join-accepts are V8's and V10's bytes.
+- `pico/tests/aead_host_test`: every scheme, both directions, four sizes, the Pico's frame equals the host's (88). The
+  firmware compiles (the ChirpStack device in air mode, and the default pipeline); not run on a board.
+- Not yet: against our ChirpStack (the six cases, next).
 
 ### The Pico W on the radio: a fork of LoRaMac-node v4.7.0
 
@@ -84,7 +112,7 @@ Kafka and AMQP integration tests are behind a feature and weren't run). The imag
 
 1. `lrwn`, against V1-V10. Done.
 2. ChirpStack: keys, API, UI, its tests; then the image. Done.
-3. The host tool, against V1-V10.
+3. The host tool, against V1-V10. Done (V2 and V4 aside, above).
 4. End to end, six cases: 1.0.3, 1.0.4 and 1.1, each with ABP and OTAA. The path: host tool → virtual gateway →
    Gateway Bridge → ChirpStack → broker → application, and the downlink back.
 5. The Pico on the radio, once the Pi 5 gateway runs (`docs/radio_gateway.md`).

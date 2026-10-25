@@ -85,14 +85,14 @@ SWEEP_GROUPS = ["MLKEM512", "MLKEM768", "MLKEM1024",                            
                 "SecP256r1MLKEM512", "x25519_mlkem512", "p384_mlkem768", "p521_mlkem1024", "x448_mlkem768",
                 "X25519", "secp256r1",                                             # classical baselines
                 "hqc1", "hqc3", "hqc5", "frodo640aes"]                             # other KEM families (HQC: NIST 2025)
-# per AES mode, 128- vs 256-bit keys: CTR (LoRaWAN's own; aes256ctr / lorawan11_256 = its 1.0.x / 1.1 frames with 256-bit
-# keys), GCM, CCM; + Ascon
+# per AES mode, 128- vs 256-bit keys: CTR (LoRaWAN's own; aes256ctr / lorawan11_256 = its 1.0.x / 1.1 frames with
+# AES-256, as our ChirpStack takes them), GCM, CCM; + Ascon
 AEADS = ["none", "lorawan10", "lorawan11", "aes256ctr", "lorawan11_256", "aes128gcm", "aes256gcm", "aes128ccm", "aes256ccm",
          "ascon", "lorawan11_e2e"]
 # the pipeline's default (7 Oct): LoRaWAN 1.1 only, as the standard (AES-128) and in its own construction with 256-bit
 # keys. GCM / CCM / Ascon use their own frame (16 B tag), which no LoRaWAN network server reads; --aeads adds them.
-# lorawan11_e2e (branch LoRa_1.1_implementation): the standard 1.1 frame around an AES-256 layer only the application
-# removes, the 256-bit path a stock network server (ChirpStack) accepts
+# lorawan11_e2e (branch LoRa_1.1_implementation): the lorawan11_256 frame around an AES-256 layer only the application
+# removes (an AES-128 outer frame until 26 Oct, for the stock ChirpStack)
 AEADS_DEFAULT = ["lorawan11", "lorawan11_256", "lorawan11_e2e"]
 TIMERS = [("OpenSSL", HERE / "mqtt_tls_timer"), ("wolfSSL", HERE / "mqtt_tls_timer_wolfssl")]
 KEX_TIMER = HERE / "mqtt_kem_timer"   # the timer with liboqs (build_timer.sh): the KEM exchange's client + responder
@@ -664,7 +664,7 @@ def main():
                     help="the deployment checks against the broker's DEPLOY listeners (gen_certs.sh --deploy <broker IP>)")
     args = ap.parse_args()
     sys.stdout.reconfigure(line_buffering=True)  # keeps our lines in order with the watchers' when piped
-    args.app_keys = os.urandom(96).hex() if args.watch and args.messages else ""  # + lorawan11_e2e's key
+    args.app_keys = os.urandom(128).hex() if args.watch and args.messages else ""  # 3 x 32 B + lorawan11_e2e's key
     if args.watch and not args.messages and args.role != "broker":
         raise SystemExit("--watch needs --messages N (the pipeline), or --role broker")
     args.sigs = args.sigs or SIGS_TLS  # the pipeline too: the same certificates as the Pico's
