@@ -24,25 +24,38 @@ broker (`./run_all.sh --serve-broker`, :18835). **Device** = the Pico W.
 
 ## Next
 
-1. [ ] **The gateway:** the Gateway Bridge (Go 1.27, seed-only key) on the Pi, its Dockerfile in the repo, built from a
-   release tag; or a stand-in that turns the Pico's readings into LoRa frames. To decide.
+1. [ ] **The gateway** (25 Oct: it shares a machine with ChirpStack, a Pi 5 later; one PQ broker on another machine
+   for the gateway, ChirpStack and the application):
+   - [x] `scripts/gateway-bridge/Dockerfile`: v4.1.2, unchanged, built with Go 1.27 (22 s on the Mac).
+   - [x] `chirpstack_pq_setup.sh` `GATEWAY_IMAGE=`: the Bridge as a compose service (UDP 127.0.0.1:1700), ML-DSA-44
+     mTLS to the broker as `gateway` (seed-only key); ChirpStack's gateway backend on the broker too. The broker's
+     ACL (`BROKER_ACL=1`) has the gateway topics. Without `GATEWAY_IMAGE` the output is byte-identical (checked).
+   - [x] The Bridge ↔ the Pi broker, from the Mac (a separate compose project, an unregistered gateway ID): a frame on
+     UDP 1700 arrived on the broker as the gateway's uplink event.
+   - [ ] The main setup: uplinks through ChirpStack (README, "Check the gateway path").
+   - [ ] The radio: a Pi 5 with the SX1303 HAT and Semtech's packet forwarder (docs/radio_gateway.md); both images
+     built on that Pi 5 (arm64).
 2. [ ] **Uplinks through our ChirpStack** (needs 1): ChirpStack takes them only as gateway events.
-3. [ ] **AES-256 LoRaWAN in the fork** (finding 127; ABP first; cipher by key length, so 16-byte keys stay AES-128):
-   - spec + test vectors (1.1 uplink / downlink MIC, FRMPayload, FOpts at 32 bytes)
-   - `lrwn`: the key type takes 16 or 32 bytes; AES / CMAC helpers; constant-time MIC compares
-   - ChirpStack: session, uplink and downlink paths (storage needs no schema change)
-   - API + UI (`AesKeyInput.tsx`: 32 or 64 hex)
-   - fork / build / image
-   - Pico + host `lorawan11_256`: four independent 32-byte session keys (today two 16-byte keys joined)
-   - end-to-end test, benchmarks, docs
+3. [ ] **AES-256 LoRaWAN** (finding 127): every key 32 bytes; 1.0.3, 1.0.4 and 1.1, ABP and OTAA. The plan, the
+   rules and the vectors: `docs/aes256_lorawan.md`.
+   - [x] rules + test vectors V1-V10 (25 Oct): `scripts/aes256_vectors.sh`, openssl only, five controls pass; the same
+     output on OpenSSL 3.5, 3.6 and 4.0
+   - [x] `lrwn` (a folder in our ChirpStack fork): 32-byte key type, AES-256 / AES-256-CMAC, the KDF, constant-time
+     MIC compares; V1-V10 as tests (25 Oct, uncommitted in `network/chirpstack`)
+   - [x] the rest of the fork: KEKs, the API and UI (64 hex characters), its 215 tests; the image
+     `iot-pqc/chirpstack:4.19.2-pq-aes256` (25 Oct)
+   - [ ] host tool (`app_aead.c`, `mqtt_tls_timer`): independent 32-byte keys, 1.0.x frames, OTAA, the 1.0.3 / 1.0.4
+     DevNonce; reproduces V1-V10; the Pico's `lora_aead.h` gets the same keys
+   - [ ] end to end, six cases (1.0.3, 1.0.4, 1.1 × ABP, OTAA): host tool → virtual gateway → ChirpStack → broker → app
+   - [ ] the Pico on the radio: LoRaMac-node v4.7.0 fork (secure element), Arm's Pico port moved to v4.7.0, an SX1262
+     board file
 4. [ ] **The Pico W ↔ the Pi broker, rerun on this branch** (`--test mqtt --match 'tls ml-dsa-44'`).
-5. [ ] **ChirpStack's gateway-side hop:** its own Mosquitto still uses ECDSA P-256 / X25519. Our build can do ML-DSA
-   there, or the hop goes if the gateway connects to the central broker.
+5. [ ] **ChirpStack's gateway-side hop:** with `GATEWAY_IMAGE` it goes: the gateway backend uses the PQ broker, and
+   ChirpStack's own Mosquitto and the door are unused. Remove them once item 1 runs.
 
 ## Paused / KIV
 
 - ACL and CRL on the broker (`BROKER_ACL=1`, `BROKER_CRL=1`): off for now.
 - TLS 1.3 only inside the fork (`builder_with_protocol_versions`): the broker already refuses TLS 1.2.
-- `run_all.sh`: still lists the removed stages; `docs/how_it_works.md` describes main's full suite.
+- `run_all.sh`: still lists the removed stages; `docs/how_it_works.md` describes the full suite (`testing/benchmarks`).
 - ChirpStack's UI on plain HTTP (:8080, the Mac only).
-- OTAA join; a real radio and packet forwarder.

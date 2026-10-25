@@ -22,6 +22,12 @@
 #                           X25519MLKEM768 and ML-DSA-44 itself (finding 128), so its integration connects straight to
 #                           the MQTT broker as `chirpstack` and the door no longer bridges to it. rustls checks the
 #                           broker's name: its server.crt must name <mqtt-broker host> (gen_certs.sh --server-names).
+#   GATEWAY_IMAGE=iot-pqc/gateway-bridge:4.1.2-go1.27 (with CHIRPSTACK_IMAGE): the Gateway Bridge built with Go 1.27
+#                           (scripts/gateway-bridge, finding 129) runs here too, as on a gateway that shares its machine
+#                           with ChirpStack. It takes the packet forwarder's UDP on 127.0.0.1:1700 only and publishes to
+#                           the MQTT broker as `gateway` (ML-DSA-44 mTLS; Go reads the key only in seed-only form), and
+#                           ChirpStack's gateway backend connects to that broker too: the gateway, ChirpStack and the
+#                           application all on the one PQ broker. The door and ChirpStack's own Mosquitto go unused.
 # All of it is docker-compose.override.yml plus new files: the compose file and its configs stay untouched, and
 # `rm docker-compose.override.yml && docker compose up -d --remove-orphans` goes back. Existing certificates are kept
 # (the Pi has copies); the door's is remade if <mac-ip> isn't in it.
@@ -39,6 +45,9 @@ for f in CA.crt ClientCA.crt ClientCA.key; do
     [ -f "$APP_CERTS/$f" ] || { echo "no $APP_CERTS/$f (the MQTT broker's set, gen_certs.sh; the client CA key stays on this Mac)" >&2; exit 1; }
 done
 IMG=${CHIRPSTACK_IMAGE:-}
+GW=${GATEWAY_IMAGE:-}
+[ -z "$GW" ] || [ -n "$IMG" ] ||
+    { echo "GATEWAY_IMAGE needs CHIRPSTACK_IMAGE: the stock ChirpStack can't reach the MQTT broker (no ML-DSA)" >&2; exit 1; }
 if [ -n "$IMG" ]; then
     H=${APP%:*}; case $H in *[!0-9.]*) N="DNS:$H" ;; *) N="IP Address:$H" ;; esac
     "$OSSL" x509 -in "$APP_CERTS/server.crt" -noout -ext subjectAltName 2>/dev/null | grep -q "$N\(,\|$\)" ||
@@ -147,11 +156,16 @@ tls_version tlsv1.3
 EOF
 
 # the broker's roles: chirpstack and application, issued by its client CA, ML-DSA-44 like the set (kept if present)
-for role in chirpstack application; do
+for role in chirpstack application ${GW:+gateway}; do
     [ -f "$APP_CERTS/$role.crt" ] || cert "$APP_CERTS" "$APP_CERTS/ClientCA" $role "extendedKeyUsage=clientAuth"
 done
 cp "$APP_CERTS/chirpstack.crt" "$P/app/client.crt"; cp "$APP_CERTS/chirpstack.key" "$P/app/client.key"; chmod 644 "$P/app/client.key"
 cp "$APP_CERTS/CA.crt" "$P/app/ca.crt"
+if [ -n "$GW" ]; then  # the Gateway Bridge's identity on the broker: the same key pair in seed-only form, for Go 1.27
+    mkdir -p "$P/gw"; cp "$APP_CERTS/CA.crt" "$P/gw/ca.crt"; cp "$APP_CERTS/gateway.crt" "$P/gw/gateway.crt"
+    "$OSSL" pkey -provparam ml-dsa.output_formats=seed-only -in "$APP_CERTS/gateway.key" -out "$P/gw/gateway.seed.key"
+    chmod 644 "$P/gw/gateway.seed.key"  # as the other keys here: readable by the container's user
+fi
 
 # ChirpStack's config: every MQTT connection on its Mosquitto over TLS (the gateway backend of each region, and its
 # integration), the downlink wait and the API secret. The application's reply (chirpstack_app.py --reply) goes out in
@@ -165,10 +179,12 @@ S=$(cat "$P/api_secret")
 TLS='  ca_cert="/tls/ca.crt"\n  tls_cert="/tls/chirpstack.crt"\n  tls_key="/tls/chirpstack.key"'
 ISRV=ssl://mosquitto:8884/; ITLS=$TLS  # the integration: on ChirpStack's Mosquitto (the door bridges it), or with our
 [ -z "$IMG" ] || { ISRV=ssl://$APP/; ITLS='  ca_cert="/pq/ca.crt"\n  tls_cert="/pq/client.crt"\n  tls_key="/pq/client.key"'; }  # image straight to the broker
+GSRV=ssl://mosquitto:8884; GT=/tls; GN=chirpstack  # the gateway backend: on ChirpStack's Mosquitto, or (GATEWAY_IMAGE)
+[ -z "$GW" ] || { GSRV=ssl://$APP; GT=/pq; GN=client; }  # on the MQTT broker, as the integration (its /pq mount)
 for f in "$CS"/configuration/chirpstack/region_*.toml; do
-    sed -e 's|server="tcp://\$MQTT_BROKER_HOST:1883"|server="ssl://mosquitto:8884"|' -e 's|ca_cert=""|ca_cert="/tls/ca.crt"|' \
-        -e 's|tls_cert=""|tls_cert="/tls/chirpstack.crt"|' -e 's|tls_key=""|tls_key="/tls/chirpstack.key"|' "$f" > "$CC/${f##*/}"
-    [ "$(grep -c -E 'server="ssl://mosquitto:8884"|"/tls/(ca|chirpstack)\.(crt|key)"' "$CC/${f##*/}")" = 4 ] ||
+    sed -e "s|server=\"tcp://\\\$MQTT_BROKER_HOST:1883\"|server=\"$GSRV\"|" -e "s|ca_cert=\"\"|ca_cert=\"$GT/ca.crt\"|" \
+        -e "s|tls_cert=\"\"|tls_cert=\"$GT/$GN.crt\"|" -e "s|tls_key=\"\"|tls_key=\"$GT/$GN.key\"|" "$f" > "$CC/${f##*/}"
+    [ "$(grep -c -E "server=\"$GSRV\"|\"$GT/(ca|$GN)\.(crt|key)\"" "$CC/${f##*/}")" = 4 ] ||
         { echo "$f: no gateway backend server / ca_cert / tls_cert / tls_key lines to set" >&2; exit 1; }
 done
 T=$CC/chirpstack.toml
@@ -183,6 +199,35 @@ grep -q "get_downlink_data_delay=\"$DD\"" "$T" || { echo "no [network] in chirps
 grep -q "secret=\"$S\"" "$T" || { echo "no [api] secret= line in chirpstack.toml" >&2; exit 1; }
 ! grep -r -q -E '^[[:space:]]*server="tcp://' "$CC" || { echo "a plain MQTT server is left in $CC" >&2; exit 1; }
 
+GWS=""
+if [ -n "$GW" ]; then  # the Gateway Bridge's config and service
+    mkdir -p "$CS/configuration/gateway-bridge-pq"
+    cat > "$CS/configuration/gateway-bridge-pq/chirpstack-gateway-bridge.toml" <<EOF
+# the Gateway Bridge on Go 1.27 (made by IoT-PQC scripts/chirpstack_pq_setup.sh): ML-DSA-44 mTLS to the MQTT broker
+[backend.semtech_udp]
+udp_bind="0.0.0.0:1700"
+
+[integration.mqtt]
+event_topic_template="as923/gateway/{{ .GatewayID }}/event/{{ .EventType }}"
+state_topic_template="as923/gateway/{{ .GatewayID }}/state/{{ .StateType }}"
+command_topic_template="as923/gateway/{{ .GatewayID }}/command/#"
+
+[integration.mqtt.auth.generic]
+servers=["ssl://$APP"]
+ca_cert="/pq/ca.crt"
+tls_cert="/pq/gateway.crt"
+tls_key="/pq/gateway.seed.key"
+EOF
+    GWS="
+  gateway-bridge-pq:  # the Gateway Bridge on Go 1.27: UDP from this machine's packet forwarder, ML-DSA-44 mTLS to the broker
+    image: $GW
+    restart: unless-stopped
+    ports:
+      - \"127.0.0.1:1700:1700/udp\"
+    volumes:
+      - ./configuration/gateway-bridge-pq/:/etc/chirpstack-gateway-bridge/:ro
+      - ./configuration/pq/gw/:/pq/:ro"
+fi
 CSI=""; [ -z "$IMG" ] || CSI="    image: $IMG
     volumes: !override
       - ./configuration/pq/app/:/pq/:ro"  # the integration's ML-DSA-44 identity and the broker's CA
@@ -219,9 +264,10 @@ ${CSI:-    volumes: !override}
   chirpstack-gateway-bridge:
     profiles: [stock]
   chirpstack-gateway-bridge-basicstation:
-    profiles: [stock]
+    profiles: [stock]$GWS
 EOF
 echo "[+] $CS/docker-compose.override.yml (MQTT broker: $APP)"
-echo "next:  cd $CS && docker compose up -d --force-recreate --remove-orphans mosquitto mosquitto-pq chirpstack"
+UP="mosquitto-pq chirpstack"; [ -z "$GW" ] || UP="chirpstack gateway-bridge-pq"  # (chirpstack needs mosquitto to start)
+echo "next:  cd $CS && docker compose up -d --force-recreate --remove-orphans mosquitto $UP"
 echo "Pi:    rsync -a $P/{ca.crt,gateway.crt,gateway.key} <pi-user>@<pi-ip>:chirpstack-pq/   (and certs/ without CA keys, README 0.1)"
 echo "UI:    change the admin password (top right: admin > Change password); the API secret is new, so log in again"

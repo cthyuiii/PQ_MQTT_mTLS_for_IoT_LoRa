@@ -206,11 +206,14 @@ def broker_hs_summary(args):
 
 # BROKER_ACL=1 (the ChirpStack set-up's broker, README 0.4): an ACL on each certificate's listeners. mTLS, by client
 # certificate name (use_identity_as_username): the benchmark clients and devices (pqc-client) keep pqc/, ChirpStack
-# publishes its events and reads its commands, the application the reverse. The server-auth TLS listener shares the
-# process and so the topics: its anonymous clients get pqc/ only, never ChirpStack's events
+# publishes its events and reads its commands, the application the reverse; the gateway publishes its radio events
+# and reads its commands, ChirpStack the reverse. The server-auth TLS listener shares the process and so the topics:
+# its anonymous clients get pqc/ only, never ChirpStack's events
 ACL_MTLS = ("user pqc-client\ntopic readwrite pqc/#\n"
             "user chirpstack\ntopic write application/+/device/+/event/#\ntopic read application/+/device/+/command/#\n"
-            "user application\ntopic read application/+/device/+/event/#\ntopic write application/+/device/+/command/#\n")
+            "topic read +/gateway/+/event/#\ntopic read +/gateway/+/state/#\ntopic write +/gateway/+/command/#\n"
+            "user application\ntopic read application/+/device/+/event/#\ntopic write application/+/device/+/command/#\n"
+            "user gateway\ntopic write +/gateway/+/event/#\ntopic write +/gateway/+/state/#\ntopic read +/gateway/+/command/#\n")
 ACL_TLS = "topic readwrite pqc/#\n"
 # BROKER_CRL=1: the mTLS listeners also check each client certificate against its CA's CRL (Mosquitto crlfile;
 # certs/<set>/ClientCA.crl from gen_certs.sh --client-crl), so a revoked device is refused at the handshake

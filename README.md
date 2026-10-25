@@ -2,35 +2,39 @@
 
 **Branch `macc-personal/test&implementation`: macc's own test and implementation branch.** Please don't push here.
 Teammates work from `feature/custom-chirpstack-server` (same starting point) on their own branches. The benchmark suite
-is on `main`, the LoRaWAN 1.1 simulation chain on `LoRa_1.1_implementation`.
+is on `testing/benchmarks`, the LoRaWAN 1.1 simulation chain on `LoRa_1.1_implementation`.
 
 This branch builds the ChirpStack network server from our fork, so that it does post-quantum TLS itself:
 TLS 1.3 with the hybrid key exchange X25519MLKEM768 and ML-DSA-44 certificates on both sides (mutual TLS). Its MQTT
-integration connects straight to the project's MQTT broker on the Pi. What is done and what is left:
+integration connects straight to the project's MQTT broker on the Pi. The Gateway Bridge, rebuilt with Go 1.27, runs
+next to it, and both reach the gateway's messages through that same broker. What is done and what is left:
 [docs/pending.md](docs/pending.md). Results: [docs/findings.md](docs/findings.md) 127-129.
 
 ## What runs
 
 ```text
-Now (finding 128):
+Machine 1 (the Mac now, a Pi 5 later), in Docker:
 
-Pico W ═PQ═► MQTT broker ◄═PQ═ ChirpStack (our build)
-(Wi-Fi)      (Pi, :18835,       (Mac, Docker: chirpstack, postgres, redis, and its own Mosquitto
-              run_all.sh         for the gateway topics, which nothing feeds while the gateway is paused)
-              --serve-broker)
-                  ▲
-                  ╚═PQ═ application (chirpstack_app.py / mosquitto_pub, `application` certificate)
-
-Next: LoRa device ─radio─► gateway (packet forwarder + Gateway Bridge on Go 1.27) ═PQ═► MQTT broker
+  packet forwarder ─UDP─► Gateway Bridge (Go 1.27) ══PQ══╗       ╔══PQ══ ChirpStack (our build): its gateway
+  (virtual_gateway.py for now; the UDP                   ║       ║       backend and its integration
+   never leaves the machine)                             ║       ║
+                                                         ▼       ▼
+Machine 2 (the Pi 4 now, a second Pi 5 later):        MQTT broker (:18835, run_all.sh --serve-broker)
+                                                         ▲       ▲
+  Pico W (Wi-Fi) ═PQ═════════════════════════════════════╝       ╚══PQ══ application (chirpstack_app.py / mosquitto_pub)
 
 ═PQ═  TLS 1.3, X25519MLKEM768, ML-DSA-44 certificates, a client certificate required (mTLS)
 ```
 
-- ChirpStack ↔ the Pi broker: verified on the Pi (192.168.50.133) with a downlink command and a captured handshake
-  (finding 128).
+- ChirpStack's integration ↔ the Pi broker: verified on the Pi (192.168.50.133) with a downlink command and a captured
+  handshake (finding 128).
+- The Gateway Bridge (v4.1.2 on Go 1.27) ↔ the Pi broker: tested from the Mac on 25 Oct, in a separate compose project
+  with an unregistered gateway ID. A frame sent to its UDP port arrived on the Pi broker as the gateway's uplink event,
+  along with its stats and connection state.
+- ChirpStack's gateway backend ↔ the Pi broker: set up by `chirpstack_pq_setup.sh`, not run yet.
 - The Pico W ↔ the Pi broker: run on the earlier branches; not rerun on this one yet.
-- The Gateway Bridge on Go 1.27: tested on the Mac against a stand-in broker only (finding 129). Its Dockerfile is not
-  in the repo yet.
+- The radio: none yet. How to set up the gateway's radio (a Pi 5 with the SX1303 HAT):
+  [docs/radio_gateway.md](docs/radio_gateway.md).
 
 ## What changed in ChirpStack
 
@@ -68,6 +72,11 @@ pinned at commit `b4d894d1`. The whole change is one commit, `Cargo.toml` + `chi
 - **`tls12` stays:** hyper-rustls, futures-rustls and redis turn it on anyway. TLS 1.2 is never used here: the broker
   accepts TLS 1.3 only, and X25519MLKEM768 / ML-DSA exist only in TLS 1.3.
 
+On this branch the fork also does AES-256 LoRaWAN (`docs/aes256_lorawan.md`): every key is 32 bytes (64 hex
+characters in the API and UI), every MIC and encryption AES-256 / AES-256-CMAC, for 1.0.x and 1.1, ABP and OTAA. Most
+of it is in `lrwn` (`aes256.rs`, `keys.rs`'s `kdf()`, `phy_payload.rs`). It takes AES-256 devices only; its image is
+`iot-pqc/chirpstack:4.19.2-pq-aes256`.
+
 Working with the submodule:
 
 ```bash
@@ -82,16 +91,22 @@ git -C network/chirpstack log --oneline -1     # the fork commit this branch bui
 ```text
 ├── run_all.sh                  ← on this branch only --serve-broker is used (the Pi's MQTT broker); its other stages
 │                                 still refer to files removed here (signatures/, tls_sweep.sh, build_wolfssl.sh)
-├── docs/  findings.md (127-129: ChirpStack), pending.md (done / left), how_it_works.md (written for main's full
-│          suite: parts describe files removed here)
+├── docs/  findings.md (127-129: ChirpStack), pending.md (done / left), radio_gateway.md (the Pi 5's radio),
+│          aes256_lorawan.md (the AES-256 LoRaWAN plan, rules and test vectors), how_it_works.md (written for the full
+│          benchmark suite on `testing/benchmarks`: parts describe files removed here)
 ├── scripts/
 │   ├── chirpstack/Dockerfile   ← our ChirpStack image: UI (node 22) → server (rust 1.89) → debian-slim
-│   ├── chirpstack_pq_setup.sh  ← Mac: ChirpStack's certificates and config (docker-compose.override.yml);
-│   │                             CHIRPSTACK_IMAGE= runs our image and points its integration at the broker
+│   ├── gateway-bridge/Dockerfile ← the Gateway Bridge v4.1.2, unchanged, built with Go 1.27 (ML-DSA)
+│   ├── chirpstack_pq_setup.sh  ← machine 1: ChirpStack's certificates and config (docker-compose.override.yml);
+│   │                             CHIRPSTACK_IMAGE= runs our image and points its integration at the broker;
+│   │                             GATEWAY_IMAGE= adds the Go 1.27 Gateway Bridge; it and ChirpStack's gateway
+│   │                             backend then use the broker too
 │   ├── gen_certs.sh            ← CA, server and client certificates per signature → certs/<SIG>/;
 │   │                             --server-names: reissue a set's server.crt for the broker's address
-│   ├── setup_gateway_pi.sh     ← Pi: the stock Gateway Bridge + its Mosquitto bridge (the gateway path, paused)
+│   ├── setup_gateway_pi.sh     ← a gateway on its own Pi: the stock Gateway Bridge + a Mosquitto bridge (not used
+│   │                             now that the gateway shares machine 1)
 │   ├── chirpstack_tls_test.sh  ← what the stock ChirpStack / Gateway Bridge MQTT clients can do (finding 117)
+│   ├── aes256_vectors.sh       ← AES-256 LoRaWAN test vectors (1.0.x, 1.1, ABP, OTAA) with the openssl command line
 │   └── collate_results.py      ← result files → results/all_results.csv
 ├── network/
 │   ├── chirpstack/             ← the ChirpStack fork (submodule)
@@ -120,23 +135,26 @@ export OSSL=/opt/homebrew/opt/openssl@3/bin/openssl
 bash scripts/gen_certs.sh                                        # certs/<SIG>/, incl. MLDSA44 (the broker's set)
 bash scripts/gen_certs.sh --server-names MLDSA44 IP:<pi-ip>      # rustls checks the broker's name; same CA and key
 
-# Mac: our ChirpStack image (the first build takes a while; later ones reuse the Rust cache)
+# Mac: our ChirpStack image (the first build takes a while; later ones reuse the Rust cache), and the Gateway Bridge's
 git submodule update --init
-docker build -f scripts/chirpstack/Dockerfile -t iot-pqc/chirpstack:4.19.2-pq network/chirpstack
+docker build -f scripts/chirpstack/Dockerfile -t iot-pqc/chirpstack:4.19.2-pq-aes256 network/chirpstack
+docker build -t iot-pqc/gateway-bridge:4.1.2-go1.27 scripts/gateway-bridge
 
 # Mac: ChirpStack's compose files (outside iCloud), then our certificates and config on top
 git clone https://github.com/chirpstack/chirpstack-docker.git ~/chirpstack-docker
-CHIRPSTACK_IMAGE=iot-pqc/chirpstack:4.19.2-pq bash scripts/chirpstack_pq_setup.sh <mac-ip> <pi-ip>:18835
+# (GATEWAY_IMAGE: also the gateway's key in seed-only form, gateway.seed.key, the only form Go 1.27 reads)
+CHIRPSTACK_IMAGE=iot-pqc/chirpstack:4.19.2-pq-aes256 GATEWAY_IMAGE=iot-pqc/gateway-bridge:4.1.2-go1.27 \
+  bash scripts/chirpstack_pq_setup.sh <mac-ip> <pi-ip>:18835
 
 # Mac: certs/ to the Pi, without the CA keys (this also carries the `application` certificate)
 X=(--exclude CA.key --exclude ClientCA.key --exclude update.key --exclude '*.srl' --exclude chirpstack.key)
 rsync -a --delete --delete-excluded "${X[@]}" certs/ <pi-user>@<pi-ip>:<pi-repo>/certs/
 
 # Pi, repo root, its own terminal: the broker (prints one line per connection: client, certificate, TLS / mTLS)
-./run_all.sh --serve-broker
+./run_all.sh --serve-broker          # BROKER_ACL=1: per-role topics, incl. the gateway's (this branch's mqtt_bench.py)
 
-# Mac: start ChirpStack (the door mosquitto-pq is for the gateway path only: leave it out while that is paused)
-(cd ~/chirpstack-docker && docker compose up -d --remove-orphans postgres redis mosquitto chirpstack)
+# Mac: start ChirpStack and the Gateway Bridge (ChirpStack's own Mosquitto only because compose needs it to start)
+(cd ~/chirpstack-docker && docker compose up -d --remove-orphans postgres redis mosquitto chirpstack gateway-bridge-pq)
 ```
 
 `chirpstack_pq_setup.sh` only adds `docker-compose.override.yml` and new files to `~/chirpstack-docker`;
@@ -155,19 +173,24 @@ mosquitto_pub -h localhost -p 18835 --cafile $C/CA.crt --cert $C/application.crt
 sudo tcpdump -i en0 -s 0 -w hs.pcap 'tcp port 18835 and host <pi-ip>' &   # then restart chirpstack (compose restart)
 ```
 
-**The Pico W against the Pi broker** (Mac, the Pico plugged in; the certificates are built into the firmware):
+**Check the gateway path** (a gateway `0102030405060708` and an ABP 1.1 device `01234567` registered in ChirpStack,
+as on `LoRa_1.1_implementation`):
 
 ```bash
-export WIFI_SSID="<your SSID>"; read -rs WIFI_PASS; export WIFI_PASS   # typed, so the password stays out of history
-BROKER=<pi-ip> python3 pico/run_benchmarks.py --test mqtt --match 'tls ml-dsa-44'
+# Mac: the Bridge is connected, and ChirpStack's log has no MQTT errors
+(cd ~/chirpstack-docker && docker compose logs gateway-bridge-pq | grep -i -E 'mqtt|error' | tail -3)
+(cd ~/chirpstack-docker && docker compose logs chirpstack | grep -i -E 'mqtt|error|warn' | tail -5)
+# Pi: watch the gateway's messages and ChirpStack's uplink events on the broker
+C=certs/MLDSA44
+mosquitto_sub -h localhost -p 18835 --cafile $C/CA.crt --cert $C/application.crt --key $C/application.key \
+  -t 'as923/gateway/+/event/up' -t 'application/+/device/+/event/up' -v
+# Mac, two terminals in network/: the stand-in gateway, then three LoRaWAN 1.1 uplinks from the device over the "air"
+python3 virtual_gateway.py --air 127.0.0.1:1680
+K=$(python3 -c "print('11'*32+'22'*16+'33'*16+'44'*32)")
+AIR=1 DEV_ADDR=01234567 APP_KEYS=$K AEAD=lorawan11 MSGS=3 ./mqtt_tls_timer 127.0.0.1 1680 1 0
 ```
 
-**The Gateway Bridge's key** (Go 1.27, finding 129): Go reads ML-DSA private keys only in the seed-only form. Same
-key pair, the certificate unchanged:
-
-```bash
-"$OSSL" pkey -provparam ml-dsa.output_formats=seed-only -in gateway.key -out gateway.seed.key
-```
+Each uplink shows twice on the Pi: once as the gateway's event, once as ChirpStack's decrypted event.
 
 ## Tests
 
