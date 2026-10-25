@@ -147,6 +147,7 @@ log_dest stdout
 EOF
 chown mosquitto certs/server.key      # the broker runs as its own user, and only it may read its key
 mosquitto -c broker.conf > broker.log 2>&1 &
+sleep 1
 M="-h localhost -p 8883 --cafile certs/CA.crt --cert certs/client.crt --key certs/client.key"
 mosquitto_sub $M -t 'lab/#' -v -C 1 &
 sleep 1; mosquitto_pub $M -t lab/hello -m 'hi over PQ mTLS'

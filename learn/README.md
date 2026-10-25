@@ -1,13 +1,15 @@
 # Learning post-quantum TLS with this project
 
-Five hands-on labs. By the end you can explain, with your own captures:
+Eight hands-on labs. By the end you can explain, with your own captures and measurements:
 
 - where every post-quantum algorithm in this project comes from (we write none of them);
 - how the keys and certificates are made, and who keeps which private key;
 - what happens on the wire, from TCP to TLS 1.3 to MQTT, and where the key exchange (ML-KEM) and the signatures
   (ML-DSA) sit in it;
 - why a handshake fails, from the error alone;
-- how our system is wired, and which links are post-quantum today.
+- how our system is wired, and which links are post-quantum today;
+- how a LoRaWAN frame is built and checked, and what our 256-bit layer adds inside it;
+- what each algorithm, handshake and frame costs in time and bytes, on a laptop and on the Pico W.
 
 **How each lab works: predict → run → check.** Every step asks a question first. Write your guess down, run the
 commands, then open the folded answer. A wrong guess you can explain teaches more than a right one you can't.
@@ -20,14 +22,15 @@ Docker on Linux). No Pi or Pico needed until lab 5's last part.
 ```bash
 docker run -it --name pqc-lab -w /lab debian:trixie bash
 # inside the container:
-apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y openssl mosquitto mosquitto-clients tcpdump tshark procps
+apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y openssl mosquitto mosquitto-clients tcpdump tshark procps \
+  xxd gcc libc6-dev libssl-dev
 openssl version          # OpenSSL 3.5.x
 ```
 
 - Next time: `docker start -ai pqc-lab` (your files are still in `/lab`).
 - A second terminal in the same container: `docker exec -it pqc-lab bash`.
 - A file out to your machine, e.g. to open a capture in Wireshark: `docker cp pqc-lab:/lab/hs.pcap .`
-- Lab 1 also reads this repository on your machine:
+- Labs 1, 7 and 8 also use this repository on your machine:
   `git clone --recurse-submodules -b onboarding/learn https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git`
 
 ## The labs
@@ -39,6 +42,9 @@ openssl version          # OpenSSL 3.5.x
 | [3. One handshake, message by message](03-handshake.md) | trace TCP → TLS 1.3 → MQTT; decrypt your own capture | 30 min |
 | [4. Break it on purpose](04-break-it.md) | seven failures, each with its exact error | 30 min |
 | [5. Our system](05-our-system.md) | who holds which key; your own certificate on the real broker | 30 min |
+| [6. A LoRaWAN frame, byte by byte](06-lorawan-frame.md) | decrypt a real frame and check its MIC with `openssl`; tamper, replay, reuse a counter | 25 min |
+| [7. LoRaWAN 1.1 and our 256-bit layer](07-lorawan11-e2e.md) | our device code makes a frame; you open it, first as ChirpStack, then as the application | 35 min |
+| [8. Benchmarks](08-benchmarks.md) | each algorithm, TLS vs mTLS, key-exchange groups, certificate types, frame costs; then the Pi's and Pico's numbers | 35 min |
 
 ## The picture to keep in mind
 

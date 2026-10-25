@@ -104,6 +104,8 @@ the broker's access list (ACL) is paused too, so it won't stop you from writing 
 
 ## Where to go next
 
+- [Lab 6, a LoRaWAN frame byte by byte](06-lorawan-frame.md): what protects the radio hop, where TLS can't.
+
 - `docs/findings.md` 127-129: the ChirpStack and Gateway Bridge work, with the captures.
 - The open work (gateway, AES-256 LoRaWAN, the broker's group list): `docs/pending.md` on
   `macc-personal/test&implementation`.
