@@ -16,6 +16,21 @@ Two keys protect it:
 
 The gateway checks neither: it only forwards. ChirpStack (network and application server in one) holds both keys.
 
+How a device builds one, and what the receiver checks:
+
+```mermaid
+flowchart LR
+    pt["reading<br/>plain text"] --> ctr["AES-128-CTR<br/>AppSKey, blocks A_i"] --> frm["FRMPayload"]
+    hdr["header: MHDR, DevAddr,<br/>FCtrl, FCnt, FPort"] --> msg["header + FRMPayload"]
+    frm --> msg
+    msg --> cmac["AES-128-CMAC<br/>NwkSKey, over B0 + message"] --> mic["MIC<br/>first 4 bytes"]
+    msg --> frame["the frame on the radio"]
+    mic --> frame
+```
+
+The receiver does it in reverse: it recomputes the MIC (a mismatch means drop the frame), checks that FCnt went up,
+then decrypts.
+
 You'll take apart a real frame: the example from the lora-packet library's README, which `network/app_aead.c` (the
 project's frame code) checks itself against. All commands run in the container, in `/lab`. Your setup already
 installed `xxd`; if not: `apt-get install -y xxd`.

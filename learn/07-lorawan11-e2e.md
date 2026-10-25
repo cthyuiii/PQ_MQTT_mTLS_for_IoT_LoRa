@@ -48,9 +48,12 @@ echo $(block 49 01 0C)${FRAME:0:24} | xxd -r -p | openssl mac -cipher AES-128-CB
 ChirpStack holds AppSKey, so it can read every reading. The project adds a layer inside the payload, under a 32-byte
 key that **only the application** has:
 
-```text
-reading ──AES-256-CTR (e2e key)──► inner ciphertext ‖ 4-byte tag (AES-256-CMAC)
-        ──normal LoRaWAN 1.1 (AppSKey, the two MIC keys)──► frame on FPort 2
+```mermaid
+flowchart LR
+    r["reading"] --> inner["inner layer<br/>AES-256-CTR + a 4-byte AES-256-CMAC tag<br/>e2e key: device and application only"]
+    inner --> outer["LoRaWAN 1.1 frame, FPort 2<br/>AppSKey encrypts, the two MIC keys sign"]
+    outer -- "radio, gateway, broker" --> cs["ChirpStack<br/>checks the MIC,<br/>removes the outer layer"]
+    cs -- "broker" --> app["application<br/>checks the tag,<br/>removes the inner layer"]
 ```
 
 ChirpStack checks the MIC and removes the outer layer as usual. What it hands the application is still encrypted.
@@ -58,15 +61,8 @@ The tag uses its own key, derived from the e2e key: `AES-256(e2e key, 02 00…00
 
 ## Step 2: our device code makes a frame, and you open it
 
-Copy the project's C code into the container. On your machine, from the repository root, with the container running
-(`docker start pqc-lab`):
-
-```bash
-tar -c network/*.c network/*.h pico/sketches/mqtt_tls_bench/hs_timing.h | docker exec -i pqc-lab tar -x -C /lab
-```
-
-In the container, build the project's MQTT client (`mqtt_tls_timer`; lab 8 times things with it). If lab 3's broker
-isn't running (after a restart), start it again:
+Build the project's MQTT client (`mqtt_tls_timer`, in the repository you cloned into `/lab`; lab 8 times things with
+it). If lab 3's broker isn't running (after a restart), start it again:
 
 ```bash
 cd /lab/network

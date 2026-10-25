@@ -11,7 +11,7 @@ sequenceDiagram
     C->>S: ACK
     C->>S: ClientHello: key shares (ML-KEM-768 public key + X25519), signature schemes (mldsa44, ...)
     S->>C: ServerHello: ML-KEM ciphertext + X25519
-    Note over C,S: both now hold the same secret; everything below is encrypted
+    Note over C,S: both now hold the same secret, and everything below is encrypted
     S->>C: EncryptedExtensions, CertificateRequest (mTLS)
     S->>C: Certificate (server.crt), CertificateVerify (ML-DSA signature), Finished
     C->>S: Certificate (client.crt), CertificateVerify (ML-DSA signature), Finished
@@ -22,6 +22,21 @@ sequenceDiagram
 public key; the server uses it to wrap a fresh secret and sends back the ciphertext; the client unwraps it with its
 private key. X25519 runs alongside, and both results go into the session keys. The signatures come after that, already
 encrypted.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+    Note over C: makes an ML-KEM-768 key pair:<br/>public key pk, private key sk
+    C->>S: ClientHello: pk (1,184 B) + an X25519 public key
+    Note over S: encapsulate with pk:<br/>a fresh secret + its ciphertext
+    S->>C: ServerHello: the ciphertext (1,088 B) + an X25519 public key
+    Note over C: decapsulate with sk:<br/>the same secret
+    Note over C,S: ML-KEM secret + X25519 secret → the session keys
+```
+
+An eavesdropper sees `pk` and the ciphertext, and neither gives the secret away. Only `sk`, which never leaves the
+client, opens the ciphertext.
 
 All commands run in the container, in `/lab`, with lab 2's certificates.
 
@@ -129,6 +144,13 @@ To look inside each message, open the capture in Wireshark on your machine
 log filename).
 
 ## Step 3: MQTT on top
+
+MQTT doesn't know TLS is there: it runs inside the encrypted connection, as it would over plain TCP.
+
+```mermaid
+flowchart LR
+    mqtt["MQTT<br/>CONNECT, PUBLISH, topics"] -- "inside" --> tls["TLS 1.3<br/>encrypted records"] -- "inside" --> tcp["TCP<br/>port 8883"]
+```
 
 Our broker is Mosquitto with these settings (from `network/mqtt_bench.py`). Stop the test server and start a broker:
 

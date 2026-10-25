@@ -64,6 +64,21 @@ openssl s_client -connect localhost:8883 -groups X25519 -CAfile certs/CA.crt \
 
 <details><summary>Answers 1-6</summary>
 
+Where in the handshake each check happens:
+
+```mermaid
+sequenceDiagram
+    participant D as Device
+    participant B as Broker
+    D->>B: ClientHello: TLS version, key-exchange groups
+    Note over B: 6: TLS 1.2 is refused here<br/>7: X25519 only passes, unless the broker insists on the hybrid
+    B->>D: ServerHello, then its Certificate and CertificateVerify
+    Note over D: 4: is the broker's certificate signed by my CA file?<br/>3: does it name the address I dialled?
+    D->>B: its Certificate and CertificateVerify
+    Note over B: 1: no certificate · 2: not signed by ClientCA · 5: expired
+    D->>B: MQTT CONNECT
+```
+
 | # | Connects? | Who refuses | The device sees | The broker logs |
 |---|---|---|---|---|
 | 1 | no | the broker | `The connection was lost.` | `peer did not return a certificate` |
@@ -98,7 +113,7 @@ that: they only matter while the connection is being set up.
 A hybrid group protects you only if **the server insists on it**. Make this broker accept X25519MLKEM768 only:
 
 ```bash
-pkill mosquitto
+pkill mosquitto; sleep 1
 printf 'openssl_conf = openssl_init\n[openssl_init]\nssl_conf = ssl_sect\n[ssl_sect]\nsystem_default = sys\n[sys]\nGroups = X25519MLKEM768\n' > pq-only.cnf
 OPENSSL_CONF=/lab/pq-only.cnf mosquitto -c broker.conf > broker.log 2>&1 &
 sleep 1

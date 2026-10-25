@@ -3,7 +3,34 @@
 Three levels: each algorithm on its own, whole TLS and mTLS handshakes, and the frame protection from labs 6-7. Then
 the same measurements from the project's Pi 4 and Pico W.
 
-The answers show one run in this container on an Apple-silicon Mac (Docker Desktop). Your numbers will differ: compare
+What `mqtt_tls_timer` times on each connection (its CSV columns), and what `-DHS_TIMING` adds inside the handshake:
+
+```mermaid
+sequenceDiagram
+    participant C as mqtt_tls_timer
+    participant B as Broker
+    rect rgba(128, 128, 128, 0.1)
+    Note over C,B: tcp_ms
+    C->>B: SYN
+    B->>C: SYN-ACK
+    end
+    rect rgba(128, 128, 128, 0.2)
+    Note over C,B: tls_ms (hs_tx_B sent, hs_rx_B received)
+    Note over C: hs_keygen_us: the key shares
+    C->>B: ClientHello
+    B->>C: ServerHello ... Finished
+    Note over C: hs_derive_us: the shared secret<br/>hs_verify_us: the broker's signatures
+    Note over C: hs_sign_us: its own signature (mTLS)
+    C->>B: Certificate, CertificateVerify, Finished
+    end
+    rect rgba(128, 128, 128, 0.1)
+    Note over C,B: mqtt_ms
+    C->>B: MQTT CONNECT
+    B->>C: CONNACK
+    end
+```
+
+The answers show one run in this container on an ARM laptop (Docker Desktop). Your numbers will differ: compare
 the **ratios**, not the values.
 
 ## Step 1: each algorithm on its own
@@ -41,7 +68,7 @@ Operations per second in our run, and the sizes that go on the wire:
 
 ## Step 2: a broker for the comparisons
 
-If you haven't built `mqtt_tls_timer` yet, copy the code in and build it as in [lab 7, step 2](07-lorawan11-e2e.md).
+If you haven't built `mqtt_tls_timer` yet, build it as in [lab 7, step 2](07-lorawan11-e2e.md).
 Two more certificate sets, made with lab 2's steps:
 
 ```bash

@@ -4,34 +4,66 @@
 
 ```mermaid
 flowchart LR
-    pico["Pico W<br/>Wi-Fi device, wolfSSL"] -- "PQ mTLS" --> broker["MQTT broker<br/>Pi, port 18835, Mosquitto + OpenSSL 3.5"]
-    cs["ChirpStack<br/>our build, Mac, rustls + aws-lc-rs"] -- "PQ mTLS" --> broker
+    lora["LoRa device"] -. "radio, LoRaWAN<br/>(planned)" .-> pf
+    subgraph m1["Machine 1, Docker"]
+        pf["packet forwarder<br/>(today: virtual_gateway.py)"] -- "UDP, inside<br/>this machine" --> gwb["Gateway Bridge<br/>Go 1.27"]
+        cs["ChirpStack<br/>our build: rustls + aws-lc-rs"]
+    end
+    subgraph m2["Machine 2, a Pi"]
+        broker["MQTT broker, port 18835<br/>Mosquitto + OpenSSL 3.5"]
+    end
+    gwb -- "PQ mTLS" --> broker
+    cs -- "PQ mTLS" --> broker
+    pico["Pico W<br/>Wi-Fi, wolfSSL"] -- "PQ mTLS" --> broker
     app["application<br/>chirpstack_app.py"] -- "PQ mTLS" --> broker
-    lora["LoRa device"] -. "radio (planned)" .-> gw["gateway<br/>Gateway Bridge, Go 1.27"]
-    gw -. "PQ mTLS (planned)" .-> broker
 ```
 
 "PQ mTLS" = TLS 1.3, X25519MLKEM768, ML-DSA-44 certificates on both sides: labs 2 and 3, with these machines in
 place of your container.
 
-- **One broker in the middle.** Wi-Fi devices, ChirpStack and the application all connect to it, and none of them
-  connect to each other. ChirpStack publishes the LoRa devices' data there, and takes commands for them from there.
-- **The gateway** (dotted) is the next step. A LoRa device can't do TLS over the radio; LoRaWAN's own AES protects
-  that hop, and the gateway's link to the broker is where TLS starts.
+- **One broker in the middle.** Wi-Fi devices, the gateway, ChirpStack and the application all connect to it, and
+  none of them connect to each other.
+- **A LoRa device can't do TLS over the radio.** LoRaWAN's own AES protects that hop (labs 6 and 7), and TLS starts at
+  the gateway. Between the packet forwarder (which drives the radio) and the Gateway Bridge the protocol is plain
+  UDP, so both run on the same machine and that traffic never leaves it.
+- **Today** the radio is simulated: `virtual_gateway.py` hands the gateway the frames a radio would have received. The
+  gateway's link to the broker is the newest part (25 Oct).
+
+One LoRa reading, from the device to the application:
+
+```mermaid
+sequenceDiagram
+    participant D as LoRa device
+    participant G as Gateway
+    participant B as MQTT broker
+    participant C as ChirpStack
+    participant A as Application
+    D->>G: radio: the LoRaWAN frame (AES, labs 6-7)
+    G->>B: as923/gateway/{gateway}/event/up: the frame as received
+    B->>C: the same message (ChirpStack subscribes to its gateways)
+    Note over C: checks the MIC and the frame counter,<br/>removes the LoRaWAN layer
+    C->>B: application/{app}/device/{DevEUI}/event/up
+    B->>A: the same message
+    Note over A: removes the inner 256-bit layer (lab 7)
+```
+
+Every arrow to or from the broker is its own PQ mTLS connection. The broker decrypts each message as it arrives and
+encrypts it again for each subscriber.
 
 ## Who holds which key
 
 | Private key | Lives on | Its certificate is signed by |
 |---|---|---|
-| `CA.key` | the Mac only: the copy to the Pi leaves it out | (itself: it signed the broker's `server.crt`) |
-| `ClientCA.key` | the Mac only | (itself: it signed every certificate below) |
-| `server.key` | the Pi, the broker | `CA` |
+| `CA.key` | the CA's machine only: the copies to the others leave it out | (itself: it signed the broker's `server.crt`) |
+| `ClientCA.key` | the CA's machine only | (itself: it signed every certificate below) |
+| `server.key` | machine 2, the broker | `CA` |
 | `client.key` (`pqc-client`) | built into the Pico W's firmware | `ClientCA` |
-| `chirpstack.key` | the Mac, inside ChirpStack's container | `ClientCA` |
-| `application.key` | the Pi, the application | `ClientCA` |
+| `gateway.key` | machine 1, the Gateway Bridge (in seed-only form, lab 2) | `ClientCA` |
+| `chirpstack.key` | machine 1, inside ChirpStack's container | `ClientCA` |
+| `application.key` | wherever the application runs (machine 2 in the test bed) | `ClientCA` |
 
-All of them are made on the Mac (`scripts/gen_certs.sh`, `scripts/chirpstack_pq_setup.sh`) and copied out. That's
-fine for a test bed. In a deployment each device makes its own key and sends only a CSR, as you'll do below.
+All of them are made on the CA's machine (`scripts/gen_certs.sh`, `scripts/chirpstack_pq_setup.sh`) and copied out.
+That's fine for a test bed. In a deployment each device makes its own key and sends only a CSR, as you'll do below.
 
 ## Check yourself
 
@@ -44,15 +76,15 @@ fine for a test bed. In a deployment each device makes its own key and sends onl
 1. **The broker.** TLS protects each link, not the whole path: the broker decrypts what arrives and re-encrypts it
    for each subscriber. That's why the LoRa data carries an inner 256-bit layer that only the application can open;
    ChirpStack and the broker pass it on without the key.
-2. Post-quantum: Pico ↔ broker, ChirpStack ↔ broker, application ↔ broker (though the broker also accepts classical
-   clients, lab 4 #7). Not yet: ChirpStack's link to its own Mosquitto for gateway traffic (ECDSA certificates,
-   inside Docker on the Mac), and the radio hop (LoRaWAN's AES-128 with our 256-bit layer inside; AES-256 LoRaWAN is
-   planned).
+2. Post-quantum: every MQTT link, Pico, gateway, ChirpStack and application ↔ broker (though the broker also accepts
+   classical clients, lab 4 #7). Not post-quantum: the radio hop (LoRaWAN's AES-128 with our 256-bit layer inside;
+   AES-256 LoRaWAN is planned), and the UDP from the packet forwarder to the Gateway Bridge, which isn't encrypted at
+   all but never leaves machine 1.
 3. They get `server.key` (they can pretend to be the broker until its certificate is replaced) and every message that
-   passes through while they're in. The application runs on the Pi too, so they also get `application.key` and the
+   passes through while they're in. The application runs on that Pi too, so they also get `application.key` and the
    inner layer's key. And because the test bed copies `certs/` whole, they'd find a copy of the Pico's `client.key`;
-   in a deployment that key would exist only on the device. They **don't** get the CA keys, which stay on the Mac, so
-   they can't issue themselves new certificates.
+   in a deployment that key would exist only on the device. They **don't** get the CA keys, which stay on the CA's
+   machine, so they can't issue themselves new certificates.
 
 </details>
 
@@ -60,24 +92,38 @@ fine for a test bed. In a deployment each device makes its own key and sends onl
 
 The real CSR flow: your private key never leaves your container.
 
+```mermaid
+sequenceDiagram
+    participant Y as You, in the container
+    participant M as macc, who holds ClientCA.key
+    participant B as The broker
+    Note over Y: makes me.key and me.csr
+    Y->>M: me.csr only: your name and public key
+    Note over M: checks the CSR's signature,<br/>signs it with ClientCA.key, for 7 days
+    M->>Y: me.crt, and the broker's CA.crt
+    Y->>B: PQ mTLS with me.crt and me.key
+```
+
 **1. You:** make a key and a CSR, and copy the CSR out.
 
 ```bash
 cd /lab
 openssl genpkey -algorithm ML-DSA-44 -out me.key
 openssl req -new -key me.key -subj /CN=learn-<your name> -out me.csr
-exit                                   # then, on your machine:
+exit                                   # then, on your laptop (PowerShell, Terminal or any shell):
 docker cp pqc-lab:/lab/me.csr learn-<your name>.csr
 ```
 
 Send `learn-<your name>.csr` to macc. Only the CSR.
 
-<details><summary>2. macc: check and sign it (the Mac, repo root)</summary>
+<details><summary>2. macc: check and sign it (the machine with the client CA's key, repo root)</summary>
+
+With OpenSSL 3.5 or newer:
 
 ```bash
-O=$(brew --prefix openssl@3)/bin/openssl; C=certs/MLDSA44
-$O req -in learn-<name>.csr -noout -verify -subject
-$O x509 -req -in learn-<name>.csr -CA $C/ClientCA.crt -CAkey $C/ClientCA.key -CAcreateserial -days 7 -out learn-<name>.crt
+C=certs/MLDSA44
+openssl req -in learn-<name>.csr -noout -verify -subject
+openssl x509 -req -in learn-<name>.csr -CA $C/ClientCA.crt -CAkey $C/ClientCA.key -CAcreateserial -days 7 -out learn-<name>.crt
 ```
 
 Send back `learn-<name>.crt` and `certs/MLDSA44/CA.crt`. Seven days, because the broker has no revocation list
@@ -85,7 +131,7 @@ switched on yet (the CRL is paused): a certificate can't be taken back, only lef
 
 </details>
 
-**3. You:** copy them in, then connect to the real broker.
+**3. You:** copy them in (from your laptop), then connect to the real broker.
 
 ```bash
 docker cp learn-<your name>.crt pqc-lab:/lab/me.crt

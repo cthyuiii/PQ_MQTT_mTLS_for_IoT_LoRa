@@ -6,6 +6,16 @@ A **certificate** is a public key plus a name, signed by a CA. Our setup has **t
 - `CA` signs the **broker's** certificate. Every client trusts `CA.crt`, so it can check it reached the real broker.
 - `ClientCA` signs the **devices'** certificates. The broker trusts `ClientCA.crt`, so it can check who is connecting.
 
+```mermaid
+flowchart LR
+    ca["CA<br/>CA.key + CA.crt"] -- signs --> srv["server.crt<br/>held by the broker"]
+    cca["ClientCA<br/>ClientCA.key + ClientCA.crt"] -- signs --> dev["client.crt<br/>held by a device"]
+    cca -- signs --> others["chirpstack.crt, application.crt,<br/>gateway.crt"]
+```
+
+Each certificate is signed once, when it's made. Then in every handshake the device checks the broker's certificate
+against `CA.crt`, and the broker checks the device's against `ClientCA.crt`.
+
 All commands run in the container.
 
 ## Step 1: two CAs
@@ -37,6 +47,13 @@ certificate in every handshake, so that size goes over its network link each tim
 </details>
 
 ## Step 2: the broker's certificate — key, CSR, signature
+
+```mermaid
+flowchart LR
+    key["server.key<br/>private, stays put"] --> csr["server.csr<br/>name + public key,<br/>signed with server.key"]
+    csr -- "sent to the CA" --> sign["CA checks the CSR's signature,<br/>signs with CA.key"]
+    sign --> crt["server.crt<br/>name + public key + CA's signature"]
+```
 
 ```bash
 openssl genpkey -algorithm ML-DSA-44 -out server.key
@@ -131,8 +148,8 @@ converted with this command (finding 129).
 | `client.key` | yes | the device | signing in every handshake |
 | `*.crt`, `*.csr` | no | anywhere | they are sent in the clear (a CSR) or inside every handshake (a certificate) |
 
-`scripts/gen_certs.sh` runs exactly these steps (key → CSR → CA signs) for every signature type, all on the Mac, and
-then copies the device and broker keys out; the copy to the Pi leaves the CA keys behind. In a real deployment each
+`scripts/gen_certs.sh` runs exactly these steps (key → CSR → CA signs) for every signature type, all on one machine
+(the CA's), and then copies the device and broker keys out; the copy to the broker leaves the CA keys behind. In a real deployment each
 device makes its own key and sends only the CSR. You'll do that in lab 5.
 
 ## Check yourself
@@ -146,7 +163,7 @@ device makes its own key and sends only the CSR. You'll do that in lab 5.
    `server.key`, to make the handshake signature (lab 3).
 2. Issue themselves device certificates the broker accepts, under any name. Revoking certificates doesn't help (they
    just make new ones): the client CA has to be replaced, and every device given a new certificate. That's why the
-   CA keys never leave the Mac.
+   CA keys never leave the CA's machine.
 
 </details>
 

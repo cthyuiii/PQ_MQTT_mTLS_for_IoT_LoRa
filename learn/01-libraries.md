@@ -4,7 +4,28 @@ Every post-quantum algorithm in this project comes from an existing, reviewed li
 library, configuring it and joining the parts together. We change a library's settings only when something doesn't
 fit (the Pico W's memory), and never the algorithms themselves.
 
-## Step 1: what is already inside OpenSSL? (container)
+```mermaid
+flowchart LR
+    subgraph ours["Our parts: configuration and glue"]
+        broker["MQTT broker<br/>Mosquitto"]
+        cs["ChirpStack<br/>Rust"]
+        gw["Gateway Bridge<br/>Go"]
+        pico["Pico W firmware<br/>C"]
+    end
+    subgraph libs["Libraries: all of the cryptography"]
+        ossl["OpenSSL 3.5"]
+        aws["rustls + aws-lc-rs"]
+        go["Go 1.27 crypto/tls"]
+        wolf["wolfSSL"]
+    end
+    broker --> ossl
+    cs --> aws
+    gw --> go
+    pico --> wolf
+    ossl & aws & go & wolf --> algs["ML-KEM-768 + X25519: key exchange<br/>ML-DSA-44: signatures<br/>AES-256-GCM: the data"]
+```
+
+## Step 1: what is already inside OpenSSL?
 
 **Predict:** does OpenSSL need a plug-in to do ML-KEM and ML-DSA?
 
@@ -43,13 +64,16 @@ needs the most review and testing.
 
 </details>
 
-## Step 3: our whole ChirpStack change (your machine, in the repository)
+## Step 3: our whole ChirpStack change
 
-ChirpStack is about 115,000 lines of Rust. **Predict:** how many lines did we change to give it post-quantum TLS?
+ChirpStack is about 115,000 lines of Rust. Our version is a fork on GitHub, `cthyuiii/chirpstack`, and the change is
+one commit, `b4d894d1`. **Predict:** how many lines did we change to give it post-quantum TLS?
 
 ```bash
-git -C network/chirpstack show --stat b4d894d1
-git -C network/chirpstack show b4d894d1 -- Cargo.toml chirpstack/src/main.rs
+cd /lab
+curl -sL https://github.com/cthyuiii/chirpstack/commit/b4d894d1.patch -o pq.patch
+sed -n '/^---$/,/^$/p' pq.patch                    # the files and lines changed
+sed -n '/^diff --git a\/Cargo.toml/,$p' pq.patch   # the change itself, without Cargo.lock
 ```
 
 <details><summary>Answer</summary>
@@ -66,7 +90,7 @@ Three files: `Cargo.toml` (two features swapped, one version raised), `main.rs` 
 
 </details>
 
-## Step 4: when something doesn't fit (your machine)
+## Step 4: when something doesn't fit
 
 The Pico W has 264 KB of RAM, and its Arduino core gives a program an 8 KB stack. **Predict:** to run ML-DSA on it,
 did we rewrite ML-DSA, swap the library, or something else?

@@ -16,22 +16,32 @@ commands, then open the folded answer. A wrong guess you can explain teaches mor
 
 ## Setup (once, about 5 minutes)
 
-Everything runs in a plain Debian 13 container, the same on every laptop (Docker Desktop on macOS / Windows, or
-Docker on Linux). No Pi or Pico needed until lab 5's last part.
+Everything runs in a plain Debian 13 container, so every laptop gives the same results: all you install is Docker
+(Docker Desktop on Windows; on Windows, type the `docker` commands in PowerShell or Windows Terminal). The repository
+is cloned inside the container, so nothing else goes on your laptop. No Pi or Pico needed until lab 5's last part.
+
+```mermaid
+flowchart LR
+    laptop["Your laptop<br/>Docker only"] -- "docker run / start / exec" --> box["Container pqc-lab<br/>Debian 13, OpenSSL 3.5, Mosquitto<br/>/lab = this repository + your files"]
+    box -. "lab 5 only: your certificate" .-> pi["The project's MQTT broker<br/>on the lab network"]
+```
 
 ```bash
 docker run -it --name pqc-lab -w /lab debian:trixie bash
-# inside the container:
+```
+
+Then, inside the container (the prompt changes to `root@…:/lab#`):
+
+```bash
 apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y openssl mosquitto mosquitto-clients tcpdump tshark procps \
-  xxd gcc libc6-dev libssl-dev
+  xxd gcc libc6-dev libssl-dev git ca-certificates curl
+git clone --depth 1 -b onboarding/learn https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git /lab
 openssl version          # OpenSSL 3.5.x
 ```
 
 - Next time: `docker start -ai pqc-lab` (your files are still in `/lab`).
 - A second terminal in the same container: `docker exec -it pqc-lab bash`.
-- A file out to your machine, e.g. to open a capture in Wireshark: `docker cp pqc-lab:/lab/hs.pcap .`
-- Labs 1, 7 and 8 also use this repository on your machine:
-  `git clone --recurse-submodules -b onboarding/learn https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git`
+- A file out to your laptop, e.g. to open a capture in Wireshark: `docker cp pqc-lab:/lab/hs.pcap .`
 
 ## The labs
 
@@ -47,6 +57,11 @@ openssl version          # OpenSSL 3.5.x
 | [8. Benchmarks](08-benchmarks.md) | each algorithm, TLS vs mTLS, key-exchange groups, certificate types, frame costs; then the Pi's and Pico's numbers | 35 min |
 
 ## The picture to keep in mind
+
+```mermaid
+flowchart LR
+    hello["1. Agree on a secret<br/>ML-KEM-768 + X25519"] --> who["2. Prove who is who<br/>ML-DSA-44 certificates and signatures"] --> data["3. Encrypt the data<br/>AES-256-GCM"]
+```
 
 TLS 1.3 does three jobs in one round trip:
 
