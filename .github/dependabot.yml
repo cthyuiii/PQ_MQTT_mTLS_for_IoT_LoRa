@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions   # main's own workflows (stale.yml)
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions   # the code branch's workflows
+    directory: /
+    target-branch: 'macc-personal/test&implementation'
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directories: [/scripts/chirpstack, /scripts/gateway-bridge]
+    target-branch: 'macc-personal/test&implementation'
+    schedule: { interval: weekly }
+  - package-ecosystem: pip   # pyserial is pinned on purpose (versions are part of the results): a PR is a proposal
+    directory: /
+    target-branch: 'macc-personal/test&implementation'
+    schedule: { interval: monthly }
