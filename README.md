@@ -2,7 +2,7 @@
 
 **Branch `macc-personal/test&implementation`: macc's own test and implementation branch.** Please don't push here.
 Teammates work from `feature/custom-chirpstack-server` (same starting point) on their own branches. The benchmark suite
-is on `testing/benchmarks`, the LoRaWAN 1.1 simulation chain on `LoRa_1.1_implementation`.
+is on `testing/benchmarks`, the LoRaWAN 1.1 simulation chain on `testing/lorawan11-stock-chirpstack`.
 
 This branch builds the ChirpStack network server from our fork, so that it does post-quantum TLS itself:
 TLS 1.3 with the hybrid key exchange X25519MLKEM768 and ML-DSA-44 certificates on both sides (mutual TLS). Its MQTT

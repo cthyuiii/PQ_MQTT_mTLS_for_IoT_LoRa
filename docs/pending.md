@@ -2,7 +2,7 @@
 
 What this branch needs: ChirpStack built from our fork, doing PQ TLS itself (TLS 1.3, X25519MLKEM768, ML-DSA-44
 certificates, mTLS) on every MQTT link, then AES-256 LoRaWAN session keys. How to run it: README. Results:
-docs/findings.md 127-129. Earlier steps (the stock ChirpStack chain): `LoRa_1.1_implementation`'s pending.md.
+docs/findings.md 127-129. Earlier steps (the stock ChirpStack chain): `testing/lorawan11-stock-chirpstack`'s pending.md.
 
 Machines: **Mac** = ChirpStack in Docker and the certificates (CA keys stay here). **Pi 4** (192.168.50.133) = the MQTT
 broker (`./run_all.sh --serve-broker`, :18835). **Device** = the Pico W.
