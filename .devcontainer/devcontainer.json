@@ -1,0 +1,10 @@
+{
+  "name": "IoT-PQC",
+  "image": "mcr.microsoft.com/devcontainers/base:trixie",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev libssl-dev openssl python3 xxd mosquitto mosquitto-clients shellcheck && bash network/build_timer.sh openssl",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff", "ms-vscode.cpptools", "github.vscode-github-actions"]
+    }
+  }
+}

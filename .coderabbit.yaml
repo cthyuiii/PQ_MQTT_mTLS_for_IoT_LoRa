@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  profile: chill
+  auto_review:
+    enabled: true
+    base_branches: [".*"]   # without this, only PRs into the default branch (main) are reviewed
+  path_instructions:
+    - path: "network/**"
+      instructions: "No plain MQTT anywhere, also on loopback or inside Docker. The broker offers X25519MLKEM768 only."
+    - path: "**/*.sh"
+      instructions: "Never print keys or passwords. Private keys (CA.key, ClientCA.key) never leave the CA's machine."

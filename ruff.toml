@@ -1,0 +1,4 @@
+extend-exclude = ["network/chirpstack"]
+
+[lint]
+select = ["E9", "F"]   

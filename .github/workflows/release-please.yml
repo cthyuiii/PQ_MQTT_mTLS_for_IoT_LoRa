@@ -1,0 +1,14 @@
+name: release-please
+on:
+  push:
+    branches: ['macc-personal/test&implementation']
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          target-branch: ${{ github.ref_name }}

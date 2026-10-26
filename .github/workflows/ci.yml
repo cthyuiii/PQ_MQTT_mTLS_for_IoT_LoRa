@@ -1,0 +1,18 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: debian:trixie   # OpenSSL 3.5 has ML-KEM and ML-DSA; the runner's Ubuntu 24.04 (OpenSSL 3.0) has neither
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates gcc libc6-dev libssl-dev openssl python3 xxd
+      - uses: actions/checkout@v7
+      - run: bash network/build_timer.sh openssl
+      - run: AEAD=lorawan11_256 MSGS=1 AIR=1 network/mqtt_tls_timer 127.0.0.1 9 1 0   # its self-test (V1-V10), then 1 frame
+      - run: python3 network/virtual_gateway.py --selftest
+      - run: python3 network/chirpstack_app.py --selftest
+      - run: bash scripts/aes256_vectors.sh

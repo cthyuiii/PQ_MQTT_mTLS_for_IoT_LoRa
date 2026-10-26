@@ -1,0 +1,13 @@
+name: Lint
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/ruff-action@v4   # rules: ruff.toml
+      - run: git ls-files '*.sh' | xargs shellcheck -S error 
