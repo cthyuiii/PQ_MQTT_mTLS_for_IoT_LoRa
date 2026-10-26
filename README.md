@@ -3,8 +3,8 @@
 **Branch `feature/custom-chirpstack-server`: the team's prototype.** Make your own branch from it for your part of the
 work (`git switch -c <your-name>/<topic> feature/custom-chirpstack-server`). New to post-quantum TLS? Start with the
 labs on `onboarding/learn`. Other branches: `macc-personal/test&implementation` (macc's own tests, same code; please
-don't push there), `main` (the benchmark suite), `LoRa_1.1_implementation` (the LoRaWAN 1.1 chain with the stock
-ChirpStack).
+don't push there), `testing/benchmarks` (the benchmark suite), `testing/lorawan11-stock-chirpstack` (the LoRaWAN 1.1
+chain with the stock ChirpStack).
 
 This branch builds the ChirpStack network server from our fork, so that it does post-quantum TLS itself:
 TLS 1.3 with the hybrid key exchange X25519MLKEM768 and ML-DSA-44 certificates on both sides (mutual TLS). Its MQTT
