@@ -32,7 +32,7 @@ static int kind = -1;
 static unsigned char k_app[32], k_nwk[32], k_nwk2[32], k_e2e[32], devaddr[4] = {0x04, 0x03, 0x02, 0x01};
 /* the 1.1 uplink MIC's TxDr and TxCh (B1): 0 = what virtual_gateway.py reports, channel 0 at DR0 */
 static unsigned char tx_dr, tx_ch;
-static EVP_CIPHER_CTX *ctr, *ctr_e2e, *gcm, *ccm;
+static EVP_CIPHER_CTX *ctr, *ctr_e2e, *gcm, *ccm[2];  /* ccm[1] seals, ccm[0] opens */
 static EVP_MAC_CTX *cmac_f, *cmac_s, *cmac_e2e;
 static int is_ctr(void) { return kind == LW10 || kind == LW11 || kind == CTR256 || kind == LW11_256 || kind == LW11_E2E; }
 static int is_lw11(void) { return kind == LW11 || kind == LW11_256 || kind == LW11_E2E; }  /* 1.1 MIC rules */
@@ -78,9 +78,10 @@ static void nonce(unsigned char n[16], int down, uint32_t fcnt) {
 }
 
 static void rebuild(void) {  /* (re)key every context from the current keys */
-    EVP_CIPHER_CTX_free(ctr); EVP_CIPHER_CTX_free(ctr_e2e); EVP_CIPHER_CTX_free(gcm); EVP_CIPHER_CTX_free(ccm);
+    EVP_CIPHER_CTX_free(ctr); EVP_CIPHER_CTX_free(ctr_e2e); EVP_CIPHER_CTX_free(gcm);
+    EVP_CIPHER_CTX_free(ccm[0]); EVP_CIPHER_CTX_free(ccm[1]);
     EVP_MAC_CTX_free(cmac_f); EVP_MAC_CTX_free(cmac_s); EVP_MAC_CTX_free(cmac_e2e);
-    ctr = ctr_e2e = gcm = ccm = NULL; cmac_f = cmac_s = cmac_e2e = NULL;
+    ctr = ctr_e2e = gcm = ccm[0] = ccm[1] = NULL; cmac_f = cmac_s = cmac_e2e = NULL;
     if (is_ctr()) {
         int kl = kind == LW10 || kind == LW11 ? 16 : 32;  /* the AES-128 frames: each key's first 16 bytes */
         ctr = EVP_CIPHER_CTX_new();
@@ -106,12 +107,16 @@ static void rebuild(void) {  /* (re)key every context from the current keys */
     } else if (kind == GCM128 || kind == GCM256) {
         gcm = EVP_CIPHER_CTX_new();
         EVP_CipherInit_ex(gcm, kind == GCM128 ? EVP_aes_128_gcm() : EVP_aes_256_gcm(), NULL, k_app, NULL, 1);
-    } else if (kind == CCM128 || kind == CCM256) {  /* nonce and tag lengths before the key; per message only the IV */
-        ccm = EVP_CIPHER_CTX_new();
-        EVP_CipherInit_ex(ccm, kind == CCM128 ? EVP_aes_128_ccm() : EVP_aes_256_ccm(), NULL, NULL, NULL, 1);
-        EVP_CIPHER_CTX_ctrl(ccm, EVP_CTRL_CCM_SET_IVLEN, CCM_N, NULL);
-        EVP_CIPHER_CTX_ctrl(ccm, EVP_CTRL_CCM_SET_TAG, 16, NULL);
-        EVP_CipherInit_ex(ccm, NULL, NULL, k_app, NULL, 1);
+    } else if (kind == CCM128 || kind == CCM256) {  /* nonce and tag lengths before the key; per message only the IV.
+         * One context per direction: OpenSSL's AES-NI CCM (x86_64) picks its encrypt or decrypt function when the key
+         * is set, so a context keyed for sealing and switched to opening rejects every tag */
+        for (int enc = 0; enc < 2; enc++) {
+            ccm[enc] = EVP_CIPHER_CTX_new();
+            EVP_CipherInit_ex(ccm[enc], kind == CCM128 ? EVP_aes_128_ccm() : EVP_aes_256_ccm(), NULL, NULL, NULL, enc);
+            EVP_CIPHER_CTX_ctrl(ccm[enc], EVP_CTRL_CCM_SET_IVLEN, CCM_N, NULL);
+            EVP_CIPHER_CTX_ctrl(ccm[enc], EVP_CTRL_CCM_SET_TAG, 16, NULL);
+            EVP_CipherInit_ex(ccm[enc], NULL, NULL, k_app, NULL, enc);
+        }
     }
 }
 
@@ -194,12 +199,12 @@ int app_seal(int down, uint32_t fcnt, const unsigned char *pt, int len, unsigned
     case CCM128: case CCM256:
         if (len > app_aead_max_payload()) return -1;
         nonce(iv, down, fcnt);
-        EVP_CipherInit_ex(ccm, NULL, NULL, NULL, iv, 1);
-        EVP_CipherUpdate(ccm, NULL, &n, NULL, len);         /* CCM needs the payload length first */
-        EVP_CipherUpdate(ccm, NULL, &n, out, APP_HDR);
-        EVP_CipherUpdate(ccm, ct, &n, pt, len);
-        EVP_CipherFinal_ex(ccm, ct + len, &n);
-        EVP_CIPHER_CTX_ctrl(ccm, EVP_CTRL_CCM_GET_TAG, 16, ct + len);
+        EVP_CipherInit_ex(ccm[1], NULL, NULL, NULL, iv, 1);
+        EVP_CipherUpdate(ccm[1], NULL, &n, NULL, len);         /* CCM needs the payload length first */
+        EVP_CipherUpdate(ccm[1], NULL, &n, out, APP_HDR);
+        EVP_CipherUpdate(ccm[1], ct, &n, pt, len);
+        EVP_CipherFinal_ex(ccm[1], ct + len, &n);
+        EVP_CIPHER_CTX_ctrl(ccm[1], EVP_CTRL_CCM_GET_TAG, 16, ct + len);
         return APP_HDR + len + 16;
 #ifdef HAVE_ASCON_C
     case ASCON: {
@@ -250,11 +255,11 @@ int app_open(const unsigned char *in, int len, unsigned char *pt) {
         return EVP_CipherFinal_ex(gcm, pt + body, &n) > 0 ? body : -1;
     case CCM128: case CCM256:
         nonce(iv, down, fcnt);
-        EVP_CipherInit_ex(ccm, NULL, NULL, NULL, iv, 0);
-        EVP_CIPHER_CTX_ctrl(ccm, EVP_CTRL_CCM_SET_TAG, 16, (void *)(ct + body));
-        EVP_CipherUpdate(ccm, NULL, &n, NULL, body);
-        EVP_CipherUpdate(ccm, NULL, &n, in, APP_HDR);
-        return EVP_CipherUpdate(ccm, pt, &n, ct, body) > 0 ? body : -1;  /* CCM checks the tag here */
+        EVP_CipherInit_ex(ccm[0], NULL, NULL, NULL, iv, 0);
+        EVP_CIPHER_CTX_ctrl(ccm[0], EVP_CTRL_CCM_SET_TAG, 16, (void *)(ct + body));
+        EVP_CipherUpdate(ccm[0], NULL, &n, NULL, body);
+        EVP_CipherUpdate(ccm[0], NULL, &n, in, APP_HDR);
+        return EVP_CipherUpdate(ccm[0], pt, &n, ct, body) > 0 ? body : -1;  /* CCM checks the tag here */
 #ifdef HAVE_ASCON_C
     case ASCON: {
         unsigned long long ml;
