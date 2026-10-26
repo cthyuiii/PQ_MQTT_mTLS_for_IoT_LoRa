@@ -176,6 +176,40 @@ scripts/broker.sh start              # mTLS + X25519MLKEM768 only; BROKER_ACL=1:
 `chirpstack_pq_setup.sh` only adds `docker-compose.override.yml` and new files to `~/chirpstack-docker`;
 `rm docker-compose.override.yml && docker compose up -d --remove-orphans` goes back to the stock setup.
 
+**ChirpStack and the Gateway Bridge on a Pi** (machine 1 = a Pi 5). The setup still runs on the Mac, which keeps the
+client CA's key, into a folder of its own that then goes to the Pi with the images (arm64, built on the Mac). The
+database can go along: the devices, their keys and frame counters, so a Pico's saved FCnt still fits.
+
+```bash
+# Pi, once: Docker with Compose 2.24.4+ (the override's !reset / !override); log in again for the docker group
+curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker $USER
+# Mac, repo root: the setup for <pi1-ip>, with the broker at <broker-ip> (its server.crt must name it: gen_certs.sh
+# --server-names), keeping the current API secret (the database's API keys stay valid)
+git clone https://github.com/chirpstack/chirpstack-docker.git ~/chirpstack-docker-pi
+mkdir -p ~/chirpstack-docker-pi/configuration/pq
+cp -p ~/chirpstack-docker/configuration/pq/api_secret ~/chirpstack-docker-pi/configuration/pq/
+CHIRPSTACK_IMAGE=iot-pqc/chirpstack:4.19.2-pq-aes256 GATEWAY_IMAGE=iot-pqc/gateway-bridge:4.1.2-go1.27 \
+  bash scripts/chirpstack_pq_setup.sh <pi1-ip> <broker-ip>:18835 ~/chirpstack-docker-pi
+rsync -a --exclude ca.key ~/chirpstack-docker-pi/ <pi-user>@<pi1-ip>:chirpstack-docker/   # (unused CA keys stay)
+docker save iot-pqc/chirpstack:4.19.2-pq-aes256 iot-pqc/gateway-bridge:4.1.2-go1.27 | gzip |
+  ssh <pi-user>@<pi1-ip> 'gunzip | docker load'
+# Mac: stop ChirpStack here (two on one broker as the same `chirpstack` would fight), then the database to the Pi
+cd ~/chirpstack-docker && docker compose stop chirpstack gateway-bridge-pq
+docker compose exec -T postgres pg_dump -U chirpstack -Fc chirpstack | ssh <pi-user>@<pi1-ip> 'umask 077; cat > cs.dump'
+docker compose stop; cd -
+# Pi: the database first (fresh: its init script adds the extensions), the dump into it, then the rest
+cd ~/chirpstack-docker && docker compose up -d postgres
+until docker compose exec -T postgres psql -U chirpstack -tAc "select 1 from pg_extension where extname='hstore'" | grep -q 1; do sleep 1; done
+docker compose exec -T postgres pg_restore -U chirpstack -d chirpstack < ~/cs.dump && rm ~/cs.dump
+docker compose up -d --remove-orphans postgres redis chirpstack gateway-bridge-pq
+docker compose ps; docker compose logs chirpstack | grep -i -E 'mqtt|error|warn' | tail -5
+```
+
+On the Pi the Gateway Bridge takes UDP on 127.0.0.1:1700, from the packet forwarder or `virtual_gateway.py` on that
+Pi (then the Pico's air address is the Pi's). ChirpStack's UI is on `http://<pi1-ip>:8080`, plain HTTP on the LAN.
+If `redis` keeps restarting with "Unsupported system page size" (the Pi 5's 16K-page kernel), the 4K one fixes it:
+`echo kernel=kernel8.img | sudo tee -a /boot/firmware/config.txt && sudo reboot`.
+
 **Check it:**
 
 ```bash

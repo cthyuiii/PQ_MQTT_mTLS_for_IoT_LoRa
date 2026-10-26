@@ -63,13 +63,19 @@ broker (`./run_all.sh --serve-broker`, :18835). **Device** = the Pico W.
    `~/iot-pqc-chain-broker` (`start.sh` / `stop.sh`); in the repo since 26 Oct as `scripts/broker.sh` (log:
    `results/broker.log`), checked on the Mac (Mosquitto 2.1.2) and in Debian 13 (2.0.21, OpenSSL 3.5.7). The
    deployment checks' listeners (anonymous TLS among them) now open only with `BROKER_BENCH=1`: before, a full
-   `certs/` gave the chain's broker 28 more ports.
+   `certs/` gave the chain's broker 28 more ports. A port another broker holds is refused at start: before, the
+   start-up check reached the other broker and said "up" while this one's Mosquitto had failed to bind (seen on the
+   Pi, 26 Oct, with the old broker still running).
 7. [x] **The application's link: TLS with a login** (26 Oct; for Home Assistant): :18935, the broker's ML-DSA-44
    certificate, X25519MLKEM768, user `application` + password (`chirpstack_pq_setup.sh`; the hash in Mosquitto 2.0's
    format, as the Pi's 2.0.21 can't read 2.1's), an ACL to ChirpStack's events and the downlink commands. Checked: a
    wrong or no password refused, X25519 refused, the gateway's topics neither delivered nor publishable; the six cases
    and the end-to-end layer passed with the application on it (`mqtt_tls_timer` `MQTT_USER` / `MQTT_PASS`).
 8. [ ] **The application on a Pi**, then Home Assistant in its place (its OpenSSL must be 3.5+).
+9. [ ] **ChirpStack and the Gateway Bridge on Pi 5 #1** (README "on a Pi"): the setup made on the Mac into its own
+   folder, the images and the database copied over. Checked on the Mac: the generated compose config equals the
+   running one (but for the project name), `certs/` untouched, the dump restores into a fresh Postgres 14 with its
+   7 devices and their frame counters. Not run on a Pi yet.
 
 ## Paused / KIV
 

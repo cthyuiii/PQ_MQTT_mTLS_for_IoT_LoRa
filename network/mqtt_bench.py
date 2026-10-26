@@ -233,6 +233,9 @@ def start_brokers(args, tmp: Path, bind: str):
     common = ["per_listener_settings true", "log_dest stderr", "log_type error", "log_type warning",
               "log_type notice",  # notice: one line per connection, which follow_logs() shows on the broker machine
               "set_tcp_nodelay true"]  # no Nagle: a small CONNACK after the TLS 1.3 session tickets goes out at once
+    if args.role == "broker" and not bench_broker():
+        common.append("log_type debug")  # the chain's broker: every PUBLISH in and out, which follow_logs() shows
+        # (not the benchmark broker: a log line per packet is no part of what it times)
     procs, failed = [], {}
     acl = os.environ.get("BROKER_ACL", "") not in ("", "0")
     if acl:
@@ -245,6 +248,11 @@ def start_brokers(args, tmp: Path, bind: str):
     crl = os.environ.get("BROKER_CRL", "") not in ("", "0")
 
     def launch(name, port, extra):
+        try:  # someone else's listener: wait_port would take it for this one, while this Mosquitto fails to bind
+            socket.create_connection((bind or "127.0.0.1", port), timeout=0.2).close()
+            return f"broker could not start listener: port {port} is in use (another broker running?)"
+        except OSError:
+            pass
         conf = tmp / f"{name}.conf"
         conf.write_text("\n".join(common + [f"listener {port} {bind}".rstrip()] + extra) + "\n")
         log = tmp / f"{name}.log"
@@ -460,6 +468,11 @@ def run_clients(args, broker_failed: dict):
     return summary, raw
 
 
+def print_publish(t, sender, topic, size, receivers):
+    """one message the broker routed: its sender, the clients it went to (none: no subscriber, or their read ACL)"""
+    print(f"[broker {t}] {sender} -> {', '.join(dict.fromkeys(receivers)) or 'nobody'}: {topic} ({size} B)")
+
+
 def follow_logs(tmp: Path, args):
     """--role broker: until Ctrl-C, one line per connection a broker accepts (its listener = certificate and TLS /
     mTLS), the client certificate an mTLS client presented, and every error. Read from the brokers' log files."""
@@ -468,18 +481,36 @@ def follow_logs(tmp: Path, args):
         label[port_of(args.base_port, sig)], label[port_of(args.base_port, sig, "TLS")] = f"{sig} mTLS", f"{sig} TLS"
     conn = re.compile(r"New connection from (\S+):\d+ on port (\d+)")
     client = re.compile(r"New client connected from (\S+):\d+ as (\S+) \(")
+    # log_type debug (the chain's broker): a message in, then one line per subscriber it goes out to
+    publish = re.compile(r"(Received|Sending|Denied) PUBLISH (?:from|to) (\S+) \(.*'(.*)', \.\.\. \((\d+) bytes\)\)$")
+    user = {}  # client id -> the certificate's name or the login
     pos = {log: log.stat().st_size for log in tmp.glob("*.log")}  # from now on: startup is already reported
     while True:
         for log in sorted(tmp.glob("*.log")):
             with log.open() as f:
                 f.seek(pos.get(log, 0))
                 lines, pos[log] = f.readlines(), f.tell()
+            msg = None  # [time, sender, topic, bytes, receivers]: printed once its "Sending" lines are read
             for ln in (re.sub(r"^\d+: ", "", x.strip()) for x in lines):
                 t = time.strftime("%H:%M:%S")
+                if m := publish.search(ln):
+                    who = user.get(m[2], m[2])
+                    if m[1] == "Denied":  # its write ACL
+                        print(f"[broker {t}] {who} -> refused (ACL): {m[3]} ({m[4]} B)")
+                    elif m[1] == "Received":
+                        if msg: print_publish(*msg)
+                        msg = [t, who, m[3], m[4], []]
+                    elif msg and m[3] == msg[2]:
+                        msg[4].append(who)
+                    continue
+                if msg:
+                    print_publish(*msg)
+                    msg = None
                 if m := conn.search(ln):
                     print(f"[broker {t}] {m[1]} -> :{m[2]} {label.get(int(m[2]), '?')}: new connection")
                 elif m := client.search(ln):
                     cert = re.search(r"u'([^']*)'", ln)
+                    if cert: user[m[2]] = cert[1]
                     print(f"[broker {t}] {m[1]} MQTT CONNECT as {m[2]}"  # user: the certificate's name (mTLS), the login (TLS)
                           + (f", user '{cert[1]}'" if cert else ""))
                 elif "unexpected eof while reading" in ln:  # a TLS client gone without close_notify
@@ -487,6 +518,7 @@ def follow_logs(tmp: Path, args):
                           "stage's --watch subscribers are stopped; a Pico Wi-Fi stall looks the same)")
                 elif "rror" in ln or ("disconnected:" in ln and "closed by client" not in ln):
                     print(f"[broker {t}] {log.stem}: {ln}")  # failed handshakes, refused certificates, drops
+            if msg: print_publish(*msg)
         time.sleep(0.2)
 
 
@@ -728,7 +760,8 @@ def main():
         if args.role == "broker":
             if args.watch:  # every message the brokers route (a second delivery each: not during timing runs)
                 procs += start_watchers(args, broker_failed)
-            print(f"[broker] logs in {tmp}; each connection is shown below; Ctrl-C to stop")
+            print(f"[broker] logs in {tmp}; each connection is shown below"
+                  + ("" if bench_broker() else ", and each message: sender -> receivers, topic, size") + "; Ctrl-C to stop")
             follow_logs(tmp, args)
         if args.app_keys:
             procs += start_watchers(args, broker_failed)
