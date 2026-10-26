@@ -137,6 +137,8 @@ Makefile
 
 # ----- Logs / temp / backups -----
 *.log
+# run_benchmarks.py --tag runs: serial logs and their results.csv (evidence stays local)
+pico/logs*/
 *.tmp
 *.temp
 *.bak

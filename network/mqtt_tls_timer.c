@@ -10,6 +10,7 @@
  *
  *   ./mqtt_tls_timer <host> <port> <iters> <warmup> [CAfile [cert key]]
  *     no CAfile -> plain MQTT, CAfile -> TLS (server auth), + cert key -> mTLS
+ *     MQTT_USER / MQTT_PASS: a username and password in CONNECT (the broker's application listener: TLS + login)
  *     GROUP env fixes the key exchange (default X25519MLKEM768); SUITE picks the TLS 1.3 cipher
  *     suite (e.g. TLS_AES_128_GCM_SHA256), default = library default.
  *
@@ -306,14 +307,20 @@ static int put_len(unsigned char *p, int len) {  /* MQTT variable-length integer
     return n;
 }
 static double now_us(void) { return now_ms() * 1e3; }
-/* CONNECT, MQTT 3.1.1, clean session: "pqc-timer" with keepalive 60 s gives the same 23 bytes as before */
+/* CONNECT, MQTT 3.1.1, clean session: "pqc-timer" with keepalive 60 s gives the same 23 bytes as before; MQTT_USER and
+ * MQTT_PASS (each at most 100 bytes) add a login: p needs 256 bytes */
 static int connect_packet(unsigned char *p, const char *id, int keepalive) {
-    int il = (int)strlen(id), n = 0;
-    p[n++] = 0x10; n += put_len(p + n, 10 + 2 + il);
-    memcpy(p + n, "\0\4MQTT\4\2", 8); n += 8;
+    const char *u = getenv("MQTT_USER"), *pw = u ? getenv("MQTT_PASS") : NULL;  /* a password only with a username */
+    int il = (int)strlen(id), ul = u ? (int)strlen(u) : 0, pl = pw ? (int)strlen(pw) : 0, n = 0;
+    if (il > 40 || ul > 100 || pl > 100) die("MQTT_USER / MQTT_PASS", "at most 100 bytes each");
+    p[n++] = 0x10; n += put_len(p + n, 10 + 2 + il + (u ? 2 + ul : 0) + (pw ? 2 + pl : 0));
+    memcpy(p + n, "\0\4MQTT\4", 7); n += 7;
+    p[n++] = 0x02 | (u ? 0x80 : 0) | (pw ? 0x40 : 0);  /* clean session, + username, + password */
     p[n++] = keepalive >> 8; p[n++] = keepalive & 0xFF;
-    p[n++] = il >> 8; p[n++] = il & 0xFF; memcpy(p + n, id, il);
-    return n + il;
+    p[n++] = il >> 8; p[n++] = il & 0xFF; memcpy(p + n, id, il); n += il;
+    if (u) { p[n++] = ul >> 8; p[n++] = ul & 0xFF; memcpy(p + n, u, ul); n += ul; }
+    if (pw) { p[n++] = pl >> 8; p[n++] = pl & 0xFF; memcpy(p + n, pw, pl); n += pl; }
+    return n;
 }
 static void subscribe(conn_t *c, const char *filter) {  /* QoS 0, packet id 1, waits for SUBACK */
     static unsigned char pkt[512], body[64];
@@ -324,8 +331,9 @@ static void subscribe(conn_t *c, const char *filter) {  /* QoS 0, packet id 1, w
     pkt[n++] = 0; pkt[n++] = 1;
     pkt[n++] = tl >> 8; pkt[n++] = tl & 0xFF; memcpy(pkt + n, filter, tl); n += tl;
     pkt[n++] = 0;
-    if (io_write(c, pkt, n) != n || read_packet(c, &type, body, sizeof body) < 0 || type != 0x90)
+    if (io_write(c, pkt, n) != n || read_packet(c, &type, body, sizeof body) < 3 || type != 0x90)
         die("mqtt subscribe failed", "no SUBACK");
+    if (body[2] == 0x80) die("mqtt subscribe refused (the broker's ACL?)", filter);
 }
 /* the telemetry reading, readable and padded to the payload size, so a subscriber can show it */
 static void reading(unsigned char *pt, int payload, int seq) {
@@ -877,7 +885,7 @@ int main(int argc, char **argv) {
 #endif
     if (sub || pub || getenv("KEM_RESPOND")) {  /* watch / relay / responder: one connection, then serve until killed */
         conn_t c = {0};
-        unsigned char pkt[64], ack[4];
+        unsigned char pkt[256], ack[4];
         char id[32];
         int r, n;
         c.fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
@@ -915,7 +923,7 @@ int main(int argc, char **argv) {
     }
 #endif
 
-    unsigned char connect_pkt[64];  /* MQTT 3.1.1, clean session, keepalive 60 s, client id "pqc-timer" */
+    unsigned char connect_pkt[256];  /* MQTT 3.1.1, clean session, keepalive 60 s, client id "pqc-timer" (+ login) */
     int connect_len = connect_packet(connect_pkt, "pqc-timer", 60);
     static const unsigned char disconnect_pkt[] = {0xE0, 0};
     struct timeval tmo = {10, 0};

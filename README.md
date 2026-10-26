@@ -19,12 +19,22 @@ Machine 1 (the Mac now, a Pi 5 later), in Docker:
   (virtual_gateway.py for now; the UDP                   ║       ║       backend and its integration
    never leaves the machine)                             ║       ║
                                                          ▼       ▼
-Machine 2 (the Pi 4 now, a second Pi 5 later):        MQTT broker (:18835, run_all.sh --serve-broker)
+Machine 2 (the Pi 4 now, a second Pi 5 later):        MQTT broker (:18835 mTLS, :18935 TLS + login)
                                                          ▲       ▲
-  Pico W (Wi-Fi) ═PQ═════════════════════════════════════╝       ╚══PQ══ application (chirpstack_app.py / mosquitto_pub)
+  Pico W (Wi-Fi) ═PQ═════════════════════════════════════╝       ╚══TLS══ application (chirpstack_app.py now, Home
+                                                                          Assistant later; on a Pi)
 
-═PQ═  TLS 1.3, X25519MLKEM768, ML-DSA-44 certificates, a client certificate required (mTLS)
+═PQ═   TLS 1.3, X25519MLKEM768, ML-DSA-44 certificates, a client certificate required (mTLS)
+═TLS═  TLS 1.3, X25519MLKEM768, the broker's ML-DSA-44 certificate; the client logs in with a username and password
 ```
+
+The broker takes nothing else: X25519MLKEM768 is its only key exchange (X25519 alone, P-256 and the other hybrids are
+refused at the handshake), and it has no plain listener. :18835 asks for a client certificate (the Gateway Bridge,
+ChirpStack, devices). :18935 is the application's: TLS with the user `application` and its password, which reads
+ChirpStack's events and sends downlink commands only (its ACL: nothing of the gateway's), as Home Assistant's MQTT
+integration connects. It opens when the set has a `passwd` file (`chirpstack_pq_setup.sh` makes it). `BROKER_BENCH=1`
+brings back the benchmark broker (`testing/benchmarks`): every swept group, an anonymous TLS listener per certificate
+and plain MQTT on :18830. Machine 1 runs no MQTT broker of its own.
 
 - ChirpStack's integration ↔ the Pi broker: verified on the Pi (192.168.50.133) with a downlink command and a captured
   handshake (finding 128).
@@ -96,6 +106,8 @@ git -C network/chirpstack log --oneline -1     # the fork commit this branch bui
 │          aes256_lorawan.md (the AES-256 LoRaWAN plan, rules and test vectors), how_it_works.md (written for the full
 │          benchmark suite on `testing/benchmarks`: parts describe files removed here)
 ├── scripts/
+│   ├── broker.sh               ← the broker machine: start / stop / restart / status / log, in the background
+│   │                             (log: results/broker.log)
 │   ├── chirpstack/Dockerfile   ← our ChirpStack image: UI (node 22) → server (rust 1.89) → debian-slim
 │   ├── gateway-bridge/Dockerfile ← the Gateway Bridge v4.1.2, unchanged, built with Go 1.27 (ML-DSA)
 │   ├── chirpstack_pq_setup.sh  ← machine 1: ChirpStack's certificates and config (docker-compose.override.yml);
@@ -149,14 +161,16 @@ CHIRPSTACK_IMAGE=iot-pqc/chirpstack:4.19.2-pq-aes256 GATEWAY_IMAGE=iot-pqc/gatew
   bash scripts/chirpstack_pq_setup.sh <mac-ip> <pi-ip>:18835
 
 # Mac: certs/ to the Pi, without the CA keys (this also carries the `application` certificate)
-X=(--exclude CA.key --exclude ClientCA.key --exclude update.key --exclude '*.srl' --exclude chirpstack.key)
+X=(--exclude CA.key --exclude ClientCA.key --exclude update.key --exclude '*.srl' --exclude chirpstack.key
+   --exclude application.password)   # the broker needs only its hash (passwd); the password goes to the application
 rsync -a --delete --delete-excluded "${X[@]}" certs/ <pi-user>@<pi-ip>:<pi-repo>/certs/
 
-# Pi, repo root, its own terminal: the broker (prints one line per connection: client, certificate, TLS / mTLS)
-./run_all.sh --serve-broker          # BROKER_ACL=1: per-role topics, incl. the gateway's (this branch's mqtt_bench.py)
+# Pi, repo root: the broker in the background (Mosquitto on OpenSSL 3.5+, e.g. Debian 13's mosquitto package; run it
+# as yourself, not with sudo); results/broker.log has one line per connection: client, certificate or login, errors
+scripts/broker.sh start              # mTLS + X25519MLKEM768 only; BROKER_ACL=1: per-role topics, incl. the gateway's
 
-# Mac: start ChirpStack and the Gateway Bridge (ChirpStack's own Mosquitto only because compose needs it to start)
-(cd ~/chirpstack-docker && docker compose up -d --remove-orphans postgres redis mosquitto chirpstack gateway-bridge-pq)
+# Mac: start ChirpStack and the Gateway Bridge (with GATEWAY_IMAGE, ChirpStack's own Mosquitto isn't started)
+(cd ~/chirpstack-docker && docker compose up -d --remove-orphans postgres redis chirpstack gateway-bridge-pq)
 ```
 
 `chirpstack_pq_setup.sh` only adds `docker-compose.override.yml` and new files to `~/chirpstack-docker`;
@@ -209,6 +223,73 @@ OTAA=1.1 DEV_EUI=<DevEUI> NWK_KEY=<64 hex> APP_KEY=<64 hex> AIR=1 MSGS=3 AIR_LIS
 
 With OTAA the first row is `join,<version>,<DevNonce>,<DevAddr>,<ms>`; `down,...` rows are downlinks (e.g. from
 `chirpstack_app.py --reply`). A wrong key or profile ends with the reason (no join-accept; the other LoRaWAN version).
+
+### Start, stop and restart
+
+From cold, in this order: the broker, ChirpStack, the application, then the device. The device (the Pico in air
+mode, or the host tool) never connects to the broker: its frames go to the virtual gateway over UDP, and the broker
+only sees the long-lived connections of the Gateway Bridge and ChirpStack (one per region, and its integration) on
+:18835, and the application's (its watcher and its relay) on :18935.
+
+```bash
+# Pi, repo root: the broker (it refuses a second start; Mosquitto's own logs: the folder named in its log)
+scripts/broker.sh start                    # in the background; it survives closing the SSH terminal
+scripts/broker.sh log                      # follow results/broker.log: client IP, certificate or login, errors
+scripts/broker.sh restart                  # also: stop, status
+
+# Mac, ChirpStack's containers (chirpstack, gateway-bridge-pq, postgres, redis)
+cd ~/chirpstack-docker
+docker compose up -d --remove-orphans postgres redis chirpstack gateway-bridge-pq   # start, or apply a new setup
+docker compose ps                                       # what runs
+docker compose restart chirpstack gateway-bridge-pq     # restart; the database stays
+docker compose stop                                     # stop everything; `up -d` above starts it again, data kept
+docker compose down -v                                  # wipe: the containers AND the database (register again)
+docker compose logs -f chirpstack                       # follow a log (also gateway-bridge-pq); Ctrl-C stops following
+cd -
+
+# Mac, repo root: the virtual gateway (logs in $D)
+D=results/phase1; mkdir -p $D
+nohup python3 -u network/virtual_gateway.py --air 0.0.0.0:1680 > $D/vgw.log 2>&1 &   # the "air": UDP 1680
+pkill -f 'virtual_gateway.py --air'                                                   # stop it
+
+# the application's machine (this Mac, or a Pi: it needs certs/MLDSA44/CA.crt and application.password, a built
+# network/mqtt_tls_timer and OpenSSL 3.5+), repo root: the application and its relay, on TLS with the login
+C=certs/MLDSA44; PI=<broker ip>; D=results/phase1; mkdir -p $D; [ -p $D/reply.fifo ] || mkfifo $D/reply.fifo
+export MQTT_USER=application MQTT_PASS="$(cat $C/application.password)"
+CHECK_HOST=$PI PUB=pqc/down nohup network/mqtt_tls_timer $PI 18935 1 0 $C/CA.crt \
+  < $D/reply.fifo > $D/relay.log 2>&1 &                                              # the replies
+(CHECK_HOST=$PI RAW=1 SUB='application/+/device/+/event/up' network/mqtt_tls_timer $PI 18935 1 0 $C/CA.crt \
+  2> $D/watch.err | python3 -u network/chirpstack_app.py --e2e-key <64 hex> --reply $D/reply.fifo \
+  --csv $D/app.csv > $D/app.log 2>&1 &)          # (+ --sent $D/vgw.log when it runs next to the virtual gateway)
+pkill -f "mqtt_tls_timer $PI 18935"               # stop both (the app ends with them)
+```
+
+- **The broker restarts:** ChirpStack and the Gateway Bridge reconnect by themselves (within about 20 s). The
+  application's watcher and relay don't: stop and start those two again. Until then ChirpStack still takes the
+  uplinks, but nothing reads its events or answers them.
+- **ChirpStack restarts:** nothing else to do. **The Mac restarts:** Docker starts the containers again
+  (`restart: unless-stopped`); the three above need starting.
+
+**Home Assistant** (the application later, on a Pi): its MQTT integration with the broker's IP (the name its
+certificate carries), port 18935, user `application` and the password in `certs/MLDSA44/application.password`, TLS with
+`certs/MLDSA44/CA.crt` as the CA. The broker does X25519MLKEM768 and ML-DSA-44 only, so Home Assistant's own OpenSSL
+must be 3.5 or newer, or the handshake fails (not tried yet).
+
+**Did a run work?** Every hop counts the same frames:
+
+```bash
+A=012345c1; E=0000000000000c11; D=results/phase1     # the device's DevAddr and DevEUI, the run's folder
+grep -c "^sent.*DevAddr $A " $D/vgw.log                # 1. frames the virtual gateway forwarded
+grep -c "^acked DevAddr $A " $D/vgw.log               # 2. of them, taken by the Gateway Bridge
+(cd ~/chirpstack-docker && docker compose logs --since 1h chirpstack) | grep -c "Publishing event.*/$E/event/up"
+                                                      # 3. MIC checked and decrypted by ChirpStack, sent to the broker
+grep "DevAddr $A " $D/app.log | grep -vc REJECTED     # 4. readings the application opened
+grep -c "^published.*/$E/" $D/relay.log               # 5. replies sent
+(cd ~/chirpstack-docker && docker compose logs --since 1h chirpstack) | grep -E 'ERROR|WARN'   # anything refused
+# 6. the device: the Pico's replies in time (reply_us > 0), per uplink; the host tool: its "down,...,ack N" rows
+awk -F, 'NR>1 && $6=="uplink" {n++; if ($18 > 0) r++} END {print r+0 "/" n " replies"}' \
+  results/pipeline_msgs_raw_pico_rp2040_<tag>.csv
+```
 
 ## Tests
 

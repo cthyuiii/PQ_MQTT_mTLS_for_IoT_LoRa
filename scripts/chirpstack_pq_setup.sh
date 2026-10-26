@@ -159,6 +159,19 @@ EOF
 for role in chirpstack application ${GW:+gateway}; do
     [ -f "$APP_CERTS/$role.crt" ] || cert "$APP_CERTS" "$APP_CERTS/ClientCA" $role "extendedKeyUsage=clientAuth"
 done
+# the application's login on the broker's TLS listener (Home Assistant: TLS + a username and password): a random password
+# (application.password, kept on this Mac) and its hash for the broker (passwd, which goes to the Pi with certs/), in
+# Mosquitto 2.0's format: $7$ = PBKDF2-SHA512, 101 rounds, a 12-byte salt. 2.0 and 2.1 both read it; 2.0 can't read the
+# salt of a hash from 2.1's mosquitto_passwd
+if [ ! -f "$APP_CERTS/passwd" ]; then
+    [ -s "$APP_CERTS/application.password" ] || (umask 077; "$OSSL" rand -hex 16 > "$APP_CERTS/application.password")
+    (umask 077; python3 -c 'import base64, hashlib, os, sys
+pw, salt = open(sys.argv[1]).read().strip().encode(), os.urandom(12)
+b = lambda x: base64.b64encode(x).decode()
+print("application:$7$101$" + b(salt) + "$" + b(hashlib.pbkdf2_hmac("sha512", pw, salt, 101)))' \
+        "$APP_CERTS/application.password" > "$APP_CERTS/passwd")
+    echo "[+] the application's login: user application, its password in $APP_CERTS/application.password"
+fi
 cp "$APP_CERTS/chirpstack.crt" "$P/app/client.crt"; cp "$APP_CERTS/chirpstack.key" "$P/app/client.key"; chmod 644 "$P/app/client.key"
 cp "$APP_CERTS/CA.crt" "$P/app/ca.crt"
 if [ -n "$GW" ]; then  # the Gateway Bridge's identity on the broker: the same key pair in seed-only form, for Go 1.27
@@ -231,10 +244,8 @@ fi
 CSI=""; [ -z "$IMG" ] || CSI="    image: $IMG
     volumes: !override
       - ./configuration/pq/app/:/pq/:ro"  # the integration's ML-DSA-44 identity and the broker's CA
-cat > "$CS/docker-compose.override.yml" <<EOF
-# made by IoT-PQC scripts/chirpstack_pq_setup.sh: TLS on every MQTT hop, PQ between machines. Remove this file to go back.
-services:
-  mosquitto:  # ChirpStack's broker: TLS only, no port outside the compose network
+# ChirpStack's Mosquitto and the door, while a hop still goes through them (no GATEWAY_IMAGE)
+MQ='  mosquitto:  # ChirpStack'"'"'s broker: TLS only, no port outside the compose network
     ports: !reset []
     volumes: !override
       - ./configuration/mosquitto-local/:/mosquitto/config/
@@ -252,13 +263,28 @@ services:
       - ./configuration/mosquitto-pq/:/mosquitto/config/
       - ./configuration/pq/:/mosquitto/pq/:ro
     depends_on:
-      - mosquitto
-  chirpstack:
-${CSI:-    volumes: !override}
-      - ./configuration/chirpstack-pq/:/etc/chirpstack/:ro
+      - mosquitto'
+LT='
       - ./configuration/pq/local/ca.crt:/tls/ca.crt:ro
       - ./configuration/pq/local/chirpstack.crt:/tls/chirpstack.crt:ro
-      - ./configuration/pq/local/chirpstack.key:/tls/chirpstack.key:ro
+      - ./configuration/pq/local/chirpstack.key:/tls/chirpstack.key:ro'
+DEP=""
+if [ -n "$GW" ]; then  # every MQTT client is on the MQTT broker: no Mosquitto on this machine at all
+    MQ='  mosquitto:  # ChirpStack'"'"'s own Mosquitto: unused, so not started (docker compose --profile unused up would)
+    profiles: [unused]'
+    LT=""
+    DEP='
+    depends_on: !override
+      - postgres
+      - redis'
+fi
+cat > "$CS/docker-compose.override.yml" <<EOF
+# made by IoT-PQC scripts/chirpstack_pq_setup.sh: TLS on every MQTT hop, PQ between machines. Remove this file to go back.
+services:
+$MQ
+  chirpstack:$DEP
+${CSI:-    volumes: !override}
+      - ./configuration/chirpstack-pq/:/etc/chirpstack/:ro$LT
   # the stock bridges listen on the LAN (UDP 1700, Basics Station 3001) and publish in plain to a listener that no
   # longer exists: off (docker compose --profile stock up -d would start them, without a broker to talk to)
   chirpstack-gateway-bridge:
@@ -267,7 +293,8 @@ ${CSI:-    volumes: !override}
     profiles: [stock]$GWS
 EOF
 echo "[+] $CS/docker-compose.override.yml (MQTT broker: $APP)"
-UP="mosquitto-pq chirpstack"; [ -z "$GW" ] || UP="chirpstack gateway-bridge-pq"  # (chirpstack needs mosquitto to start)
-echo "next:  cd $CS && docker compose up -d --force-recreate --remove-orphans mosquitto $UP"
+UP="mosquitto mosquitto-pq chirpstack"; [ -z "$GW" ] || UP="postgres redis chirpstack gateway-bridge-pq"
+echo "next:  cd $CS && docker compose up -d --force-recreate --remove-orphans $UP"
+[ -z "$GW" ] || echo "       docker compose --profile unused rm -sf mosquitto; docker rm -f chirpstack-docker-mosquitto-pq-1   # if they ran"
 echo "Pi:    rsync -a $P/{ca.crt,gateway.crt,gateway.key} <pi-user>@<pi-ip>:chirpstack-pq/   (and certs/ without CA keys, README 0.1)"
 echo "UI:    change the admin password (top right: admin > Change password); the API secret is new, so log in again"

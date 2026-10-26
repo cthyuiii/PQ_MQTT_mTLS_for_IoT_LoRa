@@ -5,8 +5,8 @@ or AES-256-CMAC**, for LoRaWAN 1.0.3, 1.0.4 and 1.1, with ABP and with OTAA. Oth
 the 4-byte MIC are LoRaWAN's own. It isn't standard LoRaWAN: our devices work only with our ChirpStack, and the
 other way round.
 
-Done: the rules and the test vectors, ChirpStack (25 Oct) and the test device (26 Oct), below. Next: the six cases
-against our ChirpStack. Not started: the Pico on the radio.
+Done: the rules and the test vectors, ChirpStack (25 Oct), the test device and the six cases end to end against our
+ChirpStack (26 Oct), and the Pico W over the virtual gateway (26 Oct), below. Next, not started: the Pico on the radio.
 
 ## What the test vectors are for
 
@@ -89,8 +89,23 @@ How it was tested:
   DevNonce 1, then 2), ABP 1.0.x and 1.1: every uplink verified, every downlink opened. A wrong AppKey: refused. A 1.0.4
   device on a 1.1 profile: the device says so. For DevNonce 1 the stand-in's join-accepts are V8's and V10's bytes.
 - `pico/tests/aead_host_test`: every scheme, both directions, four sizes, the Pico's frame equals the host's (88). The
-  firmware compiles (the ChirpStack device in air mode, and the default pipeline); not run on a board.
-- Not yet: against our ChirpStack (the six cases, next).
+  firmware compiles (the ChirpStack device in air mode, and the default pipeline); in air mode it ran on the board,
+  below.
+- Against our ChirpStack (26 Oct; `iot-pqc/chirpstack:4.19.2-pq-aes256`, a fresh database): all six cases, 3 uplinks
+  each, through the whole chain: the tool → `virtual_gateway.py` → the Go 1.27 Gateway Bridge (Mac) → the Pi broker
+  (ML-DSA-44 mTLS, X25519MLKEM768) → ChirpStack (Mac) → the Pi broker → `chirpstack_app.py` (Mac), whose reply went
+  back the same way and was opened by the device in the uplink's receive window ("ack N" for uplink N). Joins took
+  260-395 ms, uplink to application 245-285 ms (ChirpStack's 200 ms de-duplication wait included). ChirpStack
+  refused a 16-byte key at its API and a repeated 1.0.4 DevNonce ("Invalid DevNonce"). lorawan11_e2e uplinks were
+  opened by the application; the tool can't open their replies (the reply's 256-bit layer is on the uplink's FCnt,
+  which the Pico's code handles and the tool's doesn't).
+- The Pico W as the device (26 Oct, `--tag phase1_pico_run4`; ABP 1.1): over Wi-Fi to `virtual_gateway.py`, then the
+  same chain, the application on the broker's TLS listener with its login. 15 lorawan11_256 and 15 lorawan11_e2e
+  uplinks timed, each after as many warm-up ones: all 30 got their reply in time, opened by the Pico (both layers for
+  lorawan11_e2e). From the send to the opened reply: median 758 ms (lorawan11_256), 711 ms (lorawan11_e2e). Every hop
+  counted the same 59 frames: forwarded, taken by the Gateway Bridge, published by ChirpStack, opened by the
+  application (none refused), answered. The 60th, the first warm-up frame after the boot (FCnt 257), never reached the
+  Mac (Wi-Fi UDP, no retry); in the run before, with the application on mTLS, 29 of the 30 got their reply.
 
 ### The Pico W on the radio: a fork of LoRaMac-node v4.7.0
 

@@ -231,7 +231,7 @@ save_versions() { python3 -c "import sys, json; sys.path.insert(0, '$NE'); from 
 
 # ------------------------------- the broker machine of --broker runs (--serve-broker) --
 if [ "$SERVE" = 1 ]; then
-    log "brokers for ./run_all.sh --broker: plain :18830, TLS / mTLS per signature (round 3 from :20830), all interfaces"
+    log "brokers on all interfaces: mTLS per signature, X25519MLKEM768 only (BROKER_BENCH=1: + plain :18830, TLS, every group; round 3 from :20830)"
     need_certs "$HERE/certs"
     # the timer: the KEM exchange's responder (always) and the --watch subscribers
     liboqs_host; timer >/dev/null

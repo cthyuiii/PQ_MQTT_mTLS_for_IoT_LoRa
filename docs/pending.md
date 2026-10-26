@@ -47,12 +47,29 @@ broker (`./run_all.sh --serve-broker`, :18835). **Device** = the Pico W.
    - [x] host tool (`app_aead.c`, `mqtt_tls_timer AIR=1`, 26 Oct): 32-byte keys, 1.0.x and 1.1 frames, OTAA, the
      1.0.3 / 1.0.4 / 1.1 DevNonce; its self-test reproduces V1, V3, V5-V10; the Pico's `lora_aead.h` the same keys.
      Tested against an openssl stand-in for ChirpStack (docs/aes256_lorawan.md), not yet against ChirpStack
-   - [ ] end to end, six cases (1.0.3, 1.0.4, 1.1 × ABP, OTAA): host tool → virtual gateway → ChirpStack → broker → app
+   - [x] end to end, six cases (1.0.3, 1.0.4, 1.1 × ABP, OTAA), 26 Oct: host tool → virtual gateway → Gateway Bridge →
+     Pi broker → ChirpStack → Pi broker → app, and the reply back; every case passed (docs/aes256_lorawan.md)
+   - [x] the Pico W (Wi-Fi) as the device over the virtual gateway, 26 Oct: ABP 1.1, lorawan11_256 + lorawan11_e2e,
+     30 of 30 timed uplinks answered and opened (docs/aes256_lorawan.md)
    - [ ] the Pico on the radio: LoRaMac-node v4.7.0 fork (secure element), Arm's Pico port moved to v4.7.0, an SX1262
      board file
 4. [ ] **The Pico W ↔ the Pi broker, rerun on this branch** (`--test mqtt --match 'tls ml-dsa-44'`).
-5. [ ] **ChirpStack's gateway-side hop:** with `GATEWAY_IMAGE` it goes: the gateway backend uses the PQ broker, and
-   ChirpStack's own Mosquitto and the door are unused. Remove them once item 1 runs.
+5. [x] **ChirpStack's gateway-side hop** (26 Oct): with `GATEWAY_IMAGE`, `chirpstack_pq_setup.sh` starts no Mosquitto
+   on the Mac (ChirpStack depends on Postgres and Redis only); without it the output is byte-identical (checked).
+6. [x] **The broker: hybrid only** (26 Oct, finding 130's fix): `mqtt_bench.py --role broker` offers X25519MLKEM768
+   only and mTLS only, no plain listener (`BROKER_BENCH=1`: the benchmark broker). Checked against the Pi: X25519,
+   P-256, SecP256r1MLKEM768 and ML-KEM-768 refused (alert 40), no client certificate refused, plain :18830 closed; the
+   Gateway Bridge, ChirpStack and the application reconnected, and the six cases passed again. The old Pi ran it from
+   `~/iot-pqc-chain-broker` (`start.sh` / `stop.sh`); in the repo since 26 Oct as `scripts/broker.sh` (log:
+   `results/broker.log`), checked on the Mac (Mosquitto 2.1.2) and in Debian 13 (2.0.21, OpenSSL 3.5.7). The
+   deployment checks' listeners (anonymous TLS among them) now open only with `BROKER_BENCH=1`: before, a full
+   `certs/` gave the chain's broker 28 more ports.
+7. [x] **The application's link: TLS with a login** (26 Oct; for Home Assistant): :18935, the broker's ML-DSA-44
+   certificate, X25519MLKEM768, user `application` + password (`chirpstack_pq_setup.sh`; the hash in Mosquitto 2.0's
+   format, as the Pi's 2.0.21 can't read 2.1's), an ACL to ChirpStack's events and the downlink commands. Checked: a
+   wrong or no password refused, X25519 refused, the gateway's topics neither delivered nor publishable; the six cases
+   and the end-to-end layer passed with the application on it (`mqtt_tls_timer` `MQTT_USER` / `MQTT_PASS`).
+8. [ ] **The application on a Pi**, then Home Assistant in its place (its OpenSSL must be 3.5+).
 
 ## Paused / KIV
 

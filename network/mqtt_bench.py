@@ -118,11 +118,17 @@ def der_bytes(pem: Path) -> int:
     return len(base64.b64decode(body))
 
 
+def bench_broker() -> bool:
+    """BROKER_BENCH=1: the benchmark broker (testing/benchmarks): every swept group, the plain listener and what uses it
+    (the KEM responder, the deployment's retained update). Otherwise the chain's broker: the hybrid group only, no plain"""
+    return os.environ.get("BROKER_BENCH", "") not in ("", "0")
+
+
 def openssl_cnf(tmp: Path, group: str) -> Path:
-    """The customer's openssl-pqc.cnf: default (+ oqsprovider if loadable). Groups: the Stage 2 group and the tls
-    sweep's (tls_sweep.sh uses these listeners too). Each client offers exactly one group, so Stage 2
-    still always gets its own. '?' (OpenSSL 3.5+): a group this OpenSSL lacks (no oqs-provider) is skipped, not fatal."""
-    groups = ":".join(f"?{g}" for g in dict.fromkeys([group, *SWEEP_GROUPS]))
+    """The customer's openssl-pqc.cnf: default (+ oqsprovider if loadable). Groups: the Stage 2 group only, so a client
+    that offers anything else (X25519 alone, P-256) is refused at the handshake; with BROKER_BENCH also the sweep's.
+    '?' (OpenSSL 3.5+): a swept group this OpenSSL lacks (no oqs-provider) is skipped, not fatal."""
+    groups = ":".join(f"?{g}" for g in dict.fromkeys([group, *SWEEP_GROUPS])) if bench_broker() else group
     ossl = os.environ.get("OSSL", "openssl")
     oqs = subprocess.run([ossl, "list", "-providers", "-provider", "oqsprovider"],
                          capture_output=True).returncode == 0
@@ -215,6 +221,8 @@ ACL_MTLS = ("user pqc-client\ntopic readwrite pqc/#\n"
             "user application\ntopic read application/+/device/+/event/#\ntopic write application/+/device/+/command/#\n"
             "user gateway\ntopic write +/gateway/+/event/#\ntopic write +/gateway/+/state/#\ntopic read +/gateway/+/command/#\n")
 ACL_TLS = "topic readwrite pqc/#\n"
+# the application's login (certs/<set>/passwd, chirpstack_pq_setup.sh): ChirpStack's events and the downlink commands only
+ACL_APP = "user application\ntopic read application/+/device/+/event/#\ntopic write application/+/device/+/command/#\n"
 # BROKER_CRL=1: the mTLS listeners also check each client certificate against its CA's CRL (Mosquitto crlfile;
 # certs/<set>/ClientCA.crl from gen_certs.sh --client-crl), so a revoked device is refused at the handshake
 
@@ -230,6 +238,9 @@ def start_brokers(args, tmp: Path, bind: str):
     if acl:
         (tmp / "acl_mtls").write_text(ACL_MTLS)
         (tmp / "acl_tls").write_text(ACL_TLS)
+    (tmp / "acl_app").write_text(ACL_APP)
+    for f in tmp.glob("acl_*"):
+        f.chmod(0o600)  # Mosquitto warns about (and later versions refuse) ACL files others can read
     acl_file = lambda f: [f"acl_file {tmp / f}"] if acl else []
     crl = os.environ.get("BROKER_CRL", "") not in ("", "0")
 
@@ -247,7 +258,7 @@ def start_brokers(args, tmp: Path, bind: str):
         lines = [ln for ln in log.read_text().splitlines() if "rror" in ln] or log.read_text().splitlines()
         return "broker could not start listener: " + (re.sub(r"^\d+: ", "", lines[-1]) if lines else "unknown")
 
-    if (err := launch("plain", args.base_port, ["allow_anonymous true"])):
+    if bench_broker() and (err := launch("plain", args.base_port, ["allow_anonymous true"])):
         raise SystemExit(f"plain MQTT listener failed ({err}) - port {args.base_port} in use?")
     for sig in args.sigs:
         src = args.certs / sig
@@ -264,11 +275,18 @@ def start_brokers(args, tmp: Path, bind: str):
             "allow_anonymous false", "require_certificate true", "use_identity_as_username true", *tls,
             *acl_file("acl_mtls"),
             *([f"crlfile {d}/ClientCA.crl"] if crl and (src / "ClientCA.crl").exists() else []),
-            f"listener {port_of(args.base_port, sig, 'TLS')} {bind}".rstrip(),   # server-auth TLS
-            "allow_anonymous true", "require_certificate false", *tls, *acl_file("acl_tls")])
+            *([f"listener {port_of(args.base_port, sig, 'TLS')} {bind}".rstrip(),   # server-auth TLS: benchmarks only,
+               "allow_anonymous true", "require_certificate false", *tls, *acl_file("acl_tls")]  # (anonymous clients)
+              if bench_broker() else
+              # the application (Home Assistant): TLS, the broker's certificate, a username and password, its topics
+              [f"listener {port_of(args.base_port, sig, 'TLS')} {bind}".rstrip(), "allow_anonymous false",
+               "require_certificate false", f"password_file {d}/passwd", f"acl_file {tmp / 'acl_app'}", *tls]
+              if (src / "passwd").exists() else [])])
         if err:
             failed[sig] = err
-    for ds in SIGS_DEPLOY:  # the deployment checks' listeners per set present, and DEPLOY's signed trust-anchor update
+    # the deployment checks' listeners per set present, and DEPLOY's signed trust-anchor update: the benchmark broker
+    # only, as they include anonymous TLS listeners (the chain's broker has none, whatever certs/ holds)
+    for ds in SIGS_DEPLOY if bench_broker() else []:
         d = args.certs / ds
         if not (d / "CA.crl").exists():
             continue
@@ -462,8 +480,8 @@ def follow_logs(tmp: Path, args):
                     print(f"[broker {t}] {m[1]} -> :{m[2]} {label.get(int(m[2]), '?')}: new connection")
                 elif m := client.search(ln):
                     cert = re.search(r"u'([^']*)'", ln)
-                    print(f"[broker {t}] {m[1]} MQTT CONNECT as {m[2]}"
-                          + (f", client certificate '{cert[1]}' (mTLS)" if cert else ""))
+                    print(f"[broker {t}] {m[1]} MQTT CONNECT as {m[2]}"  # user: the certificate's name (mTLS), the login (TLS)
+                          + (f", user '{cert[1]}'" if cert else ""))
                 elif "unexpected eof while reading" in ln:  # a TLS client gone without close_notify
                     print(f"[broker {t}] {log.stem}: a TLS client disconnected without closing TLS (normal when a "
                           "stage's --watch subscribers are stopped; a Pico Wi-Fi stall looks the same)")
@@ -692,16 +710,20 @@ def main():
     try:
         if args.role in ("both", "broker"):
             procs, broker_failed = start_brokers(args, tmp, "127.0.0.1" if args.role == "both" else "")
-            print(f"[broker] plain MQTT on :{args.base_port}; per signature mTLS / TLS listeners "
-                  f"(groups {', '.join(dict.fromkeys([args.group, *SWEEP_GROUPS]))})"
+            print((f"[broker] plain MQTT on :{args.base_port}; per signature mTLS / TLS listeners (groups "
+                   f"{', '.join(dict.fromkeys([args.group, *SWEEP_GROUPS]))})" if bench_broker() else
+                   f"[broker] no plain MQTT, no anonymous TLS; per signature an mTLS listener (+ TLS with a login where "
+                   f"the set has a passwd file: the application), key exchange {args.group} only")
                   + ("; ACL per client certificate (BROKER_ACL)" if os.environ.get("BROKER_ACL", "") not in ("", "0") else "")
                   + ("; device certificates checked against ClientCA.crl where the set has one (BROKER_CRL)"
                      if os.environ.get("BROKER_CRL", "") not in ("", "0") else "")
                   + ":")
             for sig in args.sigs:
-                print(f"  {sig:<21} :{port_of(args.base_port, sig)} / :{port_of(args.base_port, sig, 'TLS')}"
-                      f"  {broker_failed.get(sig, 'up')}")
-        if args.role in ("both", "broker"):
+                print(f"  {sig:<21} :{port_of(args.base_port, sig)}"
+                      + (f" / :{port_of(args.base_port, sig, 'TLS')}"
+                         if bench_broker() or (args.certs / sig / "passwd").exists() else "")
+                      + f"  {broker_failed.get(sig, 'up')}")
+        if args.role in ("both", "broker") and bench_broker():
             procs += start_kem_responder(args)
         if args.role == "broker":
             if args.watch:  # every message the brokers route (a second delivery each: not during timing runs)
