@@ -1,0 +1,8 @@
+name: Task
+description: Work to do
+body:
+  - type: textarea
+    attributes: { label: Goal }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: Done when, description: "How you'll check it" }
