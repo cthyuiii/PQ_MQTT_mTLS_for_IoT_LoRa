@@ -71,11 +71,20 @@ broker (`./run_all.sh --serve-broker`, :18835). **Device** = the Pico W.
    format, as the Pi's 2.0.21 can't read 2.1's), an ACL to ChirpStack's events and the downlink commands. Checked: a
    wrong or no password refused, X25519 refused, the gateway's topics neither delivered nor publishable; the six cases
    and the end-to-end layer passed with the application on it (`mqtt_tls_timer` `MQTT_USER` / `MQTT_PASS`).
-8. [ ] **The application on a Pi**, then Home Assistant in its place (its OpenSSL must be 3.5+).
+8. [~] **Home Assistant as the application** (26 Oct; the testbed's, `docs/testbed.md` step 6): its MQTT integration
+   on :18935 with the login, `network/homeassistant/pico.yaml` (sensors from FPort 1, an automation answering
+   "ack <FCnt>"). Checked on Home Assistant 2026.10.4 (OpenSSL 3.5.9) in Docker on the Mac against the broker on
+   Debian 13: connected (X25519MLKEM768 / ML-DSA-44 only), sensors filled, 20 of 20 events answered (3.7 ms median),
+   reconnected after a broker restart. Not yet on a Pi, nor in the chain with ChirpStack and the Pico.
+   - [ ] lorawan11_e2e (FPort 2) in Home Assistant: it can't open the 256-bit layer, so those readings stay closed
+     and get no answer. A small custom integration could (Python's `cryptography` is in its image), or the
+     testbed's Pico sends lorawan11_256 only.
 9. [ ] **ChirpStack and the Gateway Bridge on Pi 5 #1** (README "on a Pi"): the setup made on the Mac into its own
    folder, the images and the database copied over. Checked on the Mac: the generated compose config equals the
    running one (but for the project name), `certs/` untouched, the dump restores into a fresh Postgres 14 with its
-   7 devices and their frame counters. Not run on a Pi yet.
+   7 devices and their frame counters. Not run on a Pi yet. `scripts/app.sh` (the virtual gateway +
+   `chirpstack_app.py`, for runs that open the 256-bit layer) checked on Debian 13: started with the Pico's exports
+   in the shell, ChirpStack's event answered ("ack 7"), app.csv written at the stop.
 
 ## Paused / KIV
 

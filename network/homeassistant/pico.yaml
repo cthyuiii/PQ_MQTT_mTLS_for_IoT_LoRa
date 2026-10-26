@@ -1,0 +1,41 @@
+# the testbed's application: the Pico's readings from ChirpStack's uplink events, and the answer to each
+mqtt:
+  sensor:
+    - name: "Pico temperature"
+      unique_id: pico_c11_temperature
+      state_topic: "application/+/device/0000000000000c11/event/up"
+      # FPort 1 = lorawan11_256: ChirpStack has decrypted the reading. FPort 2 (the 256-bit layer inside) stays
+      # ciphertext here: the state keeps its last value
+      value_template: >-
+        {% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json).temp_c }}{% else %}{{ this.state }}{% endif %}
+      unit_of_measurement: "°C"
+      device_class: temperature
+    - name: "Pico humidity"
+      unique_id: pico_c11_humidity
+      state_topic: "application/+/device/0000000000000c11/event/up"
+      value_template: >-
+        {% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json).rh }}{% else %}{{ this.state }}{% endif %}
+      unit_of_measurement: "%"
+      device_class: humidity
+    - name: "Pico uplink counter"
+      unique_id: pico_c11_fcnt
+      state_topic: "application/+/device/0000000000000c11/event/up"
+      value_template: "{{ value_json.fCnt }}"
+
+automation pico:
+  - alias: "Answer each LoRaWAN uplink"
+    description: "ack <FCnt> back to the device (FPort 1), as chirpstack_app.py --reply does"
+    mode: parallel
+    triggers:
+      - trigger: mqtt
+        topic: "application/+/device/+/event/up"
+    conditions:
+      - condition: template
+        value_template: "{{ trigger.payload_json.fPort == 1 }}"
+    actions:
+      - action: mqtt.publish
+        data:
+          topic: "application/{{ trigger.payload_json.deviceInfo.applicationId }}/device/{{ trigger.payload_json.deviceInfo.devEui }}/command/down"
+          payload: >-
+            {"devEui": "{{ trigger.payload_json.deviceInfo.devEui }}", "confirmed": false, "fPort": 1,
+            "data": "{{ ('ack ' ~ trigger.payload_json.fCnt) | base64_encode }}"}

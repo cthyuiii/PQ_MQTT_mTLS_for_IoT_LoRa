@@ -95,11 +95,12 @@ sed -e 's|"com_type": "USB"|"com_type": "SPI"|' -e 's|"com_path": "/dev/ttyACM0"
 
 ## 6. ChirpStack: the setup on this Pi, and the gateway registered
 
-On this Pi 5, as on the Mac (README "Run it"): both images built here (arm64), then
-`CHIRPSTACK_IMAGE=… GATEWAY_IMAGE=… chirpstack_pq_setup.sh`, then `docker compose up`.
+ChirpStack and the Gateway Bridge on this Pi 5: `docs/testbed.md` step 4 (the setup made on the Mac, which keeps the
+client CA's key; the images and the database copied over). The Bridge listens on 127.0.0.1:1700, where the
+configuration of step 5 above sends.
 
-In ChirpStack's UI (`http://<this pi>:8080`): Gateways → Add gateway, with the gateway ID from step 4. Its region comes
-from the MQTT topic (`as923/…`).
+In ChirpStack's UI (`http://<this pi>:8080`): Gateways → Add gateway, with the gateway ID from step 4 above. Its
+region comes from the MQTT topic (`as923/…`).
 
 ## 7. Run it
 
