@@ -29,8 +29,8 @@ flowchart LR
 | `onboarding/learn` | this one: the labs, and the few project files they read |
 | `feature/custom-chirpstack-server` | the prototype: the ChirpStack fork, its build and the scripts around it. Make your own branch from it for gateway / AES-256 work |
 | `macc-personal/test&implementation` | macc's own test branch (please don't push); its `docs/pending.md` lists what's done and what's left |
-| `main` | the benchmark suite: signatures, key exchange and TLS on a laptop, a Pi and the Pico W |
-| `LoRa_1.1_implementation` | the earlier LoRaWAN 1.1 chain with the stock ChirpStack |
+| `testing/benchmarks` | the benchmark suite: signatures, key exchange and TLS on a laptop, a Pi and the Pico W |
+| `testing/lorawan11-stock-chirpstack` | the earlier LoRaWAN 1.1 chain with the stock ChirpStack |
 
 ## Files on this branch
 
