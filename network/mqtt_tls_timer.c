@@ -343,6 +343,9 @@ static void reading(unsigned char *pt, int payload, int seq) {
     memcpy(pt, s, n < payload ? n : payload);
 }
 static int have_keys, have_e2e, have_dev;
+/* AIR=1 only: the Pico runner's AIR=<gateway ip>:<port>, exported in the same shell, must not make a watcher or relay a
+   device (atoi("192.168...") = 192) */
+static int air_mode(void) { const char *a = getenv("AIR"); return a && !strcmp(a, "1"); }
 static unsigned char keys[128], dev_fixed[4];
 static void use_shared_keys(void) {  /* APP_KEYS -> app_aead (after app_aead_init / selftest) */
     /* processes share these keys (so a watcher can decrypt): a DevAddr per process keeps their nonces apart, unless
@@ -839,7 +842,7 @@ int main(int argc, char **argv) {
     if ((otaa = getenv("OTAA"))) {
         v11 = !strcmp(otaa, "1.1");
         if (!v11 && strcmp(otaa, "1.0.3") && strcmp(otaa, "1.0.4")) die("OTAA", "1.0.3, 1.0.4 or 1.1");
-        if (!getenv("AIR") || !atoi(getenv("AIR"))) die("OTAA", "needs AIR=1 (the join goes over the air)");
+        if (!air_mode()) die("OTAA", "needs AIR=1 (the join goes over the air)");
         if (hex || da) die("OTAA", "the join makes the session keys and the DevAddr: no APP_KEYS or DEV_ADDR");
         env_hex(v11 ? "NWK_KEY" : "APP_KEY", getenv(v11 ? "NWK_KEY" : "APP_KEY"), root_key, 32, 0);
         if (v11) env_hex("APP_KEY", getenv("APP_KEY"), app_key, 32, 0);
@@ -867,7 +870,7 @@ int main(int argc, char **argv) {
         use_shared_keys();  /* the self-test re-keys randomly, so after it */
     }
 
-    if (getenv("AIR") && atoi(getenv("AIR"))) {  /* air mode: no broker, frames as UDP datagrams */
+    if (air_mode()) {  /* air mode: no broker, frames as UDP datagrams */
         if (msgs <= 0) die("AIR=1", "needs MSGS > 0");
         air_device(host, port, msgs, payload, getenv("AIR_LISTEN") ? atof(getenv("AIR_LISTEN")) : 0);
         return 0;
