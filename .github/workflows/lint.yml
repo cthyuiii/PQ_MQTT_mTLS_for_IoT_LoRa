@@ -9,5 +9,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/ruff-action@v4   # rules: ruff.toml
+      - uses: astral-sh/ruff-action@v4.1.0   # rules: ruff.toml
       - run: git ls-files '*.sh' | xargs shellcheck -S error 
