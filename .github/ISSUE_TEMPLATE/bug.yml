@@ -1,0 +1,14 @@
+name: Bug
+description: Something fails or gives a wrong result
+labels: [bug]
+body:
+  - type: textarea
+    attributes: { label: What happened, description: "And what you expected instead" }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: How to reproduce, description: "Commands, branch and commit" }
+    validations: { required: true }
+  - type: dropdown
+    attributes: { label: Where, multiple: true, options: [Mac, Pi, Pico W, Docker, GitHub Actions] }
+  - type: textarea
+    attributes: { label: Log, description: "Remove keys and passwords first", render: text }
