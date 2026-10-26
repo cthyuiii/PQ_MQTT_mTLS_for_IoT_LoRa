@@ -10,7 +10,7 @@ RUN git clone --depth 1 -b $VERSION https://github.com/chirpstack/chirpstack-gat
 WORKDIR /src
 RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$VERSION" -o /gwb cmd/chirpstack-gateway-bridge/main.go
 
-FROM alpine:3.24.1
+FROM alpine:3.24.3
 RUN apk --no-cache add ca-certificates
 COPY --from=build /gwb /usr/bin/chirpstack-gateway-bridge
 USER nobody:nogroup
