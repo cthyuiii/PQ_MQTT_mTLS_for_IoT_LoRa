@@ -15,7 +15,7 @@ Had `main` checked out before 25 Oct 2026? Its code is now on `testing/benchmark
 
 ```mermaid
 flowchart LR
-    bench["testing/benchmarks"] --> lora["LoRa_1.1_implementation"]
+    bench["testing/benchmarks"] --> lora["testing/lorawan11-stock-chirpstack"]
     bench --> esp["esp32-testing"]
     lora --> proto["feature/custom-chirpstack-server"]
     proto --> mine["macc-personal/test#amp;implementation"]
@@ -37,7 +37,7 @@ Each branch carries the one before it, unless it says it strips files.
 `./run_all.sh` runs all of it. `docs/how_it_works.md` has the library map and each stage's calls; results are in
 `docs/findings.md`.
 
-## `LoRa_1.1_implementation`: the LoRaWAN 1.1 chain with the stock ChirpStack
+## `testing/lorawan11-stock-chirpstack` (was `LoRa_1.1_implementation`): the LoRaWAN 1.1 chain with the stock ChirpStack
 
 The benchmark suite plus the network side:
 
