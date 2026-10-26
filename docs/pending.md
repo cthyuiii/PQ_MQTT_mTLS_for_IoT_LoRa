@@ -1,4 +1,4 @@
-# Pending: LoRa_1.1_implementation
+# Pending: testing/lorawan11-stock-chirpstack
 
 What this branch still needs: a simulated ChirpStack network (no radio) that accepts our LoRaWAN 1.1 frames,
 with 256-bit protection end to end and PQ TLS on every network link. How to run it: README section 0.4.

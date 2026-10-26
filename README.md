@@ -9,8 +9,9 @@ bench measures and with which code, section 0.3 describes the pipeline and LoRaW
 Pico, and how it is called: [section 0](docs/how_it_works.md#0-library-map-what-does-each-job-where-and-how-it-is-called)),
 the test plan per device, every stage's function calls in order, and how LoRaWAN, AES, Ascon, GCM and CMAC relate. What the benches found is in [docs/findings.md](docs/findings.md).
 
-**This branch: `LoRa_1.1_implementation`.** It carries `main`'s benchmark suite unchanged and adds the LoRaWAN 1.1
-network side: a ChirpStack network server fed by a virtual gateway (no radio), and an AES-256 layer inside the
+**This branch: `testing/lorawan11-stock-chirpstack`** (was `LoRa_1.1_implementation`). It carries the benchmark suite
+(`testing/benchmarks`) unchanged and adds the LoRaWAN 1.1 network side: a ChirpStack network server fed by a
+virtual gateway (no radio), and an AES-256 layer inside the
 LoRaWAN payload that passes through ChirpStack and only the application decrypts. The steps, and which of them are
 built, are in [docs/pending.md](docs/pending.md). The benchmark suite on its own is on `main`.
 
@@ -115,7 +116,7 @@ Held back on purpose:
 **MacBook (Apple Silicon)**
 
 ```bash
-git clone -b LoRa_1.1_implementation https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git && cd PQ_MQTT_mTLS_for_IoT_LoRa
+git clone -b testing/lorawan11-stock-chirpstack https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git && cd PQ_MQTT_mTLS_for_IoT_LoRa
 brew install python@3.14 openssl@3 cmake mosquitto autoconf automake libtool arduino-cli qemu
 # the venv lives in .venv.nosync: iCloud Drive skips *.nosync (it had corrupted a synced .venv); .venv links to it
 python3.14 -m venv .venv.nosync && ln -sfn .venv.nosync .venv && source .venv/bin/activate
@@ -137,7 +138,7 @@ sudo -E ./run_all.sh --no-deps --only openssl     # optional: real cycle counts 
 
 ```bash
 sudo apt update && sudo apt install -y git python3-venv build-essential cmake libssl-dev
-git clone -b LoRa_1.1_implementation https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git && cd PQ_MQTT_mTLS_for_IoT_LoRa
+git clone -b testing/lorawan11-stock-chirpstack https://github.com/cthyuiii/PQ_MQTT_mTLS_for_IoT_LoRa.git && cd PQ_MQTT_mTLS_for_IoT_LoRa
 python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 C=~/.cache/iot-pqc && git clone -q --depth 1 --branch 0.16.0 https://github.com/open-quantum-safe/liboqs.git $C/liboqs-src
 cmake -S $C/liboqs-src -B $C/liboqs-build-host -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
