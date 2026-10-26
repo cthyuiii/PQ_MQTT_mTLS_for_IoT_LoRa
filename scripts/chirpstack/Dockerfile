@@ -19,7 +19,7 @@ COPY ui ui
 # grpc-tools downloads its own protoc while installing, and that download sometimes stalls: up to three tries
 RUN cd api/grpc-web && (make || make || make) && cd ../../ui && make build
 
-FROM rust:1.89-bookworm AS build
+FROM rust:1.99-bookworm AS build
 # cmake + clang: aws-lc-sys and librdkafka's C code; protoc: the API crates
 RUN apt-get update && apt-get install -y --no-install-recommends cmake clang protobuf-compiler libprotobuf-dev
 WORKDIR /src
