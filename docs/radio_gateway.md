@@ -134,7 +134,7 @@ The Pico W firmware sends its LoRaWAN frames over Wi-Fi to `virtual_gateway.py`,
 (`pico/run_benchmarks.py`, `docs/testbed.md` step 9), RadioLib drives the Waveshare Pico-LoRa-SX1262 board (its
 silkscreen: Pico-LoRa-SX126X) as a plain LoRa radio, and the firmware keeps its own LoRaWAN code (`lora_aead.h`;
 RadioLib's LoRaWAN stack is AES-128). No Wi-Fi in that build. **Written and compiled for the Pico W and the Pico 2 W
-(27 Oct), not run on the radio yet.**
+(27 Oct); on a Pico W in the board the radio answers and starts (no frame sent yet).**
 
 - **The board,** as Waveshare's own demo sets it up: SPI1 on GP10 / 11 / 12, NSS GP3, DIO1 GP20, RESET GP15, BUSY
   GP2, a 1.7 V TCXO on DIO3, the antenna switch on DIO2. RadioLib 7.8.1, once: `arduino-cli lib install RadioLib@7.8.1`.

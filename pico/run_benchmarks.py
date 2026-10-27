@@ -200,6 +200,11 @@ def mqtt_secrets(sig, gen, lora=False):
                 if not wait.isdigit():
                     return "BAD_REPLY_WAIT_MS: milliseconds, e.g. 2000 (chirpstack_app.py --reply must be running)"
                 out.append(f"#define MT_DOWN_WAIT_MS {int(wait)}")
+            node = os.environ.get("NODE_S", "")  # a sensor node for Home Assistant: an uplink every NODE_S s, for good
+            if node:
+                if not (node.isdigit() and int(node) >= 10):
+                    return "BAD_NODE_S: seconds between uplinks, 10 or more, e.g. 60"
+                out.append(f"#define MT_NODE_S {int(node)}")
     for name, b in blobs:
         out.append(f"static const unsigned char {name}[] = {{{','.join(map(str, b))}}};")
     os.makedirs(gen, exist_ok=True)

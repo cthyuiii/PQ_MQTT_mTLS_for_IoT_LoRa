@@ -1,26 +1,68 @@
-# the testbed's application: the Pico's readings from ChirpStack's uplink events, and the answer to each
+# the testbed's application: the Picos' readings from ChirpStack's uplink events, and the answer to each. Per device
+# (DevEUI ...0c11, ...0c12): the temperature (FPort 1 = lorawan11_256: ChirpStack has decrypted the reading; FPort 2,
+# the 256-bit layer inside, stays ciphertext here: the state keeps its last value), the uplink counter, and how the
+# uplink came: the gateway that heard it (0102030405060708 = the virtual gateway: Wi-Fi + UDP, its RSSI and SNR a
+# fixed -60 / 9.5; the radio gateway's own ID: over the air) and the radio's RSSI and SNR
 mqtt:
   sensor:
-    - name: "Pico temperature"
+    - name: "Pico c11 temperature"
       unique_id: pico_c11_temperature
       state_topic: "application/+/device/0000000000000c11/event/up"
-      # FPort 1 = lorawan11_256: ChirpStack has decrypted the reading. FPort 2 (the 256-bit layer inside) stays
-      # ciphertext here: the state keeps its last value
       value_template: >-
         {% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json).temp_c }}{% else %}{{ this.state }}{% endif %}
       unit_of_measurement: "°C"
       device_class: temperature
-    - name: "Pico humidity"
-      unique_id: pico_c11_humidity
-      state_topic: "application/+/device/0000000000000c11/event/up"
-      value_template: >-
-        {% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json).rh }}{% else %}{{ this.state }}{% endif %}
-      unit_of_measurement: "%"
-      device_class: humidity
-    - name: "Pico uplink counter"
+      state_class: measurement
+    - name: "Pico c11 uplink counter"
       unique_id: pico_c11_fcnt
       state_topic: "application/+/device/0000000000000c11/event/up"
       value_template: "{{ value_json.fCnt }}"
+    - name: "Pico c11 gateway"
+      unique_id: pico_c11_gateway
+      state_topic: "application/+/device/0000000000000c11/event/up"
+      value_template: "{{ value_json.rxInfo[0].gatewayId }}"
+    - name: "Pico c11 RSSI"
+      unique_id: pico_c11_rssi
+      state_topic: "application/+/device/0000000000000c11/event/up"
+      value_template: "{{ value_json.rxInfo[0].rssi }}"
+      unit_of_measurement: "dBm"
+      device_class: signal_strength
+      state_class: measurement
+    - name: "Pico c11 SNR"
+      unique_id: pico_c11_snr
+      state_topic: "application/+/device/0000000000000c11/event/up"
+      value_template: "{{ value_json.rxInfo[0].snr }}"
+      unit_of_measurement: "dB"
+      state_class: measurement
+    - name: "Pico c12 temperature"
+      unique_id: pico_c12_temperature
+      state_topic: "application/+/device/0000000000000c12/event/up"
+      value_template: >-
+        {% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json).temp_c }}{% else %}{{ this.state }}{% endif %}
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+    - name: "Pico c12 uplink counter"
+      unique_id: pico_c12_fcnt
+      state_topic: "application/+/device/0000000000000c12/event/up"
+      value_template: "{{ value_json.fCnt }}"
+    - name: "Pico c12 gateway"
+      unique_id: pico_c12_gateway
+      state_topic: "application/+/device/0000000000000c12/event/up"
+      value_template: "{{ value_json.rxInfo[0].gatewayId }}"
+    - name: "Pico c12 RSSI"
+      unique_id: pico_c12_rssi
+      state_topic: "application/+/device/0000000000000c12/event/up"
+      value_template: "{{ value_json.rxInfo[0].rssi }}"
+      unit_of_measurement: "dBm"
+      device_class: signal_strength
+      state_class: measurement
+    - name: "Pico c12 SNR"
+      unique_id: pico_c12_snr
+      state_topic: "application/+/device/0000000000000c12/event/up"
+      value_template: "{{ value_json.rxInfo[0].snr }}"
+      unit_of_measurement: "dB"
+      state_class: measurement
 
 automation pico:
   - alias: "Answer each LoRaWAN uplink"

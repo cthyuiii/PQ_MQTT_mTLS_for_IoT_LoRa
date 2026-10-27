@@ -152,6 +152,9 @@ docker build -f scripts/chirpstack/Dockerfile -t iot-pqc/chirpstack:4.19.2-pq-ae
 
 ## 5. ChirpStack on the PC
 
+Two parts: the Mac (Terminal) makes the PC's folder, since it holds the database and the client CA's key; then
+the PC (PowerShell) starts it. Not the Mac's lines in PowerShell: there `cp` is `Copy-Item` ("`p` is ambiguous").
+
 ```bash
 # the Mac, repo root: ChirpStack's setup for the PC and the broker Pi, in a folder of its own (the setup signs
 # ChirpStack's and the gateway's certificates with the client CA's key, which stays here); the API secret kept, so
@@ -170,11 +173,15 @@ docker compose stop; cd -
 (umask 077; tar czf ~/cs-pc.tgz --exclude ca.key -C ~ chirpstack-docker-pc)
 ```
 
-Copy `~/cs-pc.tgz` into the PC's home folder (a USB stick, or `scp` if the PC runs Windows' OpenSSH server), then:
+Copy `~/cs-pc.tgz` into the PC's home folder: a USB stick, or `scp ~/cs-pc.tgz "$PCUSER@$PC:"` from the Mac
+(`$PCUSER`: `$env:USERNAME` on the PC) while the PC runs Windows' OpenSSH server (PowerShell as administrator:
+`Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd`, and `Stop-Service sshd` after).
+Then:
 
 ```powershell
-# PC, in your home folder: the database first (fresh: its init script adds the extensions), the dump into it, then
-# ChirpStack. PowerShell has no `<`, so the dump goes in with `docker compose cp`
+# PC: the database first (fresh: its init script adds the extensions), the dump into it, then ChirpStack.
+# PowerShell has no `<`, so the dump goes in with `docker compose cp`
+cd ~
 tar -xzf cs-pc.tgz; del cs-pc.tgz
 cd chirpstack-docker-pc
 docker compose up -d postgres; Start-Sleep 30
@@ -255,15 +262,18 @@ queue two downlinks per uplink.
 docker run -d --name homeassistant --restart=unless-stopped -e TZ=Asia/Singapore -v ha_config:/config -p 8123:8123 ghcr.io/home-assistant/home-assistant:2026.10.4
 ```
 
-Then in a browser, `http://localhost:8123` on the PC:
+Then in a browser: `http://localhost:8123` on the PC, or `http://PC:8123` on the Mac (step 5's firewall rule), where
+the password can be pasted, not typed:
 
 1. Create the owner account.
 2. **Settings → Devices & services → Add integration → MQTT.** Broker: the broker Pi's address (the name its
    certificate carries). Port: `18935`. Username: `application`. Password: on the Mac,
-   `cat certs/MLDSA44/application.password`.
+   `tr -d '\n' < certs/MLDSA44/application.password | pbcopy`, then paste (`pbcopy < /dev/null` after). MQTT over
+   TCP (not WebSockets: the broker has no such listener), protocol 3.1.1 or 5; TLS comes from the next point.
 3. In the same form, open **Other settings:** Broker certificate validation: **Custom**; Upload custom CA certificate
-   file: the PC's `chirpstack-docker-pc\configuration\pq\app\ca.crt` (the broker's CA, the Mac's
-   `certs/MLDSA44/CA.crt`). Leave "Ignore broker certificate validation" and "Use a client certificate" off. Submit.
+   file: the PC's `chirpstack-docker-pc\configuration\pq\app\ca.crt`, or the Mac's
+   `~/chirpstack-docker-pc/configuration/pq/app/ca.crt` (the same file: the broker's CA, `certs/MLDSA44/CA.crt`).
+   Leave "Ignore broker certificate validation" and "Use a client certificate" off. Submit.
    (Home Assistant moves itself to MQTT 5; the broker takes both.)
 
 ```powershell
@@ -271,8 +281,8 @@ Then in a browser, `http://localhost:8123` on the PC:
 # the automation subscribes to its MQTT topic as Home Assistant starts, so after the integration exists
 docker exec homeassistant mkdir -p /config/packages
 docker cp network/homeassistant/pico.yaml homeassistant:/config/packages/pico.yaml
-docker exec -it homeassistant sh
-#   inside it: printf 'homeassistant:\n  packages: !include_dir_named packages\n' >> /config/configuration.yaml; exit
+docker exec homeassistant sh -c "printf 'homeassistant:\n  packages: !include_dir_named packages\n' >> /config/configuration.yaml"
+docker exec homeassistant tail -3 /config/configuration.yaml   # homeassistant: alone on its line, packages under it
 docker restart homeassistant
 ```
 
@@ -280,10 +290,19 @@ On the broker Pi, `scripts/broker.sh log` shows `user 'application'` from the PC
 homeassistant/status`: Home Assistant's own status message, which the login may not send (harmless). Home Assistant
 reconnects by itself when the broker restarts.
 
-The sensors: **Pico temperature**, **Pico humidity**, **Pico uplink counter** (Settings → Entities). Temperature and
-humidity come from FPort 1 frames (lorawan11_256: ChirpStack has decrypted the reading). FPort 2 frames
-(lorawan11_e2e) carry the 256-bit layer inside, which Home Assistant can't open: the counter moves, the readings keep
-their last value, and no answer goes back (the Pico's lorawan11_e2e block gets no replies).
+`'NodeStrClass' object has no attribute 'get'` as it starts, and it stops: `homeassistant:` holds text, not
+`packages:` (seen: no space in `packages:!include_dir_named`, so YAML reads one string). By hand: `docker stop
+homeassistant`, `docker cp homeassistant:/config/configuration.yaml .`, `notepad configuration.yaml` (it ends with
+the two lines above), `docker cp configuration.yaml homeassistant:/config/configuration.yaml`, `docker start
+homeassistant`.
+
+The sensors, per device (`c11`, `c12`; Settings → Entities): **Pico c11 temperature**, **uplink counter**,
+**gateway**, **RSSI**, **SNR**. The temperature comes from FPort 1 frames (lorawan11_256: ChirpStack has decrypted the
+reading): 21.5 from the test blocks, the chip's own from a sensor node (step 9). FPort 2 frames (lorawan11_e2e) carry
+the 256-bit layer inside, which Home Assistant can't open: the counter moves, the temperature keeps its last value, and
+no answer goes back (the Pico's lorawan11_e2e block gets no replies). The gateway says how the uplink came:
+`0102030405060708` is the virtual gateway (Wi-Fi and UDP, RSSI and SNR a fixed -60 / 9.5), the radio gateway's own ID
+over the air. A humidity sensor from before (no sensor on the boards measures it) stays as unavailable: delete it there.
 
 ## 9. The Pico
 
@@ -302,11 +321,51 @@ in that build, so no `WIFI_*`; `REPLY_WAIT_MS` (any value) opens RX1 and RX2 aft
 two boards with the same `DEV_ADDR` would each count their own FCnt, and ChirpStack refuses the lower one.
 
 ```bash
-# the Mac, repo root, the Pico on USB; RadioLib once: arduino-cli lib install RadioLib@7.8.1
-export AIR=radio REPLY_WAIT_MS=1
+# the Mac, repo root, the Pico on USB; RadioLib once: arduino-cli lib install RadioLib@7.8.1. APP_KEYS and DEV_ADDR
+# as above; BROKER only for the run's record (results/*_meta_*.json): the radio build connects to no broker
+export AIR=radio REPLY_WAIT_MS=1 BROKER=$BRK
 python3 pico/run_benchmarks.py --board rp2040 --test mqtt --match 'chirpstack device' --tag testbed_radio1   # Pico 2 W: --board rp2350
 # gateway Pi: the Pico's frames as the radio heard them, and the replies sent
 journalctl -u lora-packet-forwarder --since '15 min ago' | grep -E 'JSON (up|down)' | tail -4
+```
+
+Over the radio, not Wi-Fi: that build has no Wi-Fi (the log says `#radio`, not `#wifi`, and the router lists no Pico),
+the packet forwarder hears only the air (the virtual gateway's frames never pass through it: its `JSON up` lines are
+the Pico's, with their `rssi` and `lsnr`), and Home Assistant's **gateway** sensor shows the radio gateway's ID.
+
+**The Picos as Home Assistant's sensors.** `NODE_S=60` builds the same device without the test blocks: one
+lorawan11_256 uplink (FPort 1) every 60 s for good, with the chip's own temperature (the die: a few degrees above the
+room), FCnt kept in flash, the reply in RX1 / RX2. It waits 5 s at most for a USB host, so after flashing a USB charger
+does; the run ends at `#node every 60 s ...` and the board goes on. One board per device: the second Pico gets
+`...0c12`, its keys made on the Mac next to the others (never printed) and pasted into ChirpStack's form one at a time.
+
+```bash
+# the Mac, repo root: the first Pico as a node (device ...0c11; APP_KEYS and DEV_ADDR as above)
+export AIR=radio REPLY_WAIT_MS=1 BROKER=$BRK NODE_S=60
+python3 pico/run_benchmarks.py --board rp2040 --test mqtt --match 'chirpstack device' --tag node_c11
+# the second device's keys, once (setdefault: a second run keeps them), then a function that puts one in the clipboard
+python3 - <<'PY'
+import json, os
+p = os.path.expanduser("~/.cache/iot-pqc/phase1/devices.json")
+d, k = json.load(open(p)), lambda: os.urandom(32).hex()
+d["devices"].setdefault("pico-c12-1.1-abp", {"profile": "as923-1.1-abp", "version": "1.1", "otaa": False,
+    "dev_eui": "0000000000000c12", "dev_addr": "012345c2", "app_s_key": k(), "f_nwk_s_int_key": k(),
+    "s_nwk_s_int_key": k(), "nwk_s_enc_key": k(), "e2e_key": k()})
+with open(os.open(p, os.O_WRONLY | os.O_TRUNC), "w") as f:
+    json.dump(d, f, indent=1)
+PY
+key() { python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c12-1.1-abp']['$1'], end='')" | pbcopy; }
+```
+
+In ChirpStack's UI: the application `iot-pqc-phase1` → **Add device**: name `pico-c12`, Device EUI
+`0000000000000c12`, Join EUI `0000000000000000`, device profile `as923-1.1-abp`. Then **Activation**: device address
+`012345c2`, and each key from `key nwk_s_enc_key`, `key s_nwk_s_int_key`, `key f_nwk_s_int_key`, `key app_s_key`
+pasted into the field of that name; frame counters 0; activate. `pbcopy < /dev/null` after. Then the second board:
+
+```bash
+eval "$(python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c12-1.1-abp']; print('export APP_KEYS='+d['app_s_key']+d['f_nwk_s_int_key']+d['s_nwk_s_int_key']+d['e2e_key'])")"
+export DEV_ADDR=012345c2
+python3 pico/run_benchmarks.py --board rp2350 --test mqtt --match 'chirpstack device' --tag node_c12   # Pico W: rp2040
 ```
 
 ## 10. Did it work?
@@ -345,7 +404,10 @@ This layout (the PC, 27 Oct) has run only in part: nothing on Windows or Docker 
 3. Run elsewhere:
 
 - **Step 9's radio firmware** (27 Oct): compiles for the Pico W and the Pico 2 W with RadioLib 7.8.1 (`AIR=radio`,
-  no Wi-Fi variables set); the Wi-Fi build (`AIR=<host:port>`) still compiles. Not flashed, not run on the radio.
+  no Wi-Fi variables set); the Wi-Fi build (`AIR=<host:port>`) still compiles. On a Pico W in the lab's Waveshare
+  board (27 Oct): the SX1262 answers on SPI (version `SX1261 V2D 2D02`), and RadioLib's `begin` with the firmware's
+  settings (TCXO 1.7 V) returns 0 once SPI1 is started; the first firmware didn't start it (`RadioLib error -2`),
+  fixed. No frame sent yet.
 - **Step 0's copies** (27 Oct, a `debian:trixie` container, arm64; stand-ins for the old services: a `chirpstack`
   database with a row, Redis, a config folder, a forwarder folder): every file written `-rw-------` and owned by the
   user, the database dump restored into an empty `chirpstack` with its row, the forwarder's folder restored in place.

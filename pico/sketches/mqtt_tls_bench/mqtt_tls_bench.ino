@@ -66,6 +66,9 @@
 //   real gateway: AS923 channel 0 at DR0, as the frames' 1.1 MIC assumes (docs/radio_gateway.md); with REPLY_WAIT_MS,
 //   the reply in RX1 / RX2. No Wi-Fi: the radio needs none, and on a Pico W it would disturb the reception. air_us is
 //   then the time on air.
+//   NODE_S=<s> (-> MT_NODE_S, with AIR): a sensor node for Home Assistant instead of the blocks: after setup, one
+//   lorawan11_256 uplink (FPort 1) every MT_NODE_S s with the chip's own temperature, indefinitely, FCnt reserved in
+//   flash as in the blocks; with REPLY_WAIT_MS the reply too. It starts without a USB host (waits 5 s at most).
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -458,6 +461,7 @@ static SX1262 lora = new Module(R_NSS, R_DIO1, R_RST, R_BUSY, SPI1);
 static uint32_t tx_end;  // millis() when the last uplink had left: the RX windows count from it
 static int lora_begin() {  // 0, or RadioLib's error
   SPI1.setSCK(R_SCK); SPI1.setTX(R_MOSI); SPI1.setRX(R_MISO);
+  SPI1.begin();  // RadioLib doesn't start a bus it is given (begin -2 without: seen 27 Oct)
   // AS923 channel 0 (923.2 MHz: the uplink, RX1 and RX2), DR0 = SF12 BW125, coding rate 4/5, LoRaWAN's public sync
   // word (0x34: 0x3444 on the SX126x), 14 dBm, preamble 8
   return lora.begin(923.2, 125.0, 12, 5, 0x34, 14, 8, MT_RADIO_TCXO_V);
@@ -486,6 +490,13 @@ static int lora_rx(int win, uint8_t *buf, int cap) {
 #else
 static WiFiUDP air;  // the uplink as a radio would send it: one datagram to the virtual gateway (and its downlinks back)
 #endif
+static bool air_send(const uint8_t *f, int n) {  // one uplink to the air: over LoRa, or as the datagram
+#ifdef MT_RADIO
+  return lora_send(f, n);
+#else
+  return air.beginPacket(AIR_HOST, AIR_PORT) && air.write(f, n) == (size_t)n && air.endPacket();
+#endif
+}
 #define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us,seal_cyc,open_cyc,reply_us,seal256_cyc,open256_cyc," \
                 "reply_open_cyc,reply_open256_cyc"
 // the air columns: the UDP send, seal / open in CPU cycles, the round trip, the 256-bit layer's own share of seal /
@@ -607,11 +618,7 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     uint32_t air_us = 0;  // the uplink to the air, timed apart from seal / round trip / open: Wi-Fi UDP, not LoRa airtime
 #ifdef MT_AIR_ONLY
     uint32_t t4 = micros();
-#ifdef MT_RADIO
-    if (!down && lora_send(frame, fl)) air_us = micros() - t4;
-#else
-    if (!down && air.beginPacket(AIR_HOST, AIR_PORT)) { air.write(frame, fl); air.endPacket(); air_us = micros() - t4; }
-#endif
+    if (!down && air_send(frame, fl)) air_us = micros() - t4;
 #ifdef MT_DOWN_WAIT_MS
     if (!down) { last_up = millis(); reply_us = await_reply(t4, fcnt, &reply_cyc, &reply256); }  // fcnt: this uplink's
 #endif
@@ -1017,9 +1024,39 @@ static bool ntp_ok() {  // certificate and CRL dates need the time: NTP before a
 }
 #endif
 
+#ifdef MT_NODE_S
+#ifndef MT_AIR_ONLY
+#error "NODE_S needs AIR (radio, or the virtual gateway)"
+#endif
+// the sensor node's uplink: the chip's own temperature (analogReadTemp: the die, a few degrees above the room),
+// FCnt reserved in flash first as the pipeline does, then the application's reply in RX1 / RX2 (REPLY_WAIT_MS)
+static bool node_ok;  // setup: the radio and the known-answer checks fine, lorawan11_256 set up
+static void node_send() {
+  if (fcnt_persist && fcnt + 1 >= fcnt_reserved && !lora_save(fcnt + 1 + FCNT_GAP)) {
+    Serial.println("#node flash write failed (LittleFS): not sending");
+    return;
+  }
+  char s[48];
+  int sl = snprintf(s, sizeof s, "{\"seq\":%lu,\"temp_c\":%.1f}", (unsigned long)(fcnt + 1), analogReadTemp());
+  memset(pt, ' ', MT_PAYLOAD);
+  memcpy(pt, s, sl < MT_PAYLOAD ? sl : MT_PAYLOAD);
+  if (LA[cur_aead].seal(MT_PAYLOAD)) { Serial.println("#node seal failed"); return; }
+  uint32_t t4 = micros(), reply_us = 0, cyc = 0, cyc256 = 0;
+  bool sent = air_send(frame, HDR + MT_PAYLOAD + LA[cur_aead].tag);
+#ifdef MT_DOWN_WAIT_MS
+  if (sent) reply_us = await_reply(t4, fcnt, &cyc, &cyc256);
+#endif
+  Serial.printf("#node fcnt=%lu %s sent=%d reply_ms=%lu\n", (unsigned long)fcnt, s, sent, (unsigned long)(reply_us / 1000));
+}
+#endif
+
 void setup() {
   Serial.begin(115200);
+#ifdef MT_NODE_S  // a sensor node runs without a USB host: wait for one 5 s at most
+  for (uint32_t t0 = millis(); !Serial && millis() - t0 < 5000;) delay(10);
+#else
   while (!Serial) delay(10);
+#endif
   delay(200);
   wolfSSL_SetAllocators(wb_malloc, wb_free, wb_realloc);
   wolfSSL_Init();
@@ -1082,7 +1119,9 @@ void setup() {
 #endif
 #ifdef MT_RADIO  // no Wi-Fi at all
   int rs = lora_begin();
-  if (rs) Serial.printf("#fatal LoRa radio: RadioLib error %d (the board seated? -2: no SX126x found; TCXO: MT_RADIO_TCXO_V)\n", rs);
+  if (rs) Serial.printf("#fatal LoRa radio: RadioLib error %d (%s)\n", rs, rs == RADIOLIB_ERR_CHIP_NOT_FOUND ?
+                        "no SX126x answered on SPI: the Pico seated in the board, USB end at its USB mark?" :
+                        "the SX126x answered; its TCXO voltage? MT_RADIO_TCXO_V");
 #else
   WiFi.mode(WIFI_STA);
   WiFi.noLowPowerMode();
@@ -1109,14 +1148,33 @@ void setup() {
     if (!air.begin(AIR_PORT)) Serial.println("#warn the air socket can't bind its port: no downlinks");
 #endif
     snprintf(topic, sizeof topic, "pqc/pipe/pico-%02x%02x%02x%02x", devaddr[0], devaddr[1], devaddr[2], devaddr[3]);
+#ifdef MT_NODE_S  // no blocks: loop() sends
+    for (int k = 0; k < LA_N; k++) if (!strcmp(LA[k].name, "lorawan11_256")) cur_aead = k;
+    down = false;
+    la_setup(cur_aead);
+    node_ok = kat_ok;
+    Serial.printf("#node every %d s: lorawan11_256 (FPort 1), the chip's temperature%s\n", MT_NODE_S,
+                  kat_ok ? "" : "; the known-answer checks failed: not sending");
+#else
     for (cur_block = first; cur_block < N_BLOCKS; cur_block++) {
       watchdog_hw->scratch[0] = cur_block; watchdog_hw->scratch[1] = RESUME_MAGIC; STEP(S_SETUP);
       memset(g_stk, STK_PAT, sizeof g_stk);
       run_on_stack(g_stk + sizeof g_stk, run_block);
     }
+#endif
     watchdog_hw->scratch[1] = 0;
   }
   Serial.println("=== done ===");
 }
 
+#ifdef MT_NODE_S
+void loop() {  // the sensor node: an uplink every MT_NODE_S s, the first at once
+  static uint32_t next;
+  rp2040.wdt_reset();
+  if (!node_ok || (int32_t)(millis() - next) < 0) { delay(100); return; }
+  next = millis() + MT_NODE_S * 1000u;
+  node_send();
+}
+#else
 void loop() { rp2040.wdt_reset(); delay(1000); }
+#endif
