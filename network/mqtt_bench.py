@@ -222,7 +222,10 @@ ACL_MTLS = ("user pqc-client\ntopic readwrite pqc/#\n"
             "user gateway\ntopic write +/gateway/+/event/#\ntopic write +/gateway/+/state/#\ntopic read +/gateway/+/command/#\n")
 ACL_TLS = "topic readwrite pqc/#\n"
 # the application's login (certs/<set>/passwd, chirpstack_pq_setup.sh): ChirpStack's events and the downlink commands only
-ACL_APP = "user application\ntopic read application/+/device/+/event/#\ntopic write application/+/device/+/command/#\n"
+# + homeassistant/#: Home Assistant (the application) creates its devices from ChirpStack's uplinks by MQTT discovery
+# there (network/homeassistant/pico.yaml), and sends its status there
+ACL_APP = ("user application\ntopic read application/+/device/+/event/#\ntopic write application/+/device/+/command/#\n"
+           "topic readwrite homeassistant/#\n")
 # BROKER_CRL=1: the mTLS listeners also check each client certificate against its CA's CRL (Mosquitto crlfile;
 # certs/<set>/ClientCA.crl from gen_certs.sh --client-crl), so a revoked device is refused at the handshake
 

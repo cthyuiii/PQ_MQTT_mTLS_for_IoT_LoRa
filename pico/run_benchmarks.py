@@ -205,6 +205,11 @@ def mqtt_secrets(sig, gen, lora=False):
                 if not (node.isdigit() and int(node) >= 10):
                     return "BAD_NODE_S: seconds between uplinks, 10 or more, e.g. 60"
                 out.append(f"#define MT_NODE_S {int(node)}")
+                dht = os.environ.get("DHT_PIN", "")  # a DHT22 on that GPIO: the reading's temperature and humidity
+                if dht:  # GP0-22 and 26-28 are on the header; the LoRa board has 2, 3, 10, 11, 12, 15, 20, 26 (battery)
+                    if not (dht.isdigit() and int(dht) in set(range(23)) - {2, 3, 10, 11, 12, 15, 20} | {27, 28}):
+                        return "BAD_DHT_PIN: a free GPIO (GP0-22, 27, 28, not the LoRa board's 2 3 10 11 12 15 20 26)"
+                    out.append(f"#define MT_DHT_PIN {int(dht)}")
     for name, b in blobs:
         out.append(f"static const unsigned char {name}[] = {{{','.join(map(str, b))}}};")
     os.makedirs(gen, exist_ok=True)
@@ -820,8 +825,9 @@ def main():
         if wifi:
             blocks = mqtt_blocks(txt)
             fatal = next((ln[7:] for ln in txt.splitlines() if ln.startswith("#fatal ")), None)
+            node = next((ln[1:] for ln in txt.splitlines() if ln.startswith("#node every")), None)  # NODE_S: no blocks
             errs = [b["err"] for b in blocks if b["err"]]
-            status = ("FAULT" if fault else fatal or ("NO_OUTPUT" if not blocks else
+            status = ("FAULT" if fault else fatal or node or ("NO_OUTPUT" if not blocks else
                       f"OK ({len(blocks)} MQTT blocks)" if not errs else f"{len(errs)}/{len(blocks)} blocks failed: {errs[0]}"))
             if blocks:
                 save_mqtt(blocks, txt, family, sig, build_fqbn)

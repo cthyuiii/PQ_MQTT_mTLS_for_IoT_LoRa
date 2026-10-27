@@ -1,70 +1,81 @@
-# the testbed's application: the Picos' readings from ChirpStack's uplink events, and the answer to each. Per device
-# (DevEUI ...0c11, ...0c12): the temperature (FPort 1 = lorawan11_256: ChirpStack has decrypted the reading; FPort 2,
-# the 256-bit layer inside, stays ciphertext here: the state keeps its last value), the uplink counter, and how the
-# uplink came: the gateway that heard it (0102030405060708 = the virtual gateway: Wi-Fi + UDP, its RSSI and SNR a
-# fixed -60 / 9.5; the radio gateway's own ID: over the air) and the radio's RSSI and SNR
-mqtt:
-  sensor:
-    - name: "Pico c11 temperature"
-      unique_id: pico_c11_temperature
-      state_topic: "application/+/device/0000000000000c11/event/up"
-      value_template: >-
-        {% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json).temp_c }}{% else %}{{ this.state }}{% endif %}
-      unit_of_measurement: "°C"
-      device_class: temperature
-      state_class: measurement
-    - name: "Pico c11 uplink counter"
-      unique_id: pico_c11_fcnt
-      state_topic: "application/+/device/0000000000000c11/event/up"
-      value_template: "{{ value_json.fCnt }}"
-    - name: "Pico c11 gateway"
-      unique_id: pico_c11_gateway
-      state_topic: "application/+/device/0000000000000c11/event/up"
-      value_template: "{{ value_json.rxInfo[0].gatewayId }}"
-    - name: "Pico c11 RSSI"
-      unique_id: pico_c11_rssi
-      state_topic: "application/+/device/0000000000000c11/event/up"
-      value_template: "{{ value_json.rxInfo[0].rssi }}"
-      unit_of_measurement: "dBm"
-      device_class: signal_strength
-      state_class: measurement
-    - name: "Pico c11 SNR"
-      unique_id: pico_c11_snr
-      state_topic: "application/+/device/0000000000000c11/event/up"
-      value_template: "{{ value_json.rxInfo[0].snr }}"
-      unit_of_measurement: "dB"
-      state_class: measurement
-    - name: "Pico c12 temperature"
-      unique_id: pico_c12_temperature
-      state_topic: "application/+/device/0000000000000c12/event/up"
-      value_template: >-
-        {% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json).temp_c }}{% else %}{{ this.state }}{% endif %}
-      unit_of_measurement: "°C"
-      device_class: temperature
-      state_class: measurement
-    - name: "Pico c12 uplink counter"
-      unique_id: pico_c12_fcnt
-      state_topic: "application/+/device/0000000000000c12/event/up"
-      value_template: "{{ value_json.fCnt }}"
-    - name: "Pico c12 gateway"
-      unique_id: pico_c12_gateway
-      state_topic: "application/+/device/0000000000000c12/event/up"
-      value_template: "{{ value_json.rxInfo[0].gatewayId }}"
-    - name: "Pico c12 RSSI"
-      unique_id: pico_c12_rssi
-      state_topic: "application/+/device/0000000000000c12/event/up"
-      value_template: "{{ value_json.rxInfo[0].rssi }}"
-      unit_of_measurement: "dBm"
-      device_class: signal_strength
-      state_class: measurement
-    - name: "Pico c12 SNR"
-      unique_id: pico_c12_snr
-      state_topic: "application/+/device/0000000000000c12/event/up"
-      value_template: "{{ value_json.rxInfo[0].snr }}"
-      unit_of_measurement: "dB"
-      state_class: measurement
-
+# The testbed's application, from ChirpStack's uplink events: each ChirpStack device as a Home Assistant device, and the
+# answer to each FPort 1 uplink.
+#
+# Devices: at every uplink, MQTT discovery (homeassistant/sensor/chirpstack_<DevEUI>/..., retained) for the device that
+# sent it, so a device added in ChirpStack's UI shows up here at its first uplink, named as there, with no restart and
+# nothing to add here (sent again at every uplink: the broker keeps retained messages only until it restarts). Its
+# sensors: Temperature and Humidity (FPort 1 = lorawan11_256: ChirpStack has decrypted the reading; each only for a
+# device whose reading has it: temp_c, rh; FPort 2, the 256-bit layer inside, stays ciphertext here: the last value
+# stays), Uplink counter, and how the uplink came: Gateway (0102030405060708 = the virtual gateway, Wi-Fi + UDP, its RSSI
+# and SNR a fixed -60 / 9.5; the radio gateway's own ID: over the air), RSSI, SNR. Needs the broker to let the
+# application's login use homeassistant/# (network/mqtt_bench.py ACL_APP).
 automation pico:
+  - alias: "ChirpStack devices into Home Assistant"
+    description: "MQTT discovery for each ChirpStack device as its uplinks come (network/homeassistant/pico.yaml)"
+    mode: queued
+    max: 100
+    triggers:
+      - trigger: mqtt
+        topic: "application/+/device/+/event/up"
+    variables:
+      up: "{{ trigger.payload_json }}"
+      eui: "{{ up.deviceInfo.devEui }}"
+      reading: >-
+        {{ up.data | base64_decode | from_json(default={}) if up.fPort == 1 and up.data is defined else {} }}
+      device:
+        identifiers: ["chirpstack_{{ eui }}"]
+        name: "{{ up.deviceInfo.deviceName }}"
+        model: "ChirpStack device, profile {{ up.deviceInfo.deviceProfileName }}"
+    actions:
+      - repeat:
+          for_each:
+            - key: temperature
+              field: temp_c
+              cfg:
+                name: Temperature
+                unit_of_measurement: "°C"
+                device_class: temperature
+                state_class: measurement
+                value_template: "{% raw %}{% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json(default={})).temp_c | default(this.state) }}{% else %}{{ this.state }}{% endif %}{% endraw %}"
+            - key: humidity
+              field: rh
+              cfg:
+                name: Humidity
+                unit_of_measurement: "%"
+                device_class: humidity
+                state_class: measurement
+                value_template: "{% raw %}{% if value_json.fPort == 1 %}{{ (value_json.data | base64_decode | from_json(default={})).rh | default(this.state) }}{% else %}{{ this.state }}{% endif %}{% endraw %}"
+            - key: fcnt
+              cfg:
+                name: Uplink counter
+                value_template: "{% raw %}{{ value_json.fCnt }}{% endraw %}"
+            - key: gateway
+              cfg:
+                name: Gateway
+                value_template: "{% raw %}{{ value_json.rxInfo[0].gatewayId }}{% endraw %}"
+            - key: rssi
+              cfg:
+                name: RSSI
+                unit_of_measurement: dBm
+                device_class: signal_strength
+                state_class: measurement
+                value_template: "{% raw %}{{ value_json.rxInfo[0].rssi }}{% endraw %}"
+            - key: snr
+              cfg:
+                name: SNR
+                unit_of_measurement: dB
+                state_class: measurement
+                value_template: "{% raw %}{{ value_json.rxInfo[0].snr }}{% endraw %}"
+          sequence:
+            - if: "{{ repeat.item.field is not defined or repeat.item.field in reading }}"
+              then:
+                - action: mqtt.publish
+                  data:
+                    topic: "homeassistant/sensor/chirpstack_{{ eui }}/{{ repeat.item.key }}/config"
+                    retain: true
+                    payload: >-
+                      {{ dict(repeat.item.cfg, unique_id="chirpstack_" ~ eui ~ "_" ~ repeat.item.key,
+                              state_topic=trigger.topic, device=device) | to_json }}
   - alias: "Answer each LoRaWAN uplink"
     description: "ack <FCnt> back to the device (FPort 1), as chirpstack_app.py --reply does"
     mode: parallel

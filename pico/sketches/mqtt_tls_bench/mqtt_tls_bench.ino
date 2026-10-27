@@ -69,6 +69,8 @@
 //   NODE_S=<s> (-> MT_NODE_S, with AIR): a sensor node for Home Assistant instead of the blocks: after setup, one
 //   lorawan11_256 uplink (FPort 1) every MT_NODE_S s with the chip's own temperature, indefinitely, FCnt reserved in
 //   flash as in the blocks; with REPLY_WAIT_MS the reply too. It starts without a USB host (waits 5 s at most).
+//   DHT_PIN=<GPIO> (-> MT_DHT_PIN): a DHT22 there instead: the room's temperature and humidity (rh), the chip's
+//   temperature again in an uplink whose reading failed.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -1031,13 +1033,46 @@ static bool ntp_ok() {  // certificate and CRL dates need the time: NTP before a
 // the sensor node's uplink: the chip's own temperature (analogReadTemp: the die, a few degrees above the room),
 // FCnt reserved in flash first as the pipeline does, then the application's reply in RX1 / RX2 (REPLY_WAIT_MS)
 static bool node_ok;  // setup: the radio and the known-answer checks fine, lorawan11_256 set up
+#ifdef MT_DHT_PIN
+static uint32_t dht_level(int pin, int level, uint32_t max_us) {  // how long the line stays at level; max_us + 1: too long
+  uint32_t t0 = micros();
+  while (digitalRead(pin) == level)
+    if (micros() - t0 > max_us) return max_us + 1;
+  return micros() - t0;
+}
+static bool dht22_read(int pin, float *t_c, float *rh) {  // the DHT22 (AM2302): 40 bits, checksum checked
+  uint8_t d[5] = {0};
+  pinMode(pin, OUTPUT); digitalWrite(pin, LOW); delay(2);  // the start: 1 ms low at least
+  noInterrupts();  // ~5 ms: the bits are pulse widths
+  pinMode(pin, INPUT_PULLUP);
+  bool ok = dht_level(pin, HIGH, 100) <= 100 && dht_level(pin, LOW, 100) <= 100 && dht_level(pin, HIGH, 100) <= 100;
+  for (int i = 0; ok && i < 40; i++) {
+    uint32_t lo = dht_level(pin, LOW, 100), hi = dht_level(pin, HIGH, 100);
+    ok = lo <= 100 && hi <= 100;
+    d[i / 8] = d[i / 8] << 1 | (hi > 48);  // high 26-28 us: 0, 70 us: 1
+  }
+  interrupts();
+  if (!ok || (uint8_t)(d[0] + d[1] + d[2] + d[3]) != d[4]) return false;
+  *rh = (d[0] << 8 | d[1]) / 10.0f;
+  int raw = (d[2] & 0x7F) << 8 | d[3];
+  *t_c = (d[2] & 0x80 ? -raw : raw) / 10.0f;
+  return true;
+}
+#endif
 static void node_send() {
   if (fcnt_persist && fcnt + 1 >= fcnt_reserved && !lora_save(fcnt + 1 + FCNT_GAP)) {
     Serial.println("#node flash write failed (LittleFS): not sending");
     return;
   }
   char s[48];
-  int sl = snprintf(s, sizeof s, "{\"seq\":%lu,\"temp_c\":%.1f}", (unsigned long)(fcnt + 1), analogReadTemp());
+  float t = analogReadTemp(), rh = 0;
+#ifdef MT_DHT_PIN
+  bool dht = dht22_read(MT_DHT_PIN, &t, &rh);
+#else
+  const bool dht = false;
+#endif
+  int sl = dht ? snprintf(s, sizeof s, "{\"seq\":%lu,\"temp_c\":%.1f,\"rh\":%.1f}", (unsigned long)(fcnt + 1), t, rh)
+               : snprintf(s, sizeof s, "{\"seq\":%lu,\"temp_c\":%.1f}", (unsigned long)(fcnt + 1), t);
   memset(pt, ' ', MT_PAYLOAD);
   memcpy(pt, s, sl < MT_PAYLOAD ? sl : MT_PAYLOAD);
   if (LA[cur_aead].seal(MT_PAYLOAD)) { Serial.println("#node seal failed"); return; }
@@ -1169,7 +1204,7 @@ void setup() {
 
 #ifdef MT_NODE_S
 void loop() {  // the sensor node: an uplink every MT_NODE_S s, the first at once
-  static uint32_t next;
+  static uint32_t next = 2000;  // 2 s after power-up at the earliest: a DHT22 answers only then
   rp2040.wdt_reset();
   if (!node_ok || (int32_t)(millis() - next) < 0) { delay(100); return; }
   next = millis() + MT_NODE_S * 1000u;

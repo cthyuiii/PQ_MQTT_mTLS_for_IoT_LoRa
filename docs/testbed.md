@@ -286,9 +286,9 @@ docker exec homeassistant tail -3 /config/configuration.yaml   # homeassistant: 
 docker restart homeassistant
 ```
 
-On the broker Pi, `scripts/broker.sh log` shows `user 'application'` from the PC, and `application -> refused (ACL):
-homeassistant/status`: Home Assistant's own status message, which the login may not send (harmless). Home Assistant
-reconnects by itself when the broker restarts.
+On the broker Pi, `scripts/broker.sh log` shows `user 'application'` from the PC; its login may use
+`homeassistant/#` too (Home Assistant's status and its devices' discovery: a broker from before this needs `git pull`
+and `scripts/broker.sh restart`). Home Assistant reconnects by itself when the broker restarts.
 
 `'NodeStrClass' object has no attribute 'get'` as it starts, and it stops: `homeassistant:` holds text, not
 `packages:` (seen: no space in `packages:!include_dir_named`, so YAML reads one string). By hand: `docker stop
@@ -296,13 +296,19 @@ homeassistant`, `docker cp homeassistant:/config/configuration.yaml .`, `notepad
 the two lines above), `docker cp configuration.yaml homeassistant:/config/configuration.yaml`, `docker start
 homeassistant`.
 
-The sensors, per device (`c11`, `c12`; Settings → Entities): **Pico c11 temperature**, **uplink counter**,
-**gateway**, **RSSI**, **SNR**. The temperature comes from FPort 1 frames (lorawan11_256: ChirpStack has decrypted the
-reading): 21.5 from the test blocks, the chip's own from a sensor node (step 9). FPort 2 frames (lorawan11_e2e) carry
-the 256-bit layer inside, which Home Assistant can't open: the counter moves, the temperature keeps its last value, and
-no answer goes back (the Pico's lorawan11_e2e block gets no replies). The gateway says how the uplink came:
-`0102030405060708` is the virtual gateway (Wi-Fi and UDP, RSSI and SNR a fixed -60 / 9.5), the radio gateway's own ID
-over the air. A humidity sensor from before (no sensor on the boards measures it) stays as unavailable: delete it there.
+The devices come by themselves: at every uplink the package's automation sends Home Assistant an MQTT discovery
+message for the device that sent it (`homeassistant/sensor/chirpstack_<DevEUI>/...`), so a device added in
+ChirpStack's UI shows up here at its first uplink, under its ChirpStack name (Settings → Devices & services →
+Devices), with no restart and nothing to edit. Its sensors: **Temperature** and **Humidity** (each only for a device
+whose reading has it: a Pico with a DHT22, step 9), **Uplink counter**, **Gateway**, **RSSI**, **SNR**. On the
+Overview once the device has an area (the device → its pencil → Area); a dashboard someone has edited adds nothing by
+itself: Edit dashboard → Add card → Entities. The readings come from FPort 1 frames (lorawan11_256: ChirpStack has
+decrypted them): 21.5 °C and 48 % from the test blocks (placeholders), the sensor's from a sensor node (step 9).
+FPort 2 frames (lorawan11_e2e) carry the 256-bit layer inside, which Home Assistant can't open: the counter moves,
+the readings keep their last value, and no answer goes back (the Pico's lorawan11_e2e block gets no replies). The
+gateway says how the uplink came: `0102030405060708` is the virtual gateway (Wi-Fi and UDP, RSSI and SNR a fixed -60
+/ 9.5), the radio gateway's own ID over the air. Devices from an older `pico.yaml` (Pico c11, Pico c12, their sensors
+unavailable): delete them there.
 
 ## 9. The Pico
 
@@ -336,7 +342,9 @@ the Pico's, with their `rssi` and `lsnr`), and Home Assistant's **gateway** sens
 **The Picos as Home Assistant's sensors.** `NODE_S=60` builds the same device without the test blocks: one
 lorawan11_256 uplink (FPort 1) every 60 s for good, with the chip's own temperature (the die: a few degrees above the
 room), FCnt kept in flash, the reply in RX1 / RX2. It waits 5 s at most for a USB host, so after flashing a USB charger
-does; the run ends at `#node every 60 s ...` and the board goes on. One board per device: the second Pico gets
+does; the run ends at `#node every 60 s ...` and the board goes on. `DHT_PIN=<GP number>`: a DHT22 on that pin
+gives the reading instead (the room's temperature and humidity; the chip's temperature in an uplink whose read failed):
+a free pin, e.g. GP22 (pin 29), not one of the LoRa board's (GP2, 3, 10, 11, 12, 15 = the radio's reset, 20, 26). One board per device: the second Pico gets
 `...0c12`, its keys made on the Mac next to the others (never printed) and pasted into ChirpStack's form one at a time.
 
 ```bash
@@ -351,8 +359,9 @@ d, k = json.load(open(p)), lambda: os.urandom(32).hex()
 d["devices"].setdefault("pico-c12-1.1-abp", {"profile": "as923-1.1-abp", "version": "1.1", "otaa": False,
     "dev_eui": "0000000000000c12", "dev_addr": "012345c2", "app_s_key": k(), "f_nwk_s_int_key": k(),
     "s_nwk_s_int_key": k(), "nwk_s_enc_key": k(), "e2e_key": k()})
-with open(os.open(p, os.O_WRONLY | os.O_TRUNC), "w") as f:
+with open(os.open(p + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
     json.dump(d, f, indent=1)
+os.replace(p + ".new", p)  # whole or not at all: the file holds every device's keys
 PY
 key() { python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c12-1.1-abp']['$1'], end='')" | pbcopy; }
 ```
@@ -364,7 +373,7 @@ pasted into the field of that name; frame counters 0; activate. `pbcopy < /dev/n
 
 ```bash
 eval "$(python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c12-1.1-abp']; print('export APP_KEYS='+d['app_s_key']+d['f_nwk_s_int_key']+d['s_nwk_s_int_key']+d['e2e_key'])")"
-export DEV_ADDR=012345c2
+export DEV_ADDR=012345c2 DHT_PIN=22   # DHT_PIN: the GP number of its DHT22's data wire
 python3 pico/run_benchmarks.py --board rp2350 --test mqtt --match 'chirpstack device' --tag node_c12   # Pico W: rp2040
 ```
 
