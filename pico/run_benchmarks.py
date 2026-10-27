@@ -164,7 +164,7 @@ def mqtt_secrets(sig, gen, lora=False):
     def der(f):  # PEM (certificate, CRL, key) -> DER
         body = "".join(ln for ln in open(os.path.join(d, f)).read().splitlines() if ln and not ln.startswith("-----"))
         return base64.b64decode(body)
-    out = [f"#define {k} {json.dumps(os.environ[k])}" for k in MQTT_ENV]  # a JSON string is a C string literal
+    out = [f"#define {k} {json.dumps(os.environ.get(k, ''))}" for k in MQTT_ENV]  # a JSON string is a C string literal
     out += [f"#define PORT_PLAIN {MQTT_BASE_PORT}", f"#define PORT_TLS {port_of(base, sig, 'TLS')}",
             f"#define PORT_MTLS {port_of(base, sig, 'mTLS')}"]
     blobs = [("CA_DER", der("CA.crt")), ("CRT_DER", der("client.crt")), ("KEY_DER", der("client.key"))]
@@ -186,12 +186,15 @@ def mqtt_secrets(sig, gen, lora=False):
         if not (re.fullmatch(r"[0-9a-fA-F]{256}", k) and re.fullmatch(r"[0-9a-fA-F]{8}", d)):
             return "NO_LORA_KEYS: export APP_KEYS (256 hex) and DEV_ADDR (8 hex), the device registered in ChirpStack"
         blobs += [("LORA_KEYS", bytes.fromhex(k)), ("LORA_DEVADDR", bytes.fromhex(d)[::-1])]
-        air = os.environ.get("AIR", "")  # host:port of virtual_gateway.py --air: the uplinks as UDP datagrams too
-        if air:
+        air = os.environ.get("AIR", "")  # host:port of virtual_gateway.py --air: the uplinks as UDP datagrams too;
+        if air == "radio":               # radio: over LoRa (the SX1262 board) to a real gateway instead
+            out.append("#define MT_RADIO")
+        elif air:
             host, _, port = air.rpartition(":")
             if not (host and port.isdigit()):
-                return "BAD_AIR: AIR=<gateway ip>:<port>, e.g. 192.168.50.132:1680"
+                return "BAD_AIR: AIR=<gateway ip>:<port>, e.g. 192.168.50.132:1680, or AIR=radio"
             out += [f"#define AIR_HOST {json.dumps(host)}", f"#define AIR_PORT {port}"]
+        if air:
             wait = os.environ.get("REPLY_WAIT_MS", "")  # the round trip: after each uplink, wait for the application's reply
             if wait:
                 if not wait.isdigit():
@@ -681,7 +684,8 @@ def main():
         if args.test and test_of(s) not in args.test.split(","):    continue
         if match and not any(m in norm(s["label"]) for m in match): continue
         if s["folder"] in skip:                      continue
-        missing = [k for k in MQTT_ENV if not os.environ.get(k)] if s["folder"] == "mqtt_tls_bench" else []
+        missing = [k for k in MQTT_ENV if not os.environ.get(k)  # AIR=radio: no Wi-Fi
+                   and not (k.startswith("WIFI") and os.environ.get("AIR") == "radio")] if s["folder"] == "mqtt_tls_bench" else []
         if s["boards"] and missing:  # exported in THIS shell; BROKER = the ./run_all.sh --serve-broker machine
             gated.append((s, "missing from the environment: " + ", ".join(missing))); continue
         if "-DMT_LORA_FIXED" in s.get("flags", "") and not (os.environ.get("APP_KEYS") and os.environ.get("DEV_ADDR")):

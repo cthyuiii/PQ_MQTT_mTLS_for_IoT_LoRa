@@ -1,6 +1,7 @@
 # The radio gateway: a Pi 5 with the SX1303 HAT
 
-How machine 1 (ChirpStack and the gateway, README "What runs") gets a real radio. **Not run on the hardware yet.**
+How the testbed's gateway Pi (`docs/testbed.md`) gets a real radio. The lab's gateway Pi already runs a packet
+forwarder (`lora-packet-forwarder.service`); steps 1-5 build one from scratch, **not run on the hardware by us**.
 Checked so far: Semtech's packet forwarder builds on arm64 Debian 12 and 13 (gcc 12 and 14), and reads the AS923
 configuration below.
 
@@ -93,13 +94,12 @@ sed -e 's|"com_type": "USB"|"com_type": "SPI"|' -e 's|"com_path": "/dev/ttyACM0"
     global_conf.json.sx1250.AS923.USB > global_conf.json
 ```
 
-## 6. ChirpStack: the setup on this Pi, and the gateway registered
+## 6. The Gateway Bridge on this Pi, and the gateway registered
 
-ChirpStack and the Gateway Bridge on this Pi 5: `docs/testbed.md` step 4 (the setup made on the Mac, which keeps the
-client CA's key; the images and the database copied over). The Bridge listens on 127.0.0.1:1700, where the
-configuration of step 5 above sends.
+The Gateway Bridge on this Pi, ChirpStack on the PC: `docs/testbed.md` steps 5 and 6 (the setup made on the Mac,
+which keeps the client CA's key). The Bridge listens on 127.0.0.1:1700, where the configuration of step 5 above sends.
 
-In ChirpStack's UI (`http://<this pi>:8080`): Gateways → Add gateway, with the gateway ID from step 4 above. Its
+In ChirpStack's UI (`http://<the PC>:8080`): Gateways → Add gateway, with the gateway ID from step 4 above. Its
 region comes from the MQTT topic (`as923/…`).
 
 ## 7. Run it
@@ -127,8 +127,36 @@ When it fails:
 Keep it running after a reboot with a systemd service (`WorkingDirectory=` the packet_forwarder folder, so it finds
 `reset_lgw.sh`).
 
-## Next: the device's radio
+## The Pico's radio
 
-The Pico W firmware sends its LoRaWAN frames over Wi-Fi to `virtual_gateway.py` today. For the radio it needs a driver
-for the SX1262 HAT that transmits the same frames on 923.2 / 923.4 MHz (AS923, LoRaWAN's public sync word: `0x3444` on
-the SX1262), and listens for the reply in RX1 / RX2. The frames themselves don't change.
+The Pico W firmware sends its LoRaWAN frames over Wi-Fi to `virtual_gateway.py`, and ChirpStack takes them
+(lorawan11_256, ABP, 32-byte keys: Pico run 7, 30 of 30). The radio changes only how the bytes travel: with `AIR=radio`
+(`pico/run_benchmarks.py`, `docs/testbed.md` step 9), RadioLib drives the Waveshare Pico-LoRa-SX1262 board (its
+silkscreen: Pico-LoRa-SX126X) as a plain LoRa radio, and the firmware keeps its own LoRaWAN code (`lora_aead.h`;
+RadioLib's LoRaWAN stack is AES-128). No Wi-Fi in that build. **Written and compiled for the Pico W and the Pico 2 W
+(27 Oct), not run on the radio yet.**
+
+- **The board,** as Waveshare's own demo sets it up: SPI1 on GP10 / 11 / 12, NSS GP3, DIO1 GP20, RESET GP15, BUSY
+  GP2, a 1.7 V TCXO on DIO3, the antenna switch on DIO2. RadioLib 7.8.1, once: `arduino-cli lib install RadioLib@7.8.1`.
+- **Uplink:** 923.2 MHz (AS923 channel 0) at SF12 BW125 (DR0), coding rate 4/5, preamble 8, sync word `0x34`
+  (RadioLib writes it as LoRaWAN's `0x3444` on the SX1262), CRC on, 14 dBm. Channel 0 and DR0 because the firmware's
+  1.1 uplink MIC (its B1 block) carries TxCh = 0 and TxDr = 0, what the virtual gateway reports; over the radio,
+  ChirpStack takes them from what the gateway heard, so the Pico must send exactly there.
+- **Downlink** (with `REPLY_WAIT_MS` set, any value): RX1 1 s after the uplink ends, on the same frequency at DR0
+  (ChirpStack's `rx1_delay=1`, `rx1_dr_offset=0`); RX2 2 s after it, 923.2 MHz at DR2 (SF10, `rx2_dr=2`). IQ inverted.
+  Each window opens 20 ms early (`MT_RX_EARLY_MS`) and listens 16 symbols for a frame to start.
+- **Time on air:** about 2.6 s for a lorawan11_256 frame (60 bytes), 2.8 s for lorawan11_e2e (64): its FRMPayload,
+  51 bytes with the 256-bit layer's tag, is DR0's AS923 maximum.
+- **The band:** the board's label doesn't say. The 915 MHz version covers 923 MHz; an 868 MHz one still reaches a
+  gateway across a desk, weaker (the forwarder's `rssi`).
+
+What to look for:
+
+- **The Pico's serial log:** `#radio sx1262 freq=923.2 sf=12 ...`, then the blocks as over Wi-Fi. `#fatal LoRa radio:
+  RadioLib error -2`: no SX126x answered (the board not seated on the Pico); another error at start: the TCXO voltage
+  (`-DMT_RADIO_TCXO_V=1.8`, or `0` for a crystal).
+- **The gateway Pi:** `journalctl -u lora-packet-forwarder` shows each uplink as a `JSON up` line with
+  `"freq":923.200000` and `"datr":"SF12BW125"`, and each reply as a `JSON down` line.
+- **The replies:** the Pico's `reply_us` column, as over Wi-Fi (`docs/testbed.md` step 10). An uplink in ChirpStack
+  but no reply on the Pico: the windows' timing (`MT_RX_EARLY_MS`) or the RX1 data rate (the `JSON down` line's
+  `datr`).

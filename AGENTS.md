@@ -2,7 +2,8 @@
 
 ChirpStack (LoRaWAN network server) with post-quantum TLS: TLS 1.3, X25519MLKEM768, ML-DSA-44 certificates on both
 sides, then AES-256 LoRaWAN session keys. What runs and how: `README.md`. Status: `docs/pending.md`. Results:
-`docs/findings.md`. The testbed (two Pis, Home Assistant as the application): `docs/testbed.md`.
+`docs/findings.md`. The testbed (a Windows PC and two Pis, Home Assistant as the application):
+`docs/testbed.md`.
 
 ## Layout
 

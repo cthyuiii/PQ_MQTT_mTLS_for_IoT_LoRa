@@ -62,6 +62,10 @@
 //   trip, the device waiting after each uplink for the application's reply (chirpstack_app.py --reply: a downlink
 //   reading "ack <FCnt>", in the uplink's scheme) that comes back through ChirpStack and the gateway, verified here
 //   (reply_us; its open: reply_open_cyc / reply_open256_cyc).
+//   AIR=radio (-> MT_RADIO): the same frames over LoRa instead, on the Waveshare Pico-LoRa-SX1262 (SX126X) board, to a
+//   real gateway: AS923 channel 0 at DR0, as the frames' 1.1 MIC assumes (docs/radio_gateway.md); with REPLY_WAIT_MS,
+//   the reply in RX1 / RX2. No Wi-Fi: the radio needs none, and on a Pico W it would disturb the reception. air_us is
+//   then the time on air.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -70,6 +74,9 @@
 #include <wolfssl/ssl.h>
 #include <hardware/structs/watchdog.h>  // scratch registers survive a watchdog reboot: which block hung
 #include "mt_secrets.h"
+#ifdef MT_RADIO
+#include <RadioLib.h>
+#endif
 static uint32_t la_mark;  // lorawan11_e2e: the cycle count between its two layers (lora_aead.h's LA_MARK)
 #define LA_MARK() (la_mark = rp2040.getCycleCount())
 #include "lora_aead.h"
@@ -151,7 +158,7 @@ static const Group GROUPS[] = {
   {"x448_mlkem768", WOLFSSL_X448MLKEM768},
   {"X25519", WOLFSSL_ECC_X25519}, {"secp256r1", WOLFSSL_ECC_SECP256R1}};
 enum { N_GROUPS = sizeof GROUPS / sizeof *GROUPS, G_STAGE2 = 3 };  // Stage 2 / pipeline: X25519MLKEM768
-#if defined(MT_LORA_FIXED) && defined(AIR_HOST)  // the ChirpStack device: no broker, its frames go over the air only
+#if defined(MT_LORA_FIXED) && (defined(AIR_HOST) || defined(MT_RADIO))  // the ChirpStack device: no broker, its frames go over the air only
 #define MT_AIR_ONLY
 static const char *const MODES[] = {"air"};
 constexpr int NM = 1, NC = 0;  // modes; connect blocks
@@ -437,7 +444,48 @@ static bool lora_load() {  // true: keys, DevAddr and FCnt (= the saved reservat
 #endif
 
 #ifdef MT_AIR_ONLY
+#ifdef MT_RADIO
+// the Waveshare Pico-LoRa-SX1262 board, as its own demo sets it up: SPI1 on GP10 / 11 / 12, NSS GP3, DIO1 GP20, RESET
+// GP15, BUSY GP2, a 1.7 V TCXO on DIO3 and the antenna switch on DIO2 (RadioLib's begin sets DIO2, CRC on, IQ normal)
+enum { R_SCK = 10, R_MOSI = 11, R_MISO = 12, R_NSS = 3, R_DIO1 = 20, R_RST = 15, R_BUSY = 2 };
+#ifndef MT_RADIO_TCXO_V
+#define MT_RADIO_TCXO_V 1.7f
+#endif
+#ifndef MT_RX_EARLY_MS
+#define MT_RX_EARLY_MS 20  // each RX window opens this early: the end of the uplink is read after it, not at it
+#endif
+static SX1262 lora = new Module(R_NSS, R_DIO1, R_RST, R_BUSY, SPI1);
+static uint32_t tx_end;  // millis() when the last uplink had left: the RX windows count from it
+static int lora_begin() {  // 0, or RadioLib's error
+  SPI1.setSCK(R_SCK); SPI1.setTX(R_MOSI); SPI1.setRX(R_MISO);
+  // AS923 channel 0 (923.2 MHz: the uplink, RX1 and RX2), DR0 = SF12 BW125, coding rate 4/5, LoRaWAN's public sync
+  // word (0x34: 0x3444 on the SX126x), 14 dBm, preamble 8
+  return lora.begin(923.2, 125.0, 12, 5, 0x34, 14, 8, MT_RADIO_TCXO_V);
+}
+static bool lora_send(const uint8_t *f, int n) {  // the uplink at DR0, IQ normal
+  bool ok = !lora.setSpreadingFactor(12) && !lora.invertIQ(false) && lora.transmit(f, n) == RADIOLIB_ERR_NONE;
+  tx_end = millis();
+  return ok;
+}
+// LoRaWAN class A: RX1 1 s after the uplink at its DR (ChirpStack's rx1_dr_offset 0: SF12), RX2 2 s after it at DR2
+// (SF10); downlinks come with IQ inverted. -> the frame's length, into buf; 0 if none came
+static int lora_rx(int win, uint8_t *buf, int cap) {
+  int sf = win ? 10 : 12;
+  if (lora.setSpreadingFactor(sf) || lora.invertIQ(true)) return 0;
+  for (uint32_t at = tx_end + 1000u * (win + 1) - MT_RX_EARLY_MS; (int32_t)(millis() - at) < 0;) rp2040.wdt_reset();
+  // the radio gives up after the early margin + 16 symbols unless a frame began by then, which it then receives to its
+  // end (the SX126x stops its timer at the sync word); the timeout in its 15.625 us steps
+  uint32_t ms = MT_RX_EARLY_MS + 16 * (1u << sf) / 125;
+  if (lora.startReceive(ms * 64)) return 0;
+  for (uint32_t t0 = millis(); !digitalRead(R_DIO1) && millis() - t0 < 4000;) rp2040.wdt_reset();
+  size_t n = lora.getIrqFlags() & RADIOLIB_SX126X_IRQ_RX_DONE ? lora.getPacketLength() : 0;
+  if (n > (size_t)cap || (n && lora.readData(buf, n) != RADIOLIB_ERR_NONE)) n = 0;  // a CRC error too
+  lora.standby();
+  return (int)n;
+}
+#else
 static WiFiUDP air;  // the uplink as a radio would send it: one datagram to the virtual gateway (and its downlinks back)
+#endif
 #define MSG_HDR "msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B,air_us,seal_cyc,open_cyc,reply_us,seal256_cyc,open256_cyc," \
                 "reply_open_cyc,reply_open256_cyc"
 // the air columns: the UDP send, seal / open in CPU cycles, the round trip, the 256-bit layer's own share of seal /
@@ -469,10 +517,15 @@ static uint32_t last_up;  // millis() of the last uplink sent
 static uint32_t await_reply(uint32_t t_sent, uint32_t up, uint32_t *cyc, uint32_t *cyc256) {
   char want[16];
   int wl = snprintf(want, sizeof want, "ack %lu", (unsigned long)up);
+#ifdef MT_RADIO
+  for (int win = 0; win < 2; win++) {  // the radio: RX1, then RX2, then no more (their timing, not MT_DOWN_WAIT_MS)
+    int n = lora_rx(win, frame, sizeof frame);
+#else
   while (micros() - t_sent < MT_DOWN_WAIT_MS * 1000u) {
     rp2040.wdt_reset();
     if (air.parsePacket() <= 0) continue;
     int n = air.read(frame, sizeof frame);
+#endif
     if (n != HDR + wl + (e2e ? 8 : 4) || frame[0] != 0x60 || (frame[5] & 0x0F)) continue;  // unconfirmed down, no FOpts, our size
     la_mark = 0;
     uint32_t c0 = rp2040.getCycleCount();
@@ -554,7 +607,11 @@ static const char *pipeline(Conn *c, int iter, int msgs, bool report, uint32_t t
     uint32_t air_us = 0;  // the uplink to the air, timed apart from seal / round trip / open: Wi-Fi UDP, not LoRa airtime
 #ifdef MT_AIR_ONLY
     uint32_t t4 = micros();
+#ifdef MT_RADIO
+    if (!down && lora_send(frame, fl)) air_us = micros() - t4;
+#else
     if (!down && air.beginPacket(AIR_HOST, AIR_PORT)) { air.write(frame, fl); air.endPacket(); air_us = micros() - t4; }
+#endif
 #ifdef MT_DOWN_WAIT_MS
     if (!down) { last_up = millis(); reply_us = await_reply(t4, fcnt, &reply_cyc, &reply256); }  // fcnt: this uplink's
 #endif
@@ -1023,23 +1080,32 @@ void setup() {
   for (int i = 0; i < 32; i++) k_e2e[i] = rp2040.hwrand32();
   for (int i = 0; i < 32; i++) { k_nwk[i] = rp2040.hwrand32(); k_nwk2[i] = rp2040.hwrand32(); }
 #endif
+#ifdef MT_RADIO  // no Wi-Fi at all
+  int rs = lora_begin();
+  if (rs) Serial.printf("#fatal LoRa radio: RadioLib error %d (the board seated? -2: no SX126x found; TCXO: MT_RADIO_TCXO_V)\n", rs);
+#else
   WiFi.mode(WIFI_STA);
   WiFi.noLowPowerMode();
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   for (uint32_t t0 = millis(); WiFi.status() != WL_CONNECTED && millis() - t0 < 30000;) delay(100);
   if (WiFi.status() != WL_CONNECTED) Serial.println("#fatal Wi-Fi: cannot join (2.4 GHz only; check WIFI_SSID / WIFI_PASS)");
   else if (!WiFi.hostByName(BROKER, broker)) Serial.println("#fatal cannot resolve broker " BROKER);
+#endif
 #ifdef MT_DEPLOY
   else if (!ntp_ok()) Serial.println("#fatal NTP: no time from " NTP_SERVER " (the deployment checks need it; set NTP_SERVER)");
 #endif
   else {
+#ifdef MT_RADIO
+    Serial.println("#radio sx1262 freq=923.2 sf=12 bw=125 cr=4/5 power_dbm=14 rx1=sf12 rx2=sf10");
+#else
     Serial.printf("#wifi rssi=%ld dBm channel=%d ip=%s broker=%s\n", (long)WiFi.RSSI(),
                   WiFi.channel(), WiFi.localIP().toString().c_str(), broker.toString().c_str());
+#endif
 #ifndef MT_LORA_FLASH
     for (int i = 0; i < 4; i++) devaddr[i] = rp2040.hwrand32();
 #endif
     rp2040.wdt_begin(8000);  // the RP2040's longest; reset per connection and inside every socket wait
-#ifdef MT_AIR_ONLY  // a fixed local port: the gateway sends downlinks back to where the uplinks came from
+#if defined(MT_AIR_ONLY) && !defined(MT_RADIO)  // a fixed local port: the gateway sends downlinks back to where the uplinks came from
     if (!air.begin(AIR_PORT)) Serial.println("#warn the air socket can't bind its port: no downlinks");
 #endif
     snprintf(topic, sizeof topic, "pqc/pipe/pico-%02x%02x%02x%02x", devaddr[0], devaddr[1], devaddr[2], devaddr[3]);
