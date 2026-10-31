@@ -1188,7 +1188,12 @@ void setup() {
     down = false;
     la_setup(cur_aead);
     node_ok = kat_ok;
-    Serial.printf("#node every %d s: lorawan11_256 (FPort 1), the chip's temperature%s\n", MT_NODE_S,
+#ifdef MT_DHT_PIN
+#define NODE_READING "the DHT22 on GP" STR(MT_DHT_PIN) "'s temperature and humidity"
+#else
+#define NODE_READING "the chip's temperature"
+#endif
+    Serial.printf("#node every %d s: lorawan11_256 (FPort 1), " NODE_READING "%s\n", MT_NODE_S,
                   kat_ok ? "" : "; the known-answer checks failed: not sending");
 #else
     for (cur_block = first; cur_block < N_BLOCKS; cur_block++) {
