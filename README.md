@@ -108,7 +108,8 @@ git -C network/chirpstack log --oneline -1     # the fork commit this branch bui
 │          benchmark suite on `testing/benchmarks`: parts describe files removed here)
 ├── scripts/
 │   ├── broker.sh               ← the broker machine: start / stop / restart / status / log, in the background
-│   │                             (log: results/broker.log)
+│   │                             (log: results/broker.log; results/broker_events.csv: a row per message and
+│   │                             per connection, on the broker's clock: the round trip's legs, handshake times)
 │   ├── app.sh                  ← the gateway's machine: the virtual gateway and the application (chirpstack_app.py,
 │   │                             its watcher and relay), start / stop / restart / status / log
 │   ├── chirpstack/Dockerfile   ← our ChirpStack image: UI (node 22) → server (rust 1.89) → debian-slim
@@ -116,7 +117,8 @@ git -C network/chirpstack log --oneline -1     # the fork commit this branch bui
 │   ├── chirpstack_pq_setup.sh  ← machine 1: ChirpStack's certificates and config (docker-compose.override.yml);
 │   │                             CHIRPSTACK_IMAGE= runs our image and points its integration at the broker;
 │   │                             GATEWAY_IMAGE= adds the Go 1.27 Gateway Bridge; it and ChirpStack's gateway
-│   │                             backend then use the broker too
+│   │                             backend then use the broker too; AES=128 | AES=256: one of two ChirpStacks
+│   │                             side by side (own share name, DevAddr prefix, UI port)
 │   ├── gen_certs.sh            ← CA, server and client certificates per signature → certs/<SIG>/;
 │   │                             --server-names: reissue a set's server.crt for the broker's address
 │   ├── setup_gateway_pi.sh     ← a gateway on its own Pi: the stock Gateway Bridge + a Mosquitto bridge (not used

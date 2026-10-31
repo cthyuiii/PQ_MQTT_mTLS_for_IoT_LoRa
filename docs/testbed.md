@@ -120,6 +120,7 @@ cd ~/PQ_MQTT_mTLS_for_IoT_LoRa
 # step 1's export, in this shell too
 scripts/broker.sh start          # as yourself, not sudo; expect "MLDSA44 :18835 / :18935  up"
 scripts/broker.sh log            # one line per connection and per message; Ctrl-C stops following, not the broker
+# results/broker_events.csv: the same as rows, on this Pi's clock, with the round trip's legs (step 10)
 E="MOSQUITTO=$MOSQUITTO OSSL=$OSSL LD_LIBRARY_PATH=$LD_LIBRARY_PATH OPENSSL_MODULES=$OPENSSL_MODULES"
 (crontab -l 2>/dev/null; echo "@reboot $E $PWD/scripts/broker.sh start") | crontab -   # at every boot
 ```
@@ -203,6 +204,47 @@ integration). Docker Desktop starts all three again when it starts (`restart: un
   -Profile Private`, with the router's network set to Private in Windows' network settings.
 - **Day to day,** in `chirpstack-docker-pc`: `docker compose restart chirpstack`, `docker compose logs -f chirpstack`,
   `docker compose stop`.
+
+## 5b. A second ChirpStack: AES-128, next to the AES-256 one
+
+Both run at once on the PC, on the same broker and gateway, each in its own folder (its own database and Redis), both
+as `chirpstack` on the broker. `AES=` gives each its own MQTT shared-subscription name (with one name the broker would
+split the gateway's uplinks and Home Assistant's commands between them), DevAddr prefix and UI port: AES-256
+`chirpstack-aes256`, 012345xx, :8080; AES-128 `chirpstack-aes128`, 012346xx, :8081. Each device is in one of them;
+the other drops its frames as an unknown device.
+
+```powershell
+# PC, repo root: the AES-128 image, from the fork before AES-256 (b4d894d1: PQ TLS only); tens of minutes
+git -C network/chirpstack worktree add --detach ../../build/chirpstack-aes128 b4d894d1
+docker build -f scripts/chirpstack/Dockerfile -t iot-pqc/chirpstack:4.19.2-pq-aes128 build/chirpstack-aes128
+```
+
+```bash
+# the Mac, repo root: the AES-128 folder, and the AES-256 one again for its share name and prefix (its database stays)
+git clone https://github.com/chirpstack/chirpstack-docker.git ~/chirpstack-docker-aes128
+AES=128 bash scripts/chirpstack_pq_setup.sh $PC $BRK:18835 ~/chirpstack-docker-aes128
+AES=256 bash scripts/chirpstack_pq_setup.sh $PC $BRK:18835 ~/chirpstack-docker-pc
+(umask 077; tar czf ~/cs-aes.tgz --exclude ca.key -C ~ chirpstack-docker-aes128 \
+  chirpstack-docker-pc/docker-compose.override.yml chirpstack-docker-pc/configuration/chirpstack-pq)
+```
+
+Copy `~/cs-aes.tgz` to the PC as in step 5, then:
+
+```powershell
+# PC: the AES-256 one on its new config; the AES-128 one fresh (its database's first start adds the extensions)
+cd ~; tar -xzf cs-aes.tgz; del cs-aes.tgz
+cd chirpstack-docker-pc; docker compose up -d --force-recreate chirpstack; cd ..
+cd chirpstack-docker-aes128
+docker compose up -d postgres; Start-Sleep 30
+docker compose up -d --remove-orphans postgres redis chirpstack
+docker compose logs --tail 20 chirpstack
+```
+
+In the AES-128 UI, `http://PC:8081` (admin / admin: change it first; the firewall rule of step 5 with 8081 added):
+the gateway with the same Gateway ID as in the other (ChirpStack drops an unknown gateway's uplinks), a device profile
+(AS923, LoRaWAN 1.1, ABP), and its devices with DevAddr 012346xx and 16-byte keys (32 hex digits). Home Assistant
+finds them as it finds the others. The radio firmware sends AES-256 frames only so far: an AES-128 device needs a
+build that sends `lorawan11` (pending).
 
 ## 6. The gateway Pi: the Gateway Bridge
 
@@ -313,7 +355,8 @@ unavailable): delete them there.
 ## 9. The Pico
 
 ```bash
-# the Mac, repo root, the Pico on USB: its keys from the provisioning file (exported, not printed)
+# the Mac, repo root, the Pico on USB: device ...0c11, ABP, AES-256; its keys from the provisioning file (exported,
+# not printed)
 eval "$(python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-1.1-abp']; print('export APP_KEYS='+d['app_s_key']+d['f_nwk_s_int_key']+d['s_nwk_s_int_key']+d['e2e_key'])")"
 export DEV_ADDR=012345c1 AIR=$GW:1680 REPLY_WAIT_MS=2000 BROKER=$BRK
 export WIFI_SSID='<the router, 2.4 GHz>'; read -rs WIFI_PASS; export WIFI_PASS
@@ -327,8 +370,8 @@ in that build, so no `WIFI_*`; `REPLY_WAIT_MS` (any value) opens RX1 and RX2 aft
 two boards with the same `DEV_ADDR` would each count their own FCnt, and ChirpStack refuses the lower one.
 
 ```bash
-# the Mac, repo root, the Pico on USB; RadioLib once: arduino-cli lib install RadioLib@7.8.1. APP_KEYS and DEV_ADDR
-# as above; BROKER only for the run's record (results/*_meta_*.json): the radio build connects to no broker
+# the Mac, repo root, the Pico on USB: ABP, AES-256; RadioLib once: arduino-cli lib install RadioLib@7.8.1.
+# APP_KEYS and DEV_ADDR as above; BROKER only for the run's record (results/*_meta_*.json): the radio build connects to no broker
 export AIR=radio REPLY_WAIT_MS=1 BROKER=$BRK
 python3 pico/run_benchmarks.py --board rp2040 --test mqtt --match 'chirpstack device' --tag testbed_radio1   # Pico 2 W: --board rp2350
 # gateway Pi: the Pico's frames as the radio heard them, and the replies sent
@@ -348,7 +391,7 @@ a free pin, e.g. GP22 (pin 29), not one of the LoRa board's (GP2, 3, 10, 11, 12,
 `...0c12`, its keys made on the Mac next to the others (never printed) and pasted into ChirpStack's form one at a time.
 
 ```bash
-# the Mac, repo root: the first Pico as a node (device ...0c11; APP_KEYS and DEV_ADDR as above)
+# the Mac, repo root: the first Pico as a node (device ...0c11: ABP, AES-256; APP_KEYS and DEV_ADDR as above)
 export AIR=radio REPLY_WAIT_MS=1 BROKER=$BRK NODE_S=60
 python3 pico/run_benchmarks.py --board rp2040 --test mqtt --match 'chirpstack device' --tag node_c11
 # the second device's keys, once (setdefault: a second run keeps them), then a function that puts one in the clipboard
@@ -373,8 +416,42 @@ pasted into the field of that name; frame counters 0; activate. `pbcopy < /dev/n
 
 ```bash
 eval "$(python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c12-1.1-abp']; print('export APP_KEYS='+d['app_s_key']+d['f_nwk_s_int_key']+d['s_nwk_s_int_key']+d['e2e_key'])")"
-export DEV_ADDR=012345c2 DHT_PIN=22   # DHT_PIN: the GP number of its DHT22's data wire
+export DEV_ADDR=012345c2 DHT_PIN=22   # device ...0c12: ABP, AES-256; DHT_PIN: the GP number of its DHT22's data wire
 python3 pico/run_benchmarks.py --board rp2350 --test mqtt --match 'chirpstack device' --tag node_c12   # Pico W: rp2040
+```
+
+**An AES-128 device, for the AES-128 ChirpStack (step 5b).** `AES=128` builds the same device with stock LoRaWAN
+1.1 (`lorawan11`, no `lorawan11_e2e`): ABP, three 16-byte keys, so `APP_KEYS` is 96 hex digits (AppSKey,
+FNwkSIntKey, SNwkSIntKey). The board prints `#device ABP (...), LoRaWAN 1.1, AES-128: lorawan11` at the start. Its
+DevAddr is in the AES-128 server's prefix (012346xx). A board flashed as this device stops being the one it was.
+
+```bash
+# the Mac, repo root: device ...0c13's keys, once (16 bytes each; setdefault: a second run keeps them)
+python3 - <<'PY'
+import json, os
+p = os.path.expanduser("~/.cache/iot-pqc/phase1/devices.json")
+d, k = json.load(open(p)), lambda: os.urandom(16).hex()
+d["devices"].setdefault("pico-c13-1.1-abp-aes128", {"profile": "as923-1.1-abp", "version": "1.1", "otaa": False,
+    "aes": 128, "dev_eui": "0000000000000c13", "dev_addr": "012346c3", "app_s_key": k(), "f_nwk_s_int_key": k(),
+    "s_nwk_s_int_key": k(), "nwk_s_enc_key": k()})
+with open(os.open(p + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+    json.dump(d, f, indent=1)
+os.replace(p + ".new", p)
+PY
+key() { python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c13-1.1-abp-aes128']['$1'], end='')" | pbcopy; }
+```
+
+In the AES-128 UI (`http://PC:8081`): a device profile `as923-1.1-abp` as the other server's (AS923, LoRaWAN 1.1.0,
+ABP: OTAA off), an application, then **Add device**: name `pico-c13`, Device EUI `0000000000000c13`, Join EUI
+`0000000000000000`; **Activation**: device address `012346c3` and the four keys with `key <name>` as for c12 (32 hex
+digits each), frame counters 0. `pbcopy < /dev/null` after. Then:
+
+```bash
+# the Mac, repo root: device ...0c13 as a node: ABP, AES-128, over the radio
+eval "$(python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c13-1.1-abp-aes128']; print('export APP_KEYS='+d['app_s_key']+d['f_nwk_s_int_key']+d['s_nwk_s_int_key'])")"
+export AES=128 DEV_ADDR=012346c3 AIR=radio REPLY_WAIT_MS=1 BROKER=$BRK NODE_S=60   # + DHT_PIN=22 with a DHT22
+python3 pico/run_benchmarks.py --board rp2040 --test mqtt --match 'chirpstack device' --tag node_c13   # Pico 2 W: rp2350
+unset AES   # the next build is AES-256 again
 ```
 
 ## 10. Did it work?
@@ -388,6 +465,14 @@ grep -c '^downlink' results/testbed/vgw.log              # 5. the answers back o
 # broker Pi, repo root: 4. the messages between them, e.g. "chirpstack -> application: application/.../event/up"
 # and "application -> chirpstack: application/.../command/down" (Home Assistant's answer)
 grep -- ' -> ' results/broker.log | grep -v 'new connection' | tail -6
+# broker Pi: the round trip's legs on its clock: chirpstack_up (gateway -> ChirpStack's event: an mTLS hop each way and
+# its 200 ms deduplication), application_reply (the event -> Home Assistant's command: a TLS hop each way),
+# chirpstack_down (-> the gateway's downlink command), gateway_tx_ack; and each listener's accept -> CONNECT
+python3 -c 'import collections, csv, statistics
+legs = collections.defaultdict(list)
+for r in csv.DictReader(open("results/broker_events.csv")):
+    if r["leg_ms"]: legs[r["leg"] + (" " + r["from_link"] if r["event"] == "connect" else "")].append(float(r["leg_ms"]))
+for k, v in legs.items(): print(f"{k:30} n={len(v):<5} median {statistics.median(v):8.1f} ms  max {max(v):8.1f} ms")'
 # the Mac: the Pico's replies in time, per uplink (lorawan11_256: all; lorawan11_e2e: none, step 8)
 awk -F, 'NR>1 && $6=="uplink" {n[$5]++; if ($18 > 0) r[$5]++} END {for (k in n) print k, r[k]+0 "/" n[k]}' \
   results/pipeline_msgs_raw_pico_rp2040_testbed_run1.csv
@@ -439,6 +524,13 @@ This layout (the PC, 27 Oct) has run only in part: nothing on Windows or Docker 
   "ack <FCnt>" on ChirpStack's command topic, 3.7 ms median (60 ms max) from event to command. After a broker
   restart it reconnected and kept answering. Without the restart after the integration, the automation stays
   unsubscribed (seen: hence the restart in step 8).
+- **Step 5b's setup and the broker's CSV** on the Mac only (31 Oct): `AES=128` and `AES=256` into copies of
+  chirpstack-docker give each region file and the integration its own `share_name`, `[network]` its
+  `dev_addr_prefixes`, and the UI port; the TOML parses, `docker compose config` takes both, and the Mac's AES-128
+  (PQ TLS) and AES-256 images start on them (up to the database, absent). The chain's broker on test ports, with
+  `mosquitto_pub` / `mosquitto_sub` as the gateway, ChirpStack (mTLS) and the application (TLS + login) sending the
+  round trip's five messages twice: 13 connections and 13 disconnections recorded, each leg matching the pauses
+  between them, accept -> CONNECT 4-9 ms. The images were not built on the PC, and nothing ran on the Pis.
 - **Step 5** on the Mac only (26 Oct): the setup into its own folder gives the same compose configuration as the
   running one (but for the project name), and the database dump restores into a fresh Postgres 14 with its 7 devices
   and frame counters.
