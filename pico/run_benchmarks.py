@@ -133,7 +133,8 @@ SKETCHES = [
                             ("ML-DSA-65", "MLDSA65", "MLDSA65"), ("ML-DSA-87", "MLDSA87", "MLDSA87"),
                             ("Falcon-512", "FALCON512", "FALCON512"), ("Falcon-1024", "FALCON1024", "FALCON1024"))],
     # one fixed LoRaWAN device for ChirpStack (branch LoRa_1.1_implementation, docs/pending.md step 7): APP_KEYS (256 hex)
-    # and DEV_ADDR from the environment, FCnt in flash (LittleFS), lorawan11_256 + lorawan11_e2e, few messages (the virtual
+    # and DEV_ADDR from the environment, FCnt in flash (LittleFS), ABP, lorawan11_256 + lorawan11_e2e (AES=128: lorawan11,
+    # APP_KEYS 96 hex, for the AES-128 ChirpStack), few messages (the virtual
     # gateway hands ChirpStack one frame a second). With AIR the device makes no broker connection (mode "air": seal,
     # open, send over the air), as in the chain mTLS starts at the gateway. Run it with its own --tag: not benchmark rows.
     S("mqtt_tls_bench", "MQTT ChirpStack device ML-DSA-44 (wolfSSL)", 600, BOTH, 0,
@@ -183,9 +184,18 @@ def mqtt_secrets(sig, gen, lora=False):
                   ("UPD_PUB", open(os.path.join(d, "update.pub"), "rb").read())]
     if lora:  # DEV_ADDR as ChirpStack shows it (big-endian) -> wire order; APP_KEYS = app 32 | nwk 32 | nwk2 32 | e2e 32
         k, d = os.environ.get("APP_KEYS", ""), os.environ.get("DEV_ADDR", "")
-        if not (re.fullmatch(r"[0-9a-fA-F]{256}", k) and re.fullmatch(r"[0-9a-fA-F]{8}", d)):
-            return "NO_LORA_KEYS: export APP_KEYS (256 hex) and DEV_ADDR (8 hex), the device registered in ChirpStack"
-        blobs += [("LORA_KEYS", bytes.fromhex(k)), ("LORA_DEVADDR", bytes.fromhex(d)[::-1])]
+        aes = os.environ.get("AES", "256")  # AES=128: the AES-128 ChirpStack's device, APP_KEYS = app 16 | nwk 16 | nwk2 16
+        if aes not in ("128", "256"):
+            return "BAD_AES: AES=128 or AES=256 (the default)"
+        n = 96 if aes == "128" else 256
+        if not (re.fullmatch(f"[0-9a-fA-F]{{{n}}}", k) and re.fullmatch(r"[0-9a-fA-F]{8}", d)):
+            return (f"NO_LORA_KEYS: export APP_KEYS ({n} hex for AES={aes}) and DEV_ADDR (8 hex), the device registered in "
+                    "ChirpStack")
+        keys = bytes.fromhex(k)
+        if aes == "128":  # each key in the first half of its 32-byte slot (lora_aead.h's AES-128 frames use those 16 bytes)
+            keys = b"".join(keys[i:i + 16] + bytes(16) for i in (0, 16, 32)) + bytes(32)
+            out.append("#define MT_AES128")
+        blobs += [("LORA_KEYS", keys), ("LORA_DEVADDR", bytes.fromhex(d)[::-1])]
         air = os.environ.get("AIR", "")  # host:port of virtual_gateway.py --air: the uplinks as UDP datagrams too;
         if air == "radio":               # radio: over LoRa (the SX1262 board) to a real gateway instead
             out.append("#define MT_RADIO")

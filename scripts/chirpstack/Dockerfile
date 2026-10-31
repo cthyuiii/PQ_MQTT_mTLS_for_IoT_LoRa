@@ -1,5 +1,8 @@
 # ChirpStack built from our fork (network/chirpstack), for the Mac's Docker (linux/arm64; a Pi 5 the same way):
 #   docker build -f scripts/chirpstack/Dockerfile -t iot-pqc/chirpstack:4.19.2-pq network/chirpstack
+# The AES-128 one (the fork before AES-256: PQ TLS only), from a worktree at that commit:
+#   git -C network/chirpstack worktree add --detach ../../build/chirpstack-aes128 b4d894d1
+#   docker build -f scripts/chirpstack/Dockerfile -t iot-pqc/chirpstack:4.19.2-pq-aes128 build/chirpstack-aes128
 # The stock image copies binaries cross-compiled outside Docker; this one builds the UI and the server inside it.
 # Same runtime as the stock image: /usr/bin/chirpstack as nobody, configured with -c <dir>.
 

@@ -53,7 +53,8 @@
 //   -DMT_LORA_FIXED (APP_KEYS, 256 hex, and DEV_ADDR in the environment: run_benchmarks.py writes them into mt_secrets.h):
 //   one fixed LoRaWAN device that a network server (ChirpStack) knows, instead of random keys and DevAddr per boot. Its
 //   FCnt is kept in flash as the deployment firmware's (reserved FCNT_GAP ahead), and the pipeline sends the frames
-//   our ChirpStack accepts: lorawan11_256 and lorawan11_e2e. Uplinks reach ChirpStack through network/virtual_gateway.py:
+//   our ChirpStack accepts: lorawan11_256 and lorawan11_e2e; with AES=128 (-> MT_AES128; APP_KEYS 96 hex, three 16-byte
+//   keys) lorawan11 only, for the AES-128 ChirpStack. ABP either way. Uplinks reach ChirpStack through network/virtual_gateway.py:
 //   with AIR=<host:port> in the environment each uplink also goes there as one UDP datagram (the "air", --air), after
 //   its message is timed; without it the gateway reads them from the broker (watch mode, RAW=1). With AIR the device
 //   makes no broker connection at all (MT_AIR_ONLY, mode "air"): it seals each reading, opens it again (its open cost)
@@ -67,7 +68,7 @@
 //   the reply in RX1 / RX2. No Wi-Fi: the radio needs none, and on a Pico W it would disturb the reception. air_us is
 //   then the time on air.
 //   NODE_S=<s> (-> MT_NODE_S, with AIR): a sensor node for Home Assistant instead of the blocks: after setup, one
-//   lorawan11_256 uplink (FPort 1) every MT_NODE_S s with the chip's own temperature, indefinitely, FCnt reserved in
+//   lorawan11_256 (AES=128: lorawan11) uplink (FPort 1) every MT_NODE_S s with the chip's own temperature, indefinitely, FCnt reserved in
 //   flash as in the blocks; with REPLY_WAIT_MS the reply too. It starts without a USB host (waits 5 s at most).
 //   DHT_PIN=<GPIO> (-> MT_DHT_PIN): a DHT22 there instead: the room's temperature and humidity (rh), the chip's
 //   temperature again in an uplink whose reading failed.
@@ -184,8 +185,20 @@ static const char *const REFUSE[] = {"wrong-name", "revoked", "expired"};
 // connect x NM modes, pipeline x NM modes x the PIPE schemes x up / down, then sweep x TLS / mTLS x every group
 // the pipeline's schemes (LA[] indices): LoRaWAN 1.1, with AES-128, with 256-bit keys, and around an AES-256 layer
 // (mqtt_bench.AEADS_DEFAULT); -DMT_ALL_SCHEMES: all eleven; -DMT_LORA_FIXED: the two a network server accepts
+// The fixed device's LoRaWAN (ABP: no join, DevAddr and session keys built in): AES-256, for our ChirpStack, or with
+// -DMT_AES128 (run_benchmarks.py AES=128) AES-128, for the fork at b4d894d1: lorawan11 with each key's first 16 bytes,
+// and no lorawan11_e2e (an AES-256 layer)
+#ifdef MT_AES128
+#define LORA_SCHEME "lorawan11"
+#define LORA_AES "AES-128"
+#else
+#define LORA_SCHEME "lorawan11_256"
+#define LORA_AES "AES-256"
+#endif
 #ifdef MT_ALL_SCHEMES
 static const int PIPE[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+#elif defined(MT_LORA_FIXED) && defined(MT_AES128)
+static const int PIPE[] = {2};  // lorawan11 (AES-128 LoRaWAN: what the AES-128 ChirpStack accepts)
 #elif defined(MT_LORA_FIXED)
 static const int PIPE[] = {4, 10};  // lorawan11_256, lorawan11_e2e (AES-256 LoRaWAN: what our ChirpStack accepts)
 #else
@@ -522,7 +535,7 @@ static const char *air_col(const uint32_t *) { return ""; }
 #endif
 static uint32_t last_up;  // millis() of the last uplink sent
 // the application's reply to uplink `up`: a LoRaWAN 1.1 downlink reading "ack <up>", back over the air, in the block's
-// scheme: lorawan11_256 (FPort 1), or lorawan11_e2e (FPort 2: the 256-bit layer inside, its blocks on `up`, lora_aead.h).
+// scheme: lorawan11_256 or lorawan11 (FPort 1), or lorawan11_e2e (FPort 2: the 256-bit layer inside, its blocks on `up`).
 // -> us from t_sent to the reply verified (MIC with SNwkSIntKey, decrypted with the AppSKey; then the tag and the
 // 256-bit layer), 0 if none in time; cyc / cyc256: its open in cycles, and the 256-bit layer's share.
 // ponytail: no AFCntDown check, so a replayed downlink isn't refused; add it when downlinks carry commands (the 256-bit
@@ -1032,7 +1045,7 @@ static bool ntp_ok() {  // certificate and CRL dates need the time: NTP before a
 #endif
 // the sensor node's uplink: the chip's own temperature (analogReadTemp: the die, a few degrees above the room),
 // FCnt reserved in flash first as the pipeline does, then the application's reply in RX1 / RX2 (REPLY_WAIT_MS)
-static bool node_ok;  // setup: the radio and the known-answer checks fine, lorawan11_256 set up
+static bool node_ok;  // setup: the radio and the known-answer checks fine, LORA_SCHEME set up
 #ifdef MT_DHT_PIN
 static uint32_t dht_level(int pin, int level, uint32_t max_us) {  // how long the line stays at level; max_us + 1: too long
   uint32_t t0 = micros();
@@ -1147,6 +1160,9 @@ void setup() {
   Serial.printf("#lora %s: devaddr=%02x%02x%02x%02x fcnt=%lu reserved=%lu%s\n", restored ? "restored from flash" : "new keys",
                 devaddr[0], devaddr[1], devaddr[2], devaddr[3], (unsigned long)fcnt, (unsigned long)fcnt_reserved,
                 !fs ? " (no flash filesystem: build with a LittleFS partition)" : saved ? "" : " (SAVE FAILED)");
+#ifdef MT_LORA_FIXED
+  Serial.println("#device ABP (no join: DevAddr and session keys built in), LoRaWAN 1.1, " LORA_AES ": " LORA_SCHEME);
+#endif
 #else
   for (int i = 0; i < 32; i++) k_app[i] = rp2040.hwrand32();
   for (int i = 0; i < 32; i++) k_e2e[i] = rp2040.hwrand32();
@@ -1184,7 +1200,7 @@ void setup() {
 #endif
     snprintf(topic, sizeof topic, "pqc/pipe/pico-%02x%02x%02x%02x", devaddr[0], devaddr[1], devaddr[2], devaddr[3]);
 #ifdef MT_NODE_S  // no blocks: loop() sends
-    for (int k = 0; k < LA_N; k++) if (!strcmp(LA[k].name, "lorawan11_256")) cur_aead = k;
+    for (int k = 0; k < LA_N; k++) if (!strcmp(LA[k].name, LORA_SCHEME)) cur_aead = k;
     down = false;
     la_setup(cur_aead);
     node_ok = kat_ok;
@@ -1193,7 +1209,7 @@ void setup() {
 #else
 #define NODE_READING "the chip's temperature"
 #endif
-    Serial.printf("#node every %d s: lorawan11_256 (FPort 1), " NODE_READING "%s\n", MT_NODE_S,
+    Serial.printf("#node every %d s: " LORA_SCHEME " (FPort 1), " NODE_READING "%s\n", MT_NODE_S,
                   kat_ok ? "" : "; the known-answer checks failed: not sending");
 #else
     for (cur_block = first; cur_block < N_BLOCKS; cur_block++) {

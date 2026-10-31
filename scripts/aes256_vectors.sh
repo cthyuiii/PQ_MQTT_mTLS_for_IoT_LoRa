@@ -4,15 +4,17 @@
 # depend on neither ChirpStack's lrwn nor our C code. The controls check openssl's AES-256 and AES-256-CMAC against
 # NIST's answers and its KDF against two plain CMACs (what a device computes); then it prints the vectors.
 #   bash scripts/aes256_vectors.sh            (OpenSSL 3.x; OSSL= points at another openssl)
+#   bash scripts/aes256_vectors.sh --open <PHYPayload, base64> [TxDr TxCh [ConfFCnt]]: a captured 1.1 uplink, opened with
+#     AES-256 and, for contrast, AES-128 on each key's first half (the keys in APPSKEY, FNWKSINTKEY, SNWKSINTKEY)
 set -euo pipefail
 OSSL=${OSSL:-openssl}
 
-aes() {    # aes <key> <blocks>: AES-256 encryption of each 16-byte block
-    echo "$2" | xxd -r -p | "$OSSL" enc -aes-256-ecb -K "$1" -nopad | xxd -p | tr -d '\n'; }
+aes() {    # aes <key> <blocks>: AES-256 encryption of each 16-byte block (BITS=128: AES-128, for --open's contrast)
+    echo "$2" | xxd -r -p | "$OSSL" enc -aes-"${BITS:-256}"-ecb -K "$1" -nopad | xxd -p | tr -d '\n'; }
 aes_d() {  # aes_d <key> <blocks>: AES-256 decryption of each block (how the join-accept is encrypted)
     echo "$2" | xxd -r -p | "$OSSL" enc -d -aes-256-ecb -K "$1" -nopad | xxd -p | tr -d '\n'; }
-cmac() {   # cmac <key> <data>: AES-256-CMAC
-    echo "$2" | xxd -r -p | "$OSSL" mac -cipher AES-256-CBC -macopt hexkey:"$1" CMAC | tr 'A-F' 'a-f'; }
+cmac() {   # cmac <key> <data>: AES-256-CMAC (BITS=128: AES-128-CMAC)
+    echo "$2" | xxd -r -p | "$OSSL" mac -cipher AES-"${BITS:-256}"-CBC -macopt hexkey:"$1" CMAC | tr 'A-F' 'a-f'; }
 # Session keys: the 16-byte block LoRaWAN derives each key from (key type | its fields | zero padding) goes into NIST
 # SP 800-108's KDF in counter mode with AES-256-CMAC, for 32 bytes: CMAC(root, 00000001 | block | 00 | 00000100) |
 # CMAC(root, 00000002 | block | 00 | 00000100), the block as the KDF's label, no context
@@ -66,6 +68,23 @@ check "AES-256-CMAC, 64 bytes (SP 800-38B ex. 12)" "$(cmac $K 6bc1bee22e409f96e9
 B=01010000130000010000000000000000
 check "KBKDF = two CMACs" "$(kdf $K $B)" "$(cmac $K 00000001${B}0000000100)$(cmac $K 00000002${B}0000000100)"
 [ $fail = 0 ] || { echo "a control failed: this openssl's AES-256, CMAC or KDF is wrong, so no vectors" >&2; exit 1; }
+
+if [ "${1:-}" = --open ]; then  # a captured 1.1 uplink (FCnt below 65,536; TxDr / TxCh default to the Pico's DR0, channel 0;
+    # ConfFCnt, the acknowledged downlink's counter, only for a frame with the ACK bit)
+    for k in APPSKEY FNWKSINTKEY SNWKSINTKEY; do
+        [[ ${!k:-} =~ ^[0-9a-fA-F]{64}$ ]] || { echo "export $k: the device's key, 64 hex" >&2; exit 1; }; done
+    f=$(echo "${2:?--open <PHYPayload, base64>}" | base64 -d | xxd -p | tr -d '\n'); dr=$(printf %02x "${3:-0}"); ch=$(printf %02x "${4:-0}")
+    da=${f:2:8}; fcnt=$(( 0x${f:14:2}${f:12:2} )); p=$(( 16 + 2 * (0x${f:10:2} & 15) ))  # FPort: after MHDR, DevAddr, FCtrl, FCnt, FOpts
+    msg=${f:0:${#f}-8}; mic=${f: -8}
+    echo "DevAddr ${da:6:2}${da:4:2}${da:2:2}${da:0:2}, FCnt $fcnt, FPort $(( 0x${f:p:2} )), the frame's MIC $mic"
+    for BITS in 256 128; do
+        n=$(( BITS / 4 ))
+        m=$(mic_up11 "${FNWKSINTKEY:0:n}" "${SNWKSINTKEY:0:n}" "$da" "$fcnt" "${5:-0}" "$dr" "$ch" "$msg")
+        pt=$(frm "${APPSKEY:0:n}" 00 "$da" "$fcnt" "${msg:p+2}" | xxd -r -p | LC_ALL=C tr -c '[:print:]' '.')
+        echo "AES-$BITS: MIC $m ($([ "$m" = "$mic" ] && echo matches || echo "doesn't match")), payload $pt"
+    done
+    exit 0
+fi
 
 show() { echo "$1"; shift; for kv in "$@"; do echo "  $kv"; done; echo; }
 P=$(printf '{"seq":1,"temp_c":21.5,"rh":48}' | xxd -p | tr -d '\n')   # the 31-byte reading

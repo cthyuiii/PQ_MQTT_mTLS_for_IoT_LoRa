@@ -51,6 +51,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -236,9 +237,10 @@ def start_brokers(args, tmp: Path, bind: str):
     common = ["per_listener_settings true", "log_dest stderr", "log_type error", "log_type warning",
               "log_type notice",  # notice: one line per connection, which follow_logs() shows on the broker machine
               "set_tcp_nodelay true"]  # no Nagle: a small CONNACK after the TLS 1.3 session tickets goes out at once
-    if args.role == "broker" and not bench_broker():
+    stamp = args.role == "broker" and not bench_broker()
+    if stamp:
         common.append("log_type debug")  # the chain's broker: every PUBLISH in and out, which follow_logs() shows
-        # (not the benchmark broker: a log line per packet is no part of what it times)
+        # (not the benchmark broker: a log line per packet is no part of what it times), each line timed (tee_log)
     procs, failed = [], {}
     acl = os.environ.get("BROKER_ACL", "") not in ("", "0")
     if acl:
@@ -260,12 +262,17 @@ def start_brokers(args, tmp: Path, bind: str):
         conf.write_text("\n".join(common + [f"listener {port} {bind}".rstrip()] + extra) + "\n")
         log = tmp / f"{name}.log"
         p = subprocess.Popen([args.mosquitto, "-c", str(conf)], env=env,
-                             stdout=subprocess.DEVNULL, stderr=log.open("w"))
+                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE if stamp else log.open("w"))
+        tee = threading.Thread(target=tee_log, args=(p, log), daemon=True) if stamp else None
+        if tee:
+            tee.start()
         if wait_port(bind or "127.0.0.1", port, p):
             procs.append(p)
             return None
         p.kill()
         p.wait()
+        if tee:
+            tee.join(2)  # its last lines in the log, for the reason below
         lines = [ln for ln in log.read_text().splitlines() if "rror" in ln] or log.read_text().splitlines()
         return "broker could not start listener: " + (re.sub(r"^\d+: ", "", lines[-1]) if lines else "unknown")
 
@@ -476,52 +483,135 @@ def print_publish(t, sender, topic, size, receivers):
     print(f"[broker {t}] {sender} -> {', '.join(dict.fromkeys(receivers)) or 'nobody'}: {topic} ({size} B)")
 
 
+def tee_log(p, log: Path):
+    """the chain's broker: Mosquitto's stderr into its log file, each line after the time it arrived (ns). Mosquitto's
+    own stamp is whole seconds; its stderr is unbuffered, so this is when it logged the line (follow_logs times by it)"""
+    with log.open("w") as f:
+        for ln in iter(p.stderr.readline, b""):
+            f.write(f"{time.time_ns()} {ln.decode(errors='replace')}")
+            f.flush()
+
+
+# a radio round trip as the broker sees it: each step and the step it is timed from
+CHAIN = {"app_up": ("gw_up", "chirpstack_up"), "app_down": ("app_up:{dev}", "application_reply"),
+         "gw_down": ("app_down", "chirpstack_down"), "gw_ack": ("gw_down", "gateway_tx_ack")}
+
+
+def chain_leg(topic: str, ns: int, last: dict) -> tuple:
+    """(leg, ms) of one step of a radio round trip, on the broker's clock, from the step before it: the gateway's uplink
+    -> ChirpStack's uplink event (chirpstack_up: an mTLS hop in, its deduplication wait, an mTLS hop out), the event ->
+    the application's downlink command (application_reply: Home Assistant, a TLS hop out and one back), the command ->
+    ChirpStack's downlink to the gateway (chirpstack_down), that -> the gateway's TX acknowledgement (gateway_tx_ack).
+    ("", "") for any other topic, or when the step before is missing or over 5 s old."""
+    p = topic.split("/")
+    if len(p) == 5 and p[1] == "gateway":  # <region>/gateway/<gateway id>/<event | command>/<type>
+        step, dev = {"event/up": "gw_up", "command/down": "gw_down", "event/ack": "gw_ack"}.get(f"{p[3]}/{p[4]}"), ""
+    elif len(p) == 6 and p[0] == "application":  # application/<application id>/device/<DevEUI>/<event | command>/<type>
+        step, dev = {"event/up": "app_up", "command/down": "app_down"}.get(f"{p[4]}/{p[5]}"), p[3]
+    else:
+        return "", ""
+    if not step:
+        return "", ""
+    # ponytail: matched by order (one gateway, each step to the latest step before it); two devices' round trips that
+    # overlap would cross their legs. Upgrade: match on FCnt, which is in the payload, not in the broker's log
+    before, leg = CHAIN.get(step, ("", ""))
+    t0 = last.get(before.format(dev=dev)) if before else None
+    last[f"app_up:{dev}" if step == "app_up" else step] = ns
+    return (leg, f"{(ns - t0) / 1e6:.1f}") if t0 and ns - t0 < 5e9 else ("", "")
+
+
+EVENT_COLS = ("time", "unix_ns", "event", "from", "from_link", "to", "to_link", "topic", "bytes", "broker_us", "leg",
+              "leg_ms")
+
+
 def follow_logs(tmp: Path, args):
     """--role broker: until Ctrl-C, one line per connection a broker accepts (its listener = certificate and TLS /
-    mTLS), the client certificate an mTLS client presented, and every error. Read from the brokers' log files."""
+    mTLS), the client certificate an mTLS client presented, and every error. Read from the brokers' log files.
+    --events-csv (the chain's broker): also a row per message routed and per connection, on the broker's clock
+    (tee_log): who sent it and over which listener, who got it, the broker's own time (broker_us), the round trip's
+    legs (chain_leg), and each connection's TCP accept -> MQTT CONNECT (its TLS or mTLS handshake, then CONNECT)."""
     label = {args.base_port: "plain MQTT"}
     for sig in args.sigs:
         label[port_of(args.base_port, sig)], label[port_of(args.base_port, sig, "TLS")] = f"{sig} mTLS", f"{sig} TLS"
-    conn = re.compile(r"New connection from (\S+):\d+ on port (\d+)")
-    client = re.compile(r"New client connected from (\S+):\d+ as (\S+) \(")
+    conn = re.compile(r"New connection from (\S+):(\d+) on port (\d+)")
+    client = re.compile(r"New client connected from (\S+):(\d+) as (\S+) \(")
+    gone = re.compile(r"Client (\S+) (?:\[\S+\] )?(?:disconnected|closed its connection)")
     # log_type debug (the chain's broker): a message in, then one line per subscriber it goes out to
     publish = re.compile(r"(Received|Sending|Denied) PUBLISH (?:from|to) (\S+) \(.*'(.*)', \.\.\. \((\d+) bytes\)\)$")
-    user = {}  # client id -> the certificate's name or the login
+    user, link = {}, {}  # client id -> the certificate's name or the login; client id -> its listener
+    accepted, last = {}, {}  # (IP, port) -> (ns, listener port) until its CONNECT; chain_leg's latest steps
     pos = {log: log.stat().st_size for log in tmp.glob("*.log")}  # from now on: startup is already reported
+    out = None
+    if args.events_csv:
+        new = not args.events_csv.exists() or args.events_csv.stat().st_size == 0
+        out = args.events_csv.open("a", newline="")
+        w = csv.writer(out)
+        if new:
+            w.writerow(EVENT_COLS)
+
+    def record(ns, event, sender, to=(), topic="", size="", broker_us="", leg=("", "")):
+        if not out:
+            return
+        names = list(dict.fromkeys(user.get(c, c) for c in to))
+        w.writerow([time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ns / 1e9)) + f".{ns // 1_000_000 % 1000:03d}",
+                    ns, event, user.get(sender, sender), link.get(sender, ""), ";".join(names),
+                    ";".join(dict.fromkeys(link.get(c, "") for c in to)), topic, size, broker_us, *leg])
+        out.flush()
+
+    def done(msg):  # [time, sender, topic, bytes, receivers, ns, sender id, [(receiver id, ns)]]
+        print_publish(*msg[:5])
+        sent = [n for _, n in msg[7]]
+        record(msg[5], "publish", msg[6], [c for c, _ in msg[7]], msg[2], msg[3],
+               f"{(max(sent) - msg[5]) / 1e3:.0f}" if sent else "", chain_leg(msg[2], msg[5], last))
+
+    def stamp(x):  # "<arrival ns> <Mosquitto's line>" (tee_log), or Mosquitto's own line: now
+        m = re.match(r"(\d{19}) (.*)", x.strip())
+        ns, ln = (int(m[1]), m[2]) if m else (time.time_ns(), x.strip())
+        return ns, re.sub(r"^\d+: ", "", ln)
+
     while True:
         for log in sorted(tmp.glob("*.log")):
             with log.open() as f:
                 f.seek(pos.get(log, 0))
                 lines, pos[log] = f.readlines(), f.tell()
-            msg = None  # [time, sender, topic, bytes, receivers]: printed once its "Sending" lines are read
-            for ln in (re.sub(r"^\d+: ", "", x.strip()) for x in lines):
-                t = time.strftime("%H:%M:%S")
+            msg = None  # printed and recorded once its "Sending" lines are read
+            for ns, ln in map(stamp, lines):
+                t = time.strftime("%H:%M:%S", time.localtime(ns / 1e9))
                 if m := publish.search(ln):
                     who = user.get(m[2], m[2])
                     if m[1] == "Denied":  # its write ACL
                         print(f"[broker {t}] {who} -> refused (ACL): {m[3]} ({m[4]} B)")
+                        record(ns, "refused", m[2], topic=m[3], size=m[4])
                     elif m[1] == "Received":
-                        if msg: print_publish(*msg)
-                        msg = [t, who, m[3], m[4], []]
+                        if msg: done(msg)
+                        msg = [t, who, m[3], m[4], [], ns, m[2], []]
                     elif msg and m[3] == msg[2]:
                         msg[4].append(who)
+                        msg[7].append((m[2], ns))
                     continue
                 if msg:
-                    print_publish(*msg)
+                    done(msg)
                     msg = None
                 if m := conn.search(ln):
-                    print(f"[broker {t}] {m[1]} -> :{m[2]} {label.get(int(m[2]), '?')}: new connection")
+                    accepted[m[1], m[2]] = ns, int(m[3])
+                    print(f"[broker {t}] {m[1]} -> :{m[3]} {label.get(int(m[3]), '?')}: new connection")
                 elif m := client.search(ln):
                     cert = re.search(r"u'([^']*)'", ln)
-                    if cert: user[m[2]] = cert[1]
-                    print(f"[broker {t}] {m[1]} MQTT CONNECT as {m[2]}"  # user: the certificate's name (mTLS), the login (TLS)
+                    if cert: user[m[3]] = cert[1]
+                    at, port = accepted.pop((m[1], m[2]), (None, None))
+                    link[m[3]] = label.get(port, "")
+                    print(f"[broker {t}] {m[1]} MQTT CONNECT as {m[3]}"  # user: the certificate's name (mTLS), the login (TLS)
                           + (f", user '{cert[1]}'" if cert else ""))
+                    record(ns, "connect", m[3], leg=("accept_to_connect", f"{(ns - at) / 1e6:.1f}") if at else ("", ""))
                 elif "unexpected eof while reading" in ln:  # a TLS client gone without close_notify
                     print(f"[broker {t}] {log.stem}: a TLS client disconnected without closing TLS (normal when a "
                           "stage's --watch subscribers are stopped; a Pico Wi-Fi stall looks the same)")
                 elif "rror" in ln or ("disconnected:" in ln and "closed by client" not in ln):
                     print(f"[broker {t}] {log.stem}: {ln}")  # failed handshakes, refused certificates, drops
-            if msg: print_publish(*msg)
+                if (m := gone.search(ln)) and m[1] in link:  # once (a drop can log two reasons), connected clients only
+                    record(ns, "disconnect", m[1])
+                    del link[m[1]]
+            if msg: done(msg)
         time.sleep(0.2)
 
 
@@ -708,6 +798,8 @@ def main():
                     "prints each message as received (decrypted with the shared keys); --role broker: print every "
                     "message the brokers route, from any client (no keys: a Pico's 'none' readings show as text)")
     ap.add_argument("--watch-log", type=Path, help="write the watchers' lines here instead of the terminal")
+    ap.add_argument("--events-csv", type=Path, help="--role broker (the chain's broker): append a row per message "
+                    "routed and per connection here, timed on the broker's clock (follow_logs)")
     ap.add_argument("--kex", nargs="?", const=",".join(KEX_KEMS), default="",
                     help="KEM exchange as MQTT messages through the broker (plain listener): comma list of liboqs "
                     "KEMs, X25519 or X25519MLKEM768 (the customer's TLS group), default " + ",".join(KEX_KEMS))

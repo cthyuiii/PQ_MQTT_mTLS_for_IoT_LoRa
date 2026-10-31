@@ -28,6 +28,13 @@
 #                           the MQTT broker as `gateway` (ML-DSA-44 mTLS; Go reads the key only in seed-only form), and
 #                           ChirpStack's gateway backend connects to that broker too: the gateway, ChirpStack and the
 #                           application all on the one PQ broker. The door and ChirpStack's own Mosquitto go unused.
+#   AES=128 | AES=256       one of two ChirpStacks running side by side on that broker and gateway, each in its own
+#                           folder (its own database and Redis), with both images above by default: AES=128 the fork
+#                           at b4d894d1 (PQ TLS, AES-128 LoRaWAN; scripts/chirpstack/Dockerfile), AES=256 the fork as
+#                           it is. Each gets its own MQTT shared-subscription name (with one name the broker would
+#                           split the gateway's uplinks and the application's commands between the two), DevAddr
+#                           prefix and UI port: AES=128 chirpstack-aes128, 012346xx, :8081; AES=256 chirpstack-aes256,
+#                           012345xx, :8080. Both use the `chirpstack` identity on the broker.
 # All of it is docker-compose.override.yml plus new files: the compose file and its configs stay untouched, and
 # `rm docker-compose.override.yml && docker compose up -d --remove-orphans` goes back. Existing certificates are kept
 # (the Pi has copies); the door's is remade if <mac-ip> isn't in it.
@@ -44,8 +51,14 @@ OSSL=${OSSL:-$(command -v brew >/dev/null && echo "$(brew --prefix openssl@3)/bi
 for f in CA.crt ClientCA.crt ClientCA.key; do
     [ -f "$APP_CERTS/$f" ] || { echo "no $APP_CERTS/$f (the MQTT broker's set, gen_certs.sh; the client CA key stays on this Mac)" >&2; exit 1; }
 done
-IMG=${CHIRPSTACK_IMAGE:-}
-GW=${GATEWAY_IMAGE:-}
+case ${AES:-} in  # SN: the shared-subscription name, PFX: the DevAddr prefix, UIP: the UI's port on this machine
+    128) SN=chirpstack-aes128 PFX=01234600/24 UIP=8081 ;;
+    256) SN=chirpstack-aes256 PFX=01234500/24 UIP=8080 ;;
+    "") SN="" PFX="" UIP="" ;;
+    *) echo "AES=128 or AES=256" >&2; exit 1 ;;
+esac
+IMG=${CHIRPSTACK_IMAGE:-${AES:+iot-pqc/chirpstack:4.19.2-pq-aes$AES}}
+GW=${GATEWAY_IMAGE:-${AES:+iot-pqc/gateway-bridge:4.1.2-go1.27}}
 [ -z "$GW" ] || [ -n "$IMG" ] ||
     { echo "GATEWAY_IMAGE needs CHIRPSTACK_IMAGE: the stock ChirpStack can't reach the MQTT broker (no ML-DSA)" >&2; exit 1; }
 if [ -n "$IMG" ]; then
@@ -196,18 +209,23 @@ GSRV=ssl://mosquitto:8884; GT=/tls; GN=chirpstack  # the gateway backend: on Chi
 [ -z "$GW" ] || { GSRV=ssl://$APP; GT=/pq; GN=client; }  # on the MQTT broker, as the integration (its /pq mount)
 for f in "$CS"/configuration/chirpstack/region_*.toml; do
     sed -e "s|server=\"tcp://\\\$MQTT_BROKER_HOST:1883\"|server=\"$GSRV\"|" -e "s|ca_cert=\"\"|ca_cert=\"$GT/ca.crt\"|" \
-        -e "s|tls_cert=\"\"|tls_cert=\"$GT/$GN.crt\"|" -e "s|tls_key=\"\"|tls_key=\"$GT/$GN.key\"|" "$f" > "$CC/${f##*/}"
-    [ "$(grep -c -E "server=\"$GSRV\"|\"$GT/(ca|$GN)\.(crt|key)\"" "$CC/${f##*/}")" = 4 ] ||
+        -e "s|tls_cert=\"\"|tls_cert=\"$GT/$GN.crt\"|" -e "s|tls_key=\"\"|tls_key=\"$GT/$GN.key\"|" "$f" |
+        awk -v sn="$SN" '{print} sn != "" && /^[[:space:]]*server="/ {print "        share_name=\"" sn "\""}' > "$CC/${f##*/}"
+    [ "$(grep -c -E "server=\"$GSRV\"|\"$GT/(ca|$GN)\.(crt|key)\"${SN:+|share_name=\"$SN\"}" "$CC/${f##*/}")" = $((${SN:+1}+4)) ] ||
         { echo "$f: no gateway backend server / ca_cert / tls_cert / tls_key lines to set" >&2; exit 1; }
 done
 T=$CC/chirpstack.toml
-awk -v d="$DD" -v s="$S" -v srv="$ISRV" -v tls="$ITLS" '/^[[:space:]]*\[/ {sec = $0; gsub(/[[:space:]]/, "", sec)}
-     sec == "[integration.mqtt]" && !m && /^[[:space:]]*server=/ {sub(/server=.*/, "server=\"" srv "\"\n" tls); m = 1}
+awk -v d="$DD" -v s="$S" -v srv="$ISRV" -v tls="$ITLS" -v sn="$SN" -v pfx="$PFX" '/^[[:space:]]*\[/ {sec = $0; gsub(/[[:space:]]/, "", sec)}
+     sec == "[integration.mqtt]" && !m && /^[[:space:]]*server=/ {
+         sub(/server=.*/, "server=\"" srv "\"\n" tls (sn != "" ? "\n    share_name=\"" sn "\"" : "")); m = 1}
      sec == "[api]" && !a && /^[[:space:]]*secret=/ {sub(/secret=.*/, "secret=\"" s "\""); a = 1}
-     /^[[:space:]]*get_downlink_data_delay=/ {next}
+     /^[[:space:]]*(get_downlink_data_delay|dev_addr_prefixes)=/ {next}
      {print}
-     /^[[:space:]]*\[network\][[:space:]]*$/ {print "  get_downlink_data_delay=\"" d "\""}' "$CS/configuration/chirpstack/chirpstack.toml" > "$T"
+     /^[[:space:]]*\[network\][[:space:]]*$/ {print "  get_downlink_data_delay=\"" d "\""
+         if (pfx != "") print "  dev_addr_prefixes=[\"" pfx "\"]"}' "$CS/configuration/chirpstack/chirpstack.toml" > "$T"
 grep -q "server=\"$ISRV\"" "$T" || { echo "no [integration.mqtt] server= line in chirpstack.toml" >&2; exit 1; }
+[ -z "$SN" ] || grep -q "share_name=\"$SN\"" "$T" || { echo "no share_name in chirpstack.toml" >&2; exit 1; }
+[ -z "$PFX" ] || grep -qF "dev_addr_prefixes=[\"$PFX\"]" "$T" || { echo "no dev_addr_prefixes in chirpstack.toml" >&2; exit 1; }
 grep -q "get_downlink_data_delay=\"$DD\"" "$T" || { echo "no [network] in chirpstack.toml" >&2; exit 1; }
 grep -q "secret=\"$S\"" "$T" || { echo "no [api] secret= line in chirpstack.toml" >&2; exit 1; }
 ! grep -r -q -E '^[[:space:]]*server="tcp://' "$CC" || { echo "a plain MQTT server is left in $CC" >&2; exit 1; }
@@ -241,7 +259,9 @@ EOF
       - ./configuration/gateway-bridge-pq/:/etc/chirpstack-gateway-bridge/:ro
       - ./configuration/pq/gw/:/pq/:ro"
 fi
-CSI=""; [ -z "$IMG" ] || CSI="    image: $IMG
+CSI=""; [ -z "$IMG" ] || CSI="    image: $IMG${UIP:+
+    ports: !override
+      - \"$UIP:8080\"}
     volumes: !override
       - ./configuration/pq/app/:/pq/:ro"  # the integration's ML-DSA-44 identity and the broker's CA
 # ChirpStack's Mosquitto and the door, while a hop still goes through them (no GATEWAY_IMAGE)
