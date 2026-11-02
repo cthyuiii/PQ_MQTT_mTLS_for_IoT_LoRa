@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import datetime
 import json
 import os
 import re
@@ -483,13 +484,33 @@ def print_publish(t, sender, topic, size, receivers):
     print(f"[broker {t}] {sender} -> {', '.join(dict.fromkeys(receivers)) or 'nobody'}: {topic} ({size} B)")
 
 
+LOG_LOCK = threading.Lock()  # tee_log writes under it, follow_logs reads and empties under it: no line lost
+LOG_KEEP_BYTES = 1 << 20  # a timed Mosquitto log already read is emptied past this (the chain's broker runs for weeks)
+
+
 def tee_log(p, log: Path):
     """the chain's broker: Mosquitto's stderr into its log file, each line after the time it arrived (ns). Mosquitto's
-    own stamp is whole seconds; its stderr is unbuffered, so this is when it logged the line (follow_logs times by it)"""
-    with log.open("w") as f:
+    own stamp is whole seconds; its stderr is unbuffered, so this is when it logged the line (follow_logs times by it).
+    Appended (O_APPEND), so follow_logs can empty the file under it"""
+    with log.open("a") as f:
         for ln in iter(p.stderr.readline, b""):
-            f.write(f"{time.time_ns()} {ln.decode(errors='replace')}")
-            f.flush()
+            with LOG_LOCK:
+                f.write(f"{time.time_ns()} {ln.decode(errors='replace')}")
+                f.flush()
+
+
+def rotate_daily(path: Path, day: str | None, keep_days: int, reopen=None):
+    """path -> <stem>-<day><suffix> (the day it holds), then reopen() makes the new one; dated copies older than
+    keep_days (today included) are deleted. day=None: only the deleting (at start)"""
+    if day and path.exists():
+        path.rename(path.with_name(f"{path.stem}-{day}{path.suffix}"))
+        if reopen:
+            reopen()
+    first = (datetime.date.today() if day is None else datetime.date.fromisoformat(day) + datetime.timedelta(1)) \
+        - datetime.timedelta(keep_days - 1)
+    for old in path.parent.glob(f"{path.stem}-????-??-??{path.suffix}"):
+        if old.stem[-10:] < first.isoformat():
+            old.unlink()
 
 
 # a radio round trip as the broker sees it: each step and the step it is timed from
@@ -541,13 +562,29 @@ def follow_logs(tmp: Path, args):
     user, link = {}, {}  # client id -> the certificate's name or the login; client id -> its listener
     accepted, last = {}, {}  # (IP, port) -> (ns, listener port) until its CONNECT; chain_leg's latest steps
     pos = {log: log.stat().st_size for log in tmp.glob("*.log")}  # from now on: startup is already reported
-    out = None
-    if args.events_csv:
+    stamped = not bench_broker()  # tee_log's logs (the chain's broker), which can be emptied once read
+
+    def open_csv():
         new = not args.events_csv.exists() or args.events_csv.stat().st_size == 0
-        out = args.events_csv.open("a", newline="")
-        w = csv.writer(out)
+        f = args.events_csv.open("a", newline="")
         if new:
-            w.writerow(EVENT_COLS)
+            csv.writer(f).writerow(EVENT_COLS)
+            f.flush()
+        return f, csv.writer(f)
+
+    def reopen_log():  # this process's stdout and stderr (the shell's redirect) onto a new file at the same path
+        sys.stdout.flush()
+        sys.stderr.flush()
+        fd = os.open(args.log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        os.dup2(fd, 1)
+        os.dup2(fd, 2)
+        os.close(fd)
+
+    out, w = open_csv() if args.events_csv else (None, None)
+    day = time.strftime("%F")
+    for f in (args.events_csv, args.log_file) if args.keep_days else ():
+        if f:
+            rotate_daily(f, None, args.keep_days)
 
     def record(ns, event, sender, to=(), topic="", size="", broker_us="", leg=("", "")):
         if not out:
@@ -570,10 +607,22 @@ def follow_logs(tmp: Path, args):
         return ns, re.sub(r"^\d+: ", "", ln)
 
     while True:
+        if args.keep_days and (now := time.strftime("%F")) != day:  # midnight: the day's CSV and log get its date
+            if out:
+                out.close()
+                rotate_daily(args.events_csv, day, args.keep_days)
+                out, w = open_csv()
+            if args.log_file:
+                rotate_daily(args.log_file, day, args.keep_days, reopen_log)
+            day = now
         for log in sorted(tmp.glob("*.log")):
-            with log.open() as f:
-                f.seek(pos.get(log, 0))
-                lines, pos[log] = f.readlines(), f.tell()
+            with LOG_LOCK:
+                with log.open() as f:
+                    f.seek(pos.get(log, 0))
+                    lines, pos[log] = f.readlines(), f.tell()
+                if stamped and pos[log] > LOG_KEEP_BYTES:  # read already: what matters is in the CSV and our log
+                    log.write_bytes(b"")
+                    pos[log] = 0
             msg = None  # printed and recorded once its "Sending" lines are read
             for ns, ln in map(stamp, lines):
                 t = time.strftime("%H:%M:%S", time.localtime(ns / 1e9))
@@ -800,6 +849,10 @@ def main():
     ap.add_argument("--watch-log", type=Path, help="write the watchers' lines here instead of the terminal")
     ap.add_argument("--events-csv", type=Path, help="--role broker (the chain's broker): append a row per message "
                     "routed and per connection here, timed on the broker's clock (follow_logs)")
+    ap.add_argument("--log-file", type=Path, help="--role broker: the file this process's output is redirected to, "
+                    "so --keep-days can rotate it")
+    ap.add_argument("--keep-days", type=int, default=0, help="--role broker: at midnight --events-csv and --log-file "
+                    "become <name>-<date>, and dated copies older than this many days (today included) are deleted")
     ap.add_argument("--kex", nargs="?", const=",".join(KEX_KEMS), default="",
                     help="KEM exchange as MQTT messages through the broker (plain listener): comma list of liboqs "
                     "KEMs, X25519 or X25519MLKEM768 (the customer's TLS group), default " + ",".join(KEX_KEMS))

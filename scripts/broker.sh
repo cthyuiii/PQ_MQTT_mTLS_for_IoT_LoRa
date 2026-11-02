@@ -10,6 +10,8 @@
 # receivers, topic, bytes, the broker's own time) with the radio round trip's legs (gateway -> ChirpStack's event,
 # -> the application's reply, -> ChirpStack's downlink, -> the gateway's TX ack), and a row per connection with its
 # TCP accept -> MQTT CONNECT time (the mTLS or TLS handshake, then CONNECT), all on this machine's clock.
+# Kept KEEP_DAYS days (3: today and the two before): at midnight both become <name>-<date> (broker-2026-11-02.log,
+# broker_events-2026-11-02.csv) and older ones are deleted; Mosquitto's own log, in its temp folder, is emptied once read.
 # Needs certs/MLDSA44 (README: rsync from the Mac) and a Mosquitto on OpenSSL 3.5+ (MOSQUITTO=<path> to pick one).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,10 +21,12 @@ case "${1:-}" in
     start)
         running && { echo "already running (pid $(cat $PID))"; exit 0; }
         mkdir -p results
-        # setsid (Linux): its own session, so closing the SSH terminal that started it doesn't stop it
+        # setsid (Linux): its own session, so closing the SSH terminal that started it doesn't stop it. --log-file: the
+        # log's name only (renamed at midnight), not read
+        # shellcheck disable=SC2094
         $(command -v setsid || true) nohup python3 network/mqtt_bench.py --role broker \
             --mosquitto "${MOSQUITTO:-$(command -v mosquitto || echo /usr/sbin/mosquitto)}" --sigs MLDSA44 \
-            --events-csv results/broker_events.csv > $LOG 2>&1 < /dev/null &
+            --events-csv results/broker_events.csv --log-file $LOG --keep-days "${KEEP_DAYS:-3}" > $LOG 2>&1 < /dev/null &
         echo $! > $PID
         sleep 3
         # a listener that didn't open (a missing certificate, a file Mosquitto can't read: run it as yourself, not
