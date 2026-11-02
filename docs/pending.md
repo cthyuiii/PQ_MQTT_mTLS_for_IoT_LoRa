@@ -90,7 +90,9 @@ broker (`./run_all.sh --serve-broker`, :18835). **Device** = the Pico W.
     (`results/broker_events.csv`, step 10): done, checked on the Mac only. The AES-128 device ...0c13 is the lab's
     STM32WL (2 Nov; testbed step 9): `stm32/lorawan_node`, no sensors, an uplink a minute and Home Assistant's answer,
     both printed; ABP, LoRaWAN 1.0.3 (ST's stack, through STM32duinoLoRaWAN 0.5.1; it has no 1.1), two 16-byte keys
-    built in by `stm32/run_node.sh`. Compiles for the RAK3172, RAK3172T and Nucleo-WL55JC1; not flashed. So the
+    built in by `stm32/run_node.sh`; the board: the LM402CCH-Pro-Kit (`BOARD=lm402`, its radio pins from i2SOM's
+    wiki). Compiles for it, the RAK3172, RAK3172T and Nucleo-WL55JC1; not flashed yet (the kit's SWD: connect under
+    reset, untried). So the
     AES-128 side differs from the AES-256 Pico in LoRaWAN version, data rate (DR2 under AS923's dwell limit, unless
     lifted) and chip; the broker's legs compare, the device's AES cost doesn't. The AES-128 Pico build (`AES=128`,
     `lorawan11`, 1.1) compiles for the Pico W and Pico 2 W, for a same-board comparison. Left: the runs, each flash

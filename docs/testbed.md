@@ -120,7 +120,8 @@ cd ~/PQ_MQTT_mTLS_for_IoT_LoRa
 # step 1's export, in this shell too
 scripts/broker.sh start          # as yourself, not sudo; expect "MLDSA44 :18835 / :18935  up"
 scripts/broker.sh log            # one line per connection and per message; Ctrl-C stops following, not the broker
-# results/broker_events.csv: the same as rows, on this Pi's clock, with the round trip's legs (step 10)
+# results/broker_events.csv: the same as rows, on this Pi's clock, with the round trip's legs (step 10). Both kept 3
+# days (KEEP_DAYS=<n> before start to change it): at midnight broker-<date>.log, broker_events-<date>.csv, older deleted
 E="MOSQUITTO=$MOSQUITTO OSSL=$OSSL LD_LIBRARY_PATH=$LD_LIBRARY_PATH OPENSSL_MODULES=$OPENSSL_MODULES"
 (crontab -l 2>/dev/null; echo "@reboot $E $PWD/scripts/broker.sh start") | crontab -   # at every boot
 ```
@@ -419,9 +420,10 @@ export DEV_ADDR=012345c2 DHT_PIN=22   # device ...0c12: ABP, AES-256; DHT_PIN: t
 python3 pico/run_benchmarks.py --board rp2350 --test mqtt --match 'chirpstack device' --tag node_c12   # Pico W: rp2040
 ```
 
-**An AES-128 device, for the AES-128 ChirpStack (step 5b): the lab's STM32WL.** Device ...0c13 is an STM32WL (the
-RAK3172 module) running `stm32/lorawan_node`: no sensors, an uplink every 60 s on FPort 1 and Home Assistant's answer
-back, both printed on its UART. It runs ST's LoRaWAN stack as STM32duino's STM32LoRaWAN library has it: stock AES-128,
+**An AES-128 device, for the AES-128 ChirpStack (step 5b): the lab's STM32WL.** Device ...0c13 is the lab's
+LM402CCH-Pro-Kit (i2SOM / Yizhilian: an STM32WLE5CC module, 865-928 MHz, and an ST-Link on the board) running
+`stm32/lorawan_node`: no sensors, an uplink every 60 s on FPort 1 and Home Assistant's answer back, both printed on
+its serial port. It runs ST's LoRaWAN stack as STM32duino's STM32LoRaWAN library has it: stock AES-128,
 **ABP, LoRaWAN 1.0.3** (ST's stack has no 1.1), so two 16-byte session keys (NwkSKey, AppSKey). Its DevAddr is in the
 AES-128 server's prefix (012346xx). (The Pico builds as an AES-128 LoRaWAN 1.1 device too, for a comparison on the
 same board: `AES=128`, `lorawan11`, `APP_KEYS` = AppSKey + FNwkSIntKey + SNwkSIntKey, 96 hex digits.)
@@ -454,16 +456,25 @@ U=https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectr
 arduino-cli core update-index --additional-urls $U
 arduino-cli core install STMicroelectronics:stm32@3.0.0 --additional-urls $U
 arduino-cli lib install STM32duinoLoRaWAN@0.5.1
-# the Mac, repo root: device ...0c13 (ABP, AES-128, LoRaWAN 1.0.3) over the radio. The STM32 on an ST-Link (SWD), its
-# UART2 (PA2 TX, PA3 RX) on a USB-UART; PORT: that one (arduino-cli board list). Builds with the keys (not printed),
-# flashes, then follows its log (results/stm32_stm32-c13-abp-aes128.log); Ctrl-C stops following, not the device
-PORT=/dev/cu.usbserial-XXXX stm32/run_node.sh
+# the Mac, repo root: device ...0c13 (ABP, AES-128, LoRaWAN 1.0.3) over the radio. The kit on USB: its ST-Link
+# flashes it and carries its serial port (PORT: /dev/cu.usbmodem<n>, arduino-cli board list). Builds with the keys (not
+# printed), flashes, then follows its log (results/stm32_stm32-c13-abp-aes128.log); Ctrl-C stops following only
+PORT=/dev/cu.usbmodem1103 stm32/run_node.sh
 ```
 
 Each uplink prints `#up <n> FCnt <f> DR<d>: <ms> ms` (the send to the end of its receive windows), then
 `#down <n> FCntDown <f> port 1 RSSI <r> SNR <s>: ack <f>` (Home Assistant's answer to that FCnt: the device got it) or
-`#down <n> none`, and `#count up <u> down <d>`. No ST-Link: `UPLOAD=serialMethod` with BOOT0 high, which needs
-STM32CubeProgrammer (the script's header). `#dr DR0 refused (AS923's dwell limit): DR2` at start is ST's AS923 default (the 400 ms dwell limit): it
+`#down <n> none`, and `#count up <u> down <d>`.
+
+- **The kit, before the first flash:** the antenna on; SW3 on (the module's power); J1's jumpers on 5-6, 7-8 and 9-10
+  (the ST-Link's SWDIO, SWCLK and NRST to the module) and 11-12, 13-14 (its serial port to PA2 / PA3).
+- **The flash** holds NRST while OpenOCD attaches (connect under reset): the kit's factory firmware sleeps or turns
+  SWD off, and "unable to connect to the target" is what that looks like otherwise.
+- **The radio, `BOARD=lm402` (the default):** the generic STM32WLE5CC with the module's radio switch, FE_CTRL1-3 on
+  PB0, PA15, PA8 (RX 1 0 0, TX 0 0 1, i2SOM's LM40x wiki), the crystal (PB0 is a switch line, so no TCXO supply),
+  TX on RFO_HP, the LDO. Another board: its FQBN in `BOARD`, e.g. `STMicroelectronics:stm32:LoRa:pnum=RAK3172_MODULE`.
+
+`#dr DR0 refused (AS923's dwell limit): DR2` at start is ST's AS923 default (the 400 ms dwell limit): it
 sends at DR2 (SF10), the Picos at DR0 (SF12); `AS923_DEFAULT_UPLINK_DWELL_TIME` 0 in the library's `RegionAS923.h`
 lifts it, where the local rules allow. Home Assistant shows its uplink counter, RSSI and SNR (no sensors, no
 temperature). Its frame counter starts at 0 at every reset (the library keeps none), so after one, ChirpStack drops
@@ -483,9 +494,9 @@ grep -- ' -> ' results/broker.log | grep -v 'new connection' | tail -6
 # broker Pi: the round trip's legs on its clock: chirpstack_up (gateway -> ChirpStack's event: an mTLS hop each way and
 # its 200 ms deduplication), application_reply (the event -> Home Assistant's command: a TLS hop each way),
 # chirpstack_down (-> the gateway's downlink command), gateway_tx_ack; and each listener's accept -> CONNECT
-python3 -c 'import collections, csv, statistics
+python3 -c 'import collections, csv, glob, statistics
 legs = collections.defaultdict(list)
-for r in csv.DictReader(open("results/broker_events.csv")):
+for r in (r for f in sorted(glob.glob("results/broker_events*.csv")) for r in csv.DictReader(open(f))):
     if r["leg_ms"]: legs[r["leg"] + (" " + r["from_link"] if r["event"] == "connect" else "")].append(float(r["leg_ms"]))
 for k, v in legs.items(): print(f"{k:30} n={len(v):<5} median {statistics.median(v):8.1f} ms  max {max(v):8.1f} ms")'
 # the Mac: the Pico's replies in time, per uplink (lorawan11_256: all; lorawan11_e2e: none, step 8)
@@ -540,10 +551,13 @@ This layout (the PC, 27 Oct) has run only in part: nothing on Windows or Docker 
   restart it reconnected and kept answering. Without the restart after the integration, the automation stays
   unsubscribed (seen: hence the restart in step 8).
 - **Step 9's STM32 device** (2 Nov), compiled on the Mac only: `stm32/run_node.sh build` (STM32duino 3.0.0,
-  STM32duinoLoRaWAN 0.5.1) for the RAK3172, the RAK3172T and the Nucleo-WL55JC1, with throwaway keys: 93 KB of
-  256 KB; the keys' header gone after the build; a missing entry, a bad `NODE_S` / `NODE_DR`, no `PORT` for the
-  log refused. The flash: STM32CubeProgrammer missing on the Mac (seen), so the default is now the STM32 package's
-  own OpenOCD (arm64), whose ST-Link and STM32WL configs load; not run against a board. Not flashed, nothing sent.
+  STM32duinoLoRaWAN 0.5.1) for the LM402 kit, the RAK3172, the RAK3172T and the Nucleo-WL55JC1, with throwaway keys:
+  93 KB of 256 KB; the keys' header gone after the build; a missing entry, a bad `NODE_S` / `NODE_DR`, no `PORT` for
+  the log refused. The LM402 build's object code read back: no TCXO, no DCDC, TX on RFO_HP, the switch on PB0, PA15,
+  PA8 with RX 1 0 0 and TX 0 0 1. The flash: the STM32 package's own OpenOCD (arm64; STM32CubeProgrammer isn't on
+  the Mac), its command checked against a stand-in that prints its arguments (connect under reset, then program,
+  verify, reset). On the kit (user's run): the ST-Link V2J40M27 found, 3.3 V on the target, then "unable to connect to
+  the target" without the reset held. Not flashed yet, nothing sent.
 - **Step 5b's setup and the broker's CSV** on the Mac only (31 Oct): `AES=128` and `AES=256` into copies of
   chirpstack-docker give each region file and the integration its own `share_name`, `[network]` its
   `dev_addr_prefixes`, and the UI port; the TOML parses, `docker compose config` takes both, and the Mac's AES-128

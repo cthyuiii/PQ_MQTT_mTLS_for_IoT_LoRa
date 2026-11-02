@@ -109,7 +109,8 @@ git -C network/chirpstack log --oneline -1     # the fork commit this branch bui
 ├── scripts/
 │   ├── broker.sh               ← the broker machine: start / stop / restart / status / log, in the background
 │   │                             (log: results/broker.log; results/broker_events.csv: a row per message and
-│   │                             per connection, on the broker's clock: the round trip's legs, handshake times)
+│   │                             per connection, on the broker's clock: the round trip's legs, handshake times;
+│   │                             both kept 3 days, KEEP_DAYS: at midnight <name>-<date>, older ones deleted)
 │   ├── app.sh                  ← the gateway's machine: the virtual gateway and the application (chirpstack_app.py,
 │   │                             its watcher and relay), start / stop / restart / status / log
 │   ├── chirpstack/Dockerfile   ← our ChirpStack image: UI (node 22) → server (rust 1.89) → debian-slim
@@ -143,7 +144,7 @@ git -C network/chirpstack log --oneline -1     # the fork commit this branch bui
 │   ├── sketches/wolfssl_bench  ← make_wolfssl_lib.sh + wolfssl_user_settings.h: the wolfSSL library both sketches use
 │   └── tests/                  ← aead_host_test, deploy_host_test, mqtt_parse_test.py
 ├── stm32/
-│   ├── lorawan_node/           ← the STM32WL (RAK3172) test device: ABP, LoRaWAN 1.0.3, AES-128; an uplink a minute,
+│   ├── lorawan_node/           ← the STM32WL test device (the LM402 kit): ABP, LoRaWAN 1.0.3, AES-128; an uplink a minute,
 │   │                             the downlink back, both printed (ST's stack: STM32duinoLoRaWAN)
 │   └── run_node.sh             ← build it with its keys (the provisioning file), flash it, follow its serial log
 └── certs/  results/            ← made by the runs (gitignored)
