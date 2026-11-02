@@ -5,14 +5,15 @@
 #   [PORT=<serial port>] stm32/run_node.sh [build | flash | log]      (no argument: all three)
 #
 # DEVICE: the provisioning file's entry (stm32-c13-abp-aes128). BOARD: the board (the RAK3172 module; a RAK3172T:
-# pnum=RAK3172T_MODULE). UPLOAD: swdMethod (an ST-Link; needs STM32CubeProgrammer), serialMethod (UART2 with BOOT0
-# high; needs PORT and STM32CubeProgrammer) or OpenOCDSTLink. NODE_S, NODE_DR: as in the sketch (60 s, DR0).
+# pnum=RAK3172T_MODULE). UPLOAD: OpenOCDSTLink (an ST-Link, through the OpenOCD the STM32 package brings), swdMethod
+# (an ST-Link through STM32CubeProgrammer) or serialMethod (UART2 with BOOT0 high; PORT and STM32CubeProgrammer).
+# NODE_S, NODE_DR: as in the sketch (60 s, DR0).
 # Log: results/stm32_<DEVICE>.log, appended, each line timed. The keys go into a header in a folder of its own
 # (0700), deleted after the build, and are never printed; the build folder's binary has them, like the Pico's.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DEVICE=${DEVICE:-stm32-c13-abp-aes128}
-FQBN=${BOARD:-STMicroelectronics:stm32:LoRa:pnum=RAK3172_MODULE},upload_method=${UPLOAD:-swdMethod}
+FQBN=${BOARD:-STMicroelectronics:stm32:LoRa:pnum=RAK3172_MODULE},upload_method=${UPLOAD:-OpenOCDSTLink}
 OUT=${TMPDIR:-/tmp}/stm32_node_$DEVICE LOG=results/stm32_$DEVICE.log
 P=(); [ -n "${PORT:-}" ] && P=(-p "$PORT")
 build() {

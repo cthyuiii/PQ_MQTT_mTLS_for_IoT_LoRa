@@ -449,7 +449,7 @@ application, then **Add device**: name `stm32-c13`, Device EUI `0000000000000c13
 "Application session key (LoRaWAN 1.0)" from `key app_s_key`, frame counters 0. `pbcopy < /dev/null` after. Then:
 
 ```bash
-# the Mac, once: the STM32 boards and ST's LoRaWAN library for arduino-cli; for an ST-Link, STM32CubeProgrammer (st.com)
+# the Mac, once: the STM32 boards (with the OpenOCD that flashes through the ST-Link) and ST's LoRaWAN library
 U=https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
 arduino-cli core update-index --additional-urls $U
 arduino-cli core install STMicroelectronics:stm32@3.0.0 --additional-urls $U
@@ -462,8 +462,8 @@ PORT=/dev/cu.usbserial-XXXX stm32/run_node.sh
 
 Each uplink prints `#up <n> FCnt <f> DR<d>: <ms> ms` (the send to the end of its receive windows), then
 `#down <n> FCntDown <f> port 1 RSSI <r> SNR <s>: ack <f>` (Home Assistant's answer to that FCnt: the device got it) or
-`#down <n> none`, and `#count up <u> down <d>`. No ST-Link: `UPLOAD=serialMethod` with BOOT0 high (the script's
-header). `#dr DR0 refused (AS923's dwell limit): DR2` at start is ST's AS923 default (the 400 ms dwell limit): it
+`#down <n> none`, and `#count up <u> down <d>`. No ST-Link: `UPLOAD=serialMethod` with BOOT0 high, which needs
+STM32CubeProgrammer (the script's header). `#dr DR0 refused (AS923's dwell limit): DR2` at start is ST's AS923 default (the 400 ms dwell limit): it
 sends at DR2 (SF10), the Picos at DR0 (SF12); `AS923_DEFAULT_UPLINK_DWELL_TIME` 0 in the library's `RegionAS923.h`
 lifts it, where the local rules allow. Home Assistant shows its uplink counter, RSSI and SNR (no sensors, no
 temperature). Its frame counter starts at 0 at every reset (the library keeps none), so after one, ChirpStack drops
@@ -542,7 +542,8 @@ This layout (the PC, 27 Oct) has run only in part: nothing on Windows or Docker 
 - **Step 9's STM32 device** (2 Nov), compiled on the Mac only: `stm32/run_node.sh build` (STM32duino 3.0.0,
   STM32duinoLoRaWAN 0.5.1) for the RAK3172, the RAK3172T and the Nucleo-WL55JC1, with throwaway keys: 93 KB of
   256 KB; the keys' header gone after the build; a missing entry, a bad `NODE_S` / `NODE_DR`, no `PORT` for the
-  log refused. Without STM32CubeProgrammer the flash stops with ST's link to it. Not flashed, nothing sent.
+  log refused. The flash: STM32CubeProgrammer missing on the Mac (seen), so the default is now the STM32 package's
+  own OpenOCD (arm64), whose ST-Link and STM32WL configs load; not run against a board. Not flashed, nothing sent.
 - **Step 5b's setup and the broker's CSV** on the Mac only (31 Oct): `AES=128` and `AES=256` into copies of
   chirpstack-docker give each region file and the integration its own `share_name`, `[network]` its
   `dev_addr_prefixes`, and the UI port; the TOML parses, `docker compose config` takes both, and the Mac's AES-128
