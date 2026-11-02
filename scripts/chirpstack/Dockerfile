@@ -7,7 +7,7 @@
 # Same runtime as the stock image: /usr/bin/chirpstack as nobody, configured with -c <dir>.
 
 # Node 22: 25+ no longer ships corepack (26 fails at `corepack enable`, exit 127), and the UI needs it for pnpm
-FROM node:22-bookworm AS ui
+FROM node:26-bookworm AS ui
 ARG TARGETARCH
 # the UI's API client generator (ChirpStack's Nix shell provides it): grpc-web 2.0.2, as the UI's own grpc-web
 RUN a=$([ "$TARGETARCH" = arm64 ] && echo aarch64 || echo x86_64) \
