@@ -241,10 +241,9 @@ docker compose logs --tail 20 chirpstack
 ```
 
 In the AES-128 UI, `http://PC:8081` (admin / admin: change it first; the firewall rule of step 5 with 8081 added):
-the gateway with the same Gateway ID as in the other (ChirpStack drops an unknown gateway's uplinks), a device profile
-(AS923, LoRaWAN 1.1, ABP), and its devices with DevAddr 012346xx and 16-byte keys (32 hex digits). Home Assistant
-finds them as it finds the others. The radio firmware sends AES-256 frames only so far: an AES-128 device needs a
-build that sends `lorawan11` (pending).
+the gateway with the same Gateway ID as in the other (ChirpStack drops an unknown gateway's uplinks), then its
+devices with DevAddr 012346xx and 16-byte keys (32 hex digits): the STM32 (step 9, device ...0c13). Home Assistant
+finds them as it finds the others.
 
 ## 6. The gateway Pi: the Gateway Bridge
 
@@ -352,7 +351,7 @@ gateway says how the uplink came: `0102030405060708` is the virtual gateway (Wi-
 / 9.5), the radio gateway's own ID over the air. Devices from an older `pico.yaml` (Pico c11, Pico c12, their sensors
 unavailable): delete them there.
 
-## 9. The Pico
+## 9. The devices: the Picos, and the STM32 (AES-128)
 
 ```bash
 # the Mac, repo root, the Pico on USB: device ...0c11, ABP, AES-256; its keys from the provisioning file (exported,
@@ -420,10 +419,12 @@ export DEV_ADDR=012345c2 DHT_PIN=22   # device ...0c12: ABP, AES-256; DHT_PIN: t
 python3 pico/run_benchmarks.py --board rp2350 --test mqtt --match 'chirpstack device' --tag node_c12   # Pico W: rp2040
 ```
 
-**An AES-128 device, for the AES-128 ChirpStack (step 5b).** `AES=128` builds the same device with stock LoRaWAN
-1.1 (`lorawan11`, no `lorawan11_e2e`): ABP, three 16-byte keys, so `APP_KEYS` is 96 hex digits (AppSKey,
-FNwkSIntKey, SNwkSIntKey). The board prints `#device ABP (...), LoRaWAN 1.1, AES-128: lorawan11` at the start. Its
-DevAddr is in the AES-128 server's prefix (012346xx). A board flashed as this device stops being the one it was.
+**An AES-128 device, for the AES-128 ChirpStack (step 5b): the lab's STM32WL.** Device ...0c13 is an STM32WL (the
+RAK3172 module) running `stm32/lorawan_node`: no sensors, an uplink every 60 s on FPort 1 and Home Assistant's answer
+back, both printed on its UART. It runs ST's LoRaWAN stack as STM32duino's STM32LoRaWAN library has it: stock AES-128,
+**ABP, LoRaWAN 1.0.3** (ST's stack has no 1.1), so two 16-byte session keys (NwkSKey, AppSKey). Its DevAddr is in the
+AES-128 server's prefix (012346xx). (The Pico builds as an AES-128 LoRaWAN 1.1 device too, for a comparison on the
+same board: `AES=128`, `lorawan11`, `APP_KEYS` = AppSKey + FNwkSIntKey + SNwkSIntKey, 96 hex digits.)
 
 ```bash
 # the Mac, repo root: device ...0c13's keys, once (16 bytes each; setdefault: a second run keeps them)
@@ -431,28 +432,42 @@ python3 - <<'PY'
 import json, os
 p = os.path.expanduser("~/.cache/iot-pqc/phase1/devices.json")
 d, k = json.load(open(p)), lambda: os.urandom(16).hex()
-d["devices"].setdefault("pico-c13-1.1-abp-aes128", {"profile": "as923-1.1-abp", "version": "1.1", "otaa": False,
-    "aes": 128, "dev_eui": "0000000000000c13", "dev_addr": "012346c3", "app_s_key": k(), "f_nwk_s_int_key": k(),
-    "s_nwk_s_int_key": k(), "nwk_s_enc_key": k()})
+d["devices"].setdefault("stm32-c13-abp-aes128", {"profile": "as923-1.0.3-abp", "version": "1.0.3", "otaa": False,
+    "aes": 128, "board": "stm32", "dev_eui": "0000000000000c13", "dev_addr": "012346c3", "app_s_key": k(),
+    "nwk_s_enc_key": k()})
 with open(os.open(p + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
     json.dump(d, f, indent=1)
 os.replace(p + ".new", p)
 PY
-key() { python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c13-1.1-abp-aes128']['$1'], end='')" | pbcopy; }
+key() { python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['stm32-c13-abp-aes128']['$1'], end='')" | pbcopy; }
 ```
 
-In the AES-128 UI (`http://PC:8081`): a device profile `as923-1.1-abp` as the other server's (AS923, LoRaWAN 1.1.0,
-ABP: OTAA off), an application, then **Add device**: name `pico-c13`, Device EUI `0000000000000c13`, Join EUI
-`0000000000000000`; **Activation**: device address `012346c3` and the four keys with `key <name>` as for c12 (32 hex
-digits each), frame counters 0. `pbcopy < /dev/null` after. Then:
+In the AES-128 UI (`http://PC:8081`): a device profile `as923-1.0.3-abp` (AS923, LoRaWAN 1.0.3, regional parameters
+revision A, ABP: OTAA off; RX1 delay 1 s, RX1 DR offset 0, RX2 DR 2 at 923.2 MHz: ST's AS923 defaults), an
+application, then **Add device**: name `stm32-c13`, Device EUI `0000000000000c13`, Join EUI `0000000000000000`;
+**Activation**: device address `012346c3`, "Network session key (LoRaWAN 1.0)" from `key nwk_s_enc_key`,
+"Application session key (LoRaWAN 1.0)" from `key app_s_key`, frame counters 0. `pbcopy < /dev/null` after. Then:
 
 ```bash
-# the Mac, repo root: device ...0c13 as a node: ABP, AES-128, over the radio
-eval "$(python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['pico-c13-1.1-abp-aes128']; print('export APP_KEYS='+d['app_s_key']+d['f_nwk_s_int_key']+d['s_nwk_s_int_key'])")"
-export AES=128 DEV_ADDR=012346c3 AIR=radio REPLY_WAIT_MS=1 BROKER=$BRK NODE_S=60   # + DHT_PIN=22 with a DHT22
-python3 pico/run_benchmarks.py --board rp2040 --test mqtt --match 'chirpstack device' --tag node_c13   # Pico 2 W: rp2350
-unset AES   # the next build is AES-256 again
+# the Mac, once: the STM32 boards and ST's LoRaWAN library for arduino-cli; for an ST-Link, STM32CubeProgrammer (st.com)
+U=https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectronics_index.json
+arduino-cli core update-index --additional-urls $U
+arduino-cli core install STMicroelectronics:stm32@3.0.0 --additional-urls $U
+arduino-cli lib install STM32duinoLoRaWAN@0.5.1
+# the Mac, repo root: device ...0c13 (ABP, AES-128, LoRaWAN 1.0.3) over the radio. The STM32 on an ST-Link (SWD), its
+# UART2 (PA2 TX, PA3 RX) on a USB-UART; PORT: that one (arduino-cli board list). Builds with the keys (not printed),
+# flashes, then follows its log (results/stm32_stm32-c13-abp-aes128.log); Ctrl-C stops following, not the device
+PORT=/dev/cu.usbserial-XXXX stm32/run_node.sh
 ```
+
+Each uplink prints `#up <n> FCnt <f> DR<d>: <ms> ms` (the send to the end of its receive windows), then
+`#down <n> FCntDown <f> port 1 RSSI <r> SNR <s>: ack <f>` (Home Assistant's answer to that FCnt: the device got it) or
+`#down <n> none`, and `#count up <u> down <d>`. No ST-Link: `UPLOAD=serialMethod` with BOOT0 high (the script's
+header). `#dr DR0 refused (AS923's dwell limit): DR2` at start is ST's AS923 default (the 400 ms dwell limit): it
+sends at DR2 (SF10), the Picos at DR0 (SF12); `AS923_DEFAULT_UPLINK_DWELL_TIME` 0 in the library's `RegionAS923.h`
+lifts it, where the local rules allow. Home Assistant shows its uplink counter, RSSI and SNR (no sensors, no
+temperature). Its frame counter starts at 0 at every reset (the library keeps none), so after one, ChirpStack drops
+its frames until the counters are set back to 0 on the device's Activation tab.
 
 ## 10. Did it work?
 
@@ -524,6 +539,10 @@ This layout (the PC, 27 Oct) has run only in part: nothing on Windows or Docker 
   "ack <FCnt>" on ChirpStack's command topic, 3.7 ms median (60 ms max) from event to command. After a broker
   restart it reconnected and kept answering. Without the restart after the integration, the automation stays
   unsubscribed (seen: hence the restart in step 8).
+- **Step 9's STM32 device** (2 Nov), compiled on the Mac only: `stm32/run_node.sh build` (STM32duino 3.0.0,
+  STM32duinoLoRaWAN 0.5.1) for the RAK3172, the RAK3172T and the Nucleo-WL55JC1, with throwaway keys: 93 KB of
+  256 KB; the keys' header gone after the build; a missing entry, a bad `NODE_S` / `NODE_DR`, no `PORT` for the
+  log refused. Without STM32CubeProgrammer the flash stops with ST's link to it. Not flashed, nothing sent.
 - **Step 5b's setup and the broker's CSV** on the Mac only (31 Oct): `AES=128` and `AES=256` into copies of
   chirpstack-docker give each region file and the integration its own `share_name`, `[network]` its
   `dev_addr_prefixes`, and the UI port; the TOML parses, `docker compose config` takes both, and the Mac's AES-128

@@ -13,6 +13,7 @@ sides, then AES-256 LoRaWAN session keys. What runs and how: `README.md`. Status
 - `scripts/`: certificates (`gen_certs.sh`), ChirpStack's setup (`chirpstack_pq_setup.sh`), start/stop (`broker.sh`,
   `app.sh`), the AES-256 LoRaWAN vectors (`aes256_vectors.sh`), the Dockerfiles.
 - `pico/`: the Pico W firmware (`sketches/`), its runner (`run_benchmarks.py`) and host tests (`tests/`).
+- `stm32/`: the STM32WL test device (`lorawan_node/`, ABP, AES-128) and its build / flash / log script (`run_node.sh`).
 
 ## Build and test
 

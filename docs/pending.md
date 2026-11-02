@@ -87,10 +87,15 @@ broker (`./run_all.sh --serve-broker`, :18835). **Device** = the Pico W.
    in the shell, ChirpStack's event answered ("ack 7"), app.csv written at the stop.
 10. [ ] **AES-128 against AES-256 over the radio, to Home Assistant and back** (31 Oct): both ChirpStacks side by
     side (`chirpstack_pq_setup.sh AES=128 | 256`, testbed step 5b) and the broker's per-hop CSV
-    (`results/broker_events.csv`, step 10): done, checked on the Mac only. The AES-128 Pico build (`AES=128`:
-    `lorawan11`, ABP, three 16-byte keys; testbed step 9, device ...0c13): compiles for the Pico W and Pico 2 W, not
-    flashed. Left: the AES-128 image built on the PC; the runs, each flash stating ABP or OTAA (ABP only so far);
-    an ESP32 as a second AES-128 device (when it arrives); ChirpStack's own AES cost at both commits.
+    (`results/broker_events.csv`, step 10): done, checked on the Mac only. The AES-128 device ...0c13 is the lab's
+    STM32WL (2 Nov; testbed step 9): `stm32/lorawan_node`, no sensors, an uplink a minute and Home Assistant's answer,
+    both printed; ABP, LoRaWAN 1.0.3 (ST's stack, through STM32duinoLoRaWAN 0.5.1; it has no 1.1), two 16-byte keys
+    built in by `stm32/run_node.sh`. Compiles for the RAK3172, RAK3172T and Nucleo-WL55JC1; not flashed. So the
+    AES-128 side differs from the AES-256 Pico in LoRaWAN version, data rate (DR2 under AS923's dwell limit, unless
+    lifted) and chip; the broker's legs compare, the device's AES cost doesn't. The AES-128 Pico build (`AES=128`,
+    `lorawan11`, 1.1) compiles for the Pico W and Pico 2 W, for a same-board comparison. Left: the runs, each flash
+    stating ABP or OTAA (ABP only so far); an ESP32 as a second AES-128 device (when it arrives); ChirpStack's own AES
+    cost at both commits.
 
 ## Paused / KIV
 
