@@ -82,7 +82,8 @@ Semtech's only AS923 file is for its USB board. The same file over SPI, with:
 
 - listen-before-talk off: it's Japan's AS923 rule, and it needs an SX1261 the HAT may not have;
 - this gateway's ID;
-- the Bridge's port, 1700.
+- the Bridge's address and port, 127.0.0.1:1700 (Semtech's `localhost` may resolve to `::1`, where Docker doesn't
+  listen).
 
 ```bash
 cd ~/sx1302_hal/packet_forwarder
@@ -90,6 +91,7 @@ EUI=<the 16 hex digits from step 4, without 0x>
 sed -e 's|"com_type": "USB"|"com_type": "SPI"|' -e 's|"com_path": "/dev/ttyACM0"|"com_path": "/dev/spidev0.0"|' \
     -e '/"lbt": {/{n;s|"enable": true|"enable": false|}' \
     -e "s|\"gateway_ID\": \"[0-9A-Fa-f]*\"|\"gateway_ID\": \"$EUI\"|" \
+    -e 's|"server_address": "[^"]*"|"server_address": "127.0.0.1"|' \
     -e 's|"serv_port_up": [0-9]*|"serv_port_up": 1700|' -e 's|"serv_port_down": [0-9]*|"serv_port_down": 1700|' \
     global_conf.json.sx1250.AS923.USB > global_conf.json
 ```
