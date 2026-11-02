@@ -4,7 +4,7 @@
 // AS923-1. Built and flashed by stm32/run_node.sh; node_secrets.h (DevAddr, NwkSKey, AppSKey as hex) is made from the
 // provisioning file for that build only.
 //
-// Serial, 115200 (the RAK3172's UART2, PA2 / PA3):
+// Serial, 115200 (PA2 / PA3: on the LM402 kit, its ST-Link's serial port):
 //   #device ...                                   once at start
 //   #up <n> FCnt <f> DR<d>: <ms> ms               an uplink and its receive windows done, <ms> from the send
 //   #down <n> FCntDown <f> port <p> RSSI <r> SNR <s>: <text>   the answer to uplink <n>; "#down <n> none" if none

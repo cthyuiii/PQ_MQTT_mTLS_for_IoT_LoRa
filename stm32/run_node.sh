@@ -4,18 +4,39 @@
 #
 #   [PORT=<serial port>] stm32/run_node.sh [build | flash | log]      (no argument: all three)
 #
-# DEVICE: the provisioning file's entry (stm32-c13-abp-aes128). BOARD: the board (the RAK3172 module; a RAK3172T:
-# pnum=RAK3172T_MODULE). UPLOAD: OpenOCDSTLink (an ST-Link, through the OpenOCD the STM32 package brings), swdMethod
-# (an ST-Link through STM32CubeProgrammer) or serialMethod (UART2 with BOOT0 high; PORT and STM32CubeProgrammer).
-# NODE_S, NODE_DR: as in the sketch (60 s, DR0).
+# DEVICE: the provisioning file's entry (stm32-c13-abp-aes128). BOARD: lm402 (the default: the lab's LM402CCH-Pro-Kit,
+# its ST-Link on board) or another board's FQBN, e.g. STMicroelectronics:stm32:LoRa:pnum=RAK3172_MODULE. UPLOAD:
+# OpenOCDSTLink (an ST-Link, through the OpenOCD the STM32 package brings), swdMethod (an ST-Link through
+# STM32CubeProgrammer) or serialMethod (UART with BOOT0 high; PORT and STM32CubeProgrammer). PORT: the serial port
+# (the kit: its ST-Link's, /dev/cu.usbmodem*). NODE_S, NODE_DR: as in the sketch (60 s, DR0).
 # Log: results/stm32_<DEVICE>.log, appended, each line timed. The keys go into a header in a folder of its own
 # (0700), deleted after the build, and are never printed; the build folder's binary has them, like the Pico's.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DEVICE=${DEVICE:-stm32-c13-abp-aes128}
-FQBN=${BOARD:-STMicroelectronics:stm32:LoRa:pnum=RAK3172_MODULE},upload_method=${UPLOAD:-OpenOCDSTLink}
+case ${BOARD:-lm402} in
+    # i2SOM / Yizhilian's LM402CCH (STM32WLE5CC, 865-928 MHz) on its Pro-Kit: the radio switch on FE_CTRL1-3 = PB0,
+    # PA15, PA8 (RX 1 0 0, TX 0 0 1: i2SOM's LM40x wiki), so PB0 isn't a TCXO supply: the crystal; TX on RFO_HP. The
+    # module's DCDC inductor isn't documented: LDO
+    lm402) FQBN=STMicroelectronics:stm32:GenWL:pnum=GENERIC_WLE5CCUX
+           RADIO="-DLORAWAN_BOARD_HAS_TCXO=0 -DLORAWAN_BOARD_HAS_DCDC=0 -DLORAWAN_TX_CONFIG=RBI_CONF_RFO_HP"
+           RADIO+=" -DLORAWAN_RFSWITCH_PINS=PB0,PA15,PA8 -DLORAWAN_RFSWITCH_PIN_COUNT=3"
+           RADIO+=" -DLORAWAN_RFSWITCH_OFF_VALUES=LOW,LOW,LOW -DLORAWAN_RFSWITCH_RX_VALUES=HIGH,LOW,LOW"
+           RADIO+=" -DLORAWAN_RFSWITCH_RFO_LP_VALUES=LOW,LOW,HIGH -DLORAWAN_RFSWITCH_RFO_HP_VALUES=LOW,LOW,HIGH" ;;
+    *) FQBN=$BOARD RADIO="" ;;  # a board whose variant has its radio (RAK3172, Nucleo-WL55JC1, LoRa-E5 mini)
+esac
+FQBN+=,upload_method=${UPLOAD:-OpenOCDSTLink}
 OUT=${TMPDIR:-/tmp}/stm32_node_$DEVICE LOG=results/stm32_$DEVICE.log
 P=(); [ -n "${PORT:-}" ] && P=(-p "$PORT")
+# OpenOCD attaches with NRST held low (connect under reset): firmware that sleeps or turns SWD off (ST's samples, the
+# kit's factory firmware) can't be reached otherwise. Needs NRST wired to the ST-Link (the kit: J1 9-10)
+U=()
+if [ "${UPLOAD:-OpenOCDSTLink}" = OpenOCDSTLink ]; then
+    PAT='"{path}/{cmd}" {upload.verbose} -f interface/{upload.protocol}.cfg -f target/{openocd.target}.cfg'
+    PAT+=' -c "reset_config srst_only srst_nogate connect_assert_srst"'
+    PAT+=' -c "program {{build.path}/{build.project_name}.elf} verify reset exit"'
+    U=(--upload-property "upload.pattern=$PAT")
+fi
 build() {
     G=$(mktemp -d); trap 'rm -rf "$G"' EXIT
     python3 - "$DEVICE" "$G/node_secrets.h" "${NODE_S:-60}" "${NODE_DR:-0}" <<'PY'
@@ -34,12 +55,14 @@ with open(os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
     f.writelines(f'#define {k} "{x}"\n' for k, x in v.items())
     f.write(f"#define NODE_S {node_s}\n#define NODE_DR {dr}\n")
 PY
-    arduino-cli compile --fqbn "$FQBN" --build-path "$OUT" --build-property "compiler.cpp.extra_flags=-I$G" \
-        stm32/lorawan_node
+    # the radio's flags reach the library's C files (its radio_board_if.c) too
+    arduino-cli compile --fqbn "$FQBN" --build-path "$OUT" --build-property "compiler.c.extra_flags=$RADIO" \
+        --build-property "compiler.cpp.extra_flags=-I$G $RADIO" stm32/lorawan_node
 }
-flash() { arduino-cli upload --fqbn "$FQBN" --input-dir "$OUT" "${P[@]}" stm32/lorawan_node; }
+# -v: OpenOCD's reason when it fails (quiet, it says only "init failed")
+flash() { arduino-cli upload -v --fqbn "$FQBN" --input-dir "$OUT" "${P[@]}" "${U[@]}" stm32/lorawan_node; }
 log() {
-    [ ${#P[@]} -gt 0 ] || { echo "PORT=<the USB-UART's port: arduino-cli board list>" >&2; exit 1; }
+    [ ${#P[@]} -gt 0 ] || { echo "PORT=<the serial port: arduino-cli board list>" >&2; exit 1; }
     mkdir -p results
     arduino-cli monitor "${P[@]}" --config baudrate=115200 --timestamp --quiet | tee -a "$LOG"
 }
