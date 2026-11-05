@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The STM32WL test device (stm32/lorawan_node): built with its DevAddr and session keys from the provisioning file,
-# flashed, then its serial log printed and kept. ABP, LoRaWAN 1.0.3, AES-128 (docs/testbed.md step 9).
+# flashed, then its serial log printed and kept. ABP, LoRaWAN 1.0.4, AES-128 (docs/testbed.md step 9).
 #
 #   [PORT=<serial port>] stm32/run_node.sh [build | flash | log]      (no argument: all three)
 #
@@ -8,12 +8,14 @@
 # its ST-Link on board) or another board's FQBN, e.g. STMicroelectronics:stm32:LoRa:pnum=RAK3172_MODULE. UPLOAD:
 # OpenOCDSTLink (an ST-Link, through the OpenOCD the STM32 package brings), swdMethod (an ST-Link through
 # STM32CubeProgrammer) or serialMethod (UART with BOOT0 high; PORT and STM32CubeProgrammer). PORT: the serial port
-# (the kit: its ST-Link's, /dev/cu.usbmodem*). NODE_S, NODE_DR: as in the sketch (60 s, DR0).
+# (the kit: its ST-Link's, /dev/cu.usbmodem*). NODE_S, NODE_DR: as in the sketch (60 s, DR0). LORAWAN: 1.0.4 (the
+# default) or 1.0.3 (ST's library as installed).
 # Log: results/stm32_<DEVICE>.log, appended, each line timed. The keys go into a header in a folder of its own
 # (0700), deleted after the build, and are never printed; the build folder's binary has them, like the Pico's.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DEVICE=${DEVICE:-stm32-c13-abp-aes128}
+case ${LORAWAN:=1.0.4} in 1.0.3 | 1.0.4) ;; *) echo "LORAWAN=1.0.3 or 1.0.4" >&2; exit 1 ;; esac
 case ${BOARD:-lm402} in
     # i2SOM / Yizhilian's LM402CCH (STM32WLE5CC, 865-928 MHz) on its Pro-Kit: the radio switch on FE_CTRL1-3 = PB0,
     # PA15, PA8 (RX 1 0 0, TX 0 0 1: i2SOM's LM40x wiki), so PB0 isn't a TCXO supply: the crystal; TX on RFO_HP. The
@@ -55,9 +57,26 @@ with open(os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
     f.writelines(f'#define {k} "{x}"\n' for k, x in v.items())
     f.write(f"#define NODE_S {node_s}\n#define NODE_DR {dr}\n")
 PY
+    # ST's library is set to LoRaWAN 1.0.3 in its lorawan_conf.h, not overridable; it does 1.0.4 too (its MAC code
+    # branches on 0x01000400): this build uses a copy set to that, the installed library stays as it is
+    LIB=()
+    if [ "$LORAWAN" = 1.0.4 ]; then
+        cp -R "$(arduino-cli config get directories.user)/libraries/STM32duinoLoRaWAN" "$G/"
+        C=$G/STM32duinoLoRaWAN/src/BSP/lorawan_conf.h
+        sed -i.orig 's/^#define LORAMAC_SPECIFICATION_VERSION .*/#define LORAMAC_SPECIFICATION_VERSION 0x01000400/' "$C"
+        grep -q '^#define LORAMAC_SPECIFICATION_VERSION 0x01000400$' "$C" || { echo "$C: no version line" >&2; exit 1; }
+        # its Arduino wrapper was only built at 1.0.3 (0.5.1 and main): 1.0.4 names the certification CW request
+        # MLME_TXCW (no MLME_TXCW_1), and its channel-mask check is the wrong way round (it needs channels <= mask
+        # bits: 72 <= 96 at 1.0.4; at 1.0.3 both are 96). Neither is used by the sketch
+        W=$G/STM32duinoLoRaWAN/src/STM32LoRaWAN.cpp
+        sed -i.orig -e 's/= MLME_TXCW_1;/= MLME_TXCW;/' -e '/case MLME_TXCW_1:/{N;d;}' -e \
+            's/static_assert(REGION_NVM_CHANNELS_MASK_SIZE \* 16 <= REGION_NVM_MAX_NB_CHANNELS/static_assert(REGION_NVM_MAX_NB_CHANNELS <= REGION_NVM_CHANNELS_MASK_SIZE * 16/' "$W"
+        ! grep -q 'MLME_TXCW_1\|MASK_SIZE \* 16 <= REGION' "$W" || { echo "$W: not patched" >&2; exit 1; }
+        LIB=(--library "$G/STM32duinoLoRaWAN")
+    fi
     # the radio's flags reach the library's C files (its radio_board_if.c) too
     arduino-cli compile --fqbn "$FQBN" --build-path "$OUT" --build-property "compiler.c.extra_flags=$RADIO" \
-        --build-property "compiler.cpp.extra_flags=-I$G $RADIO" stm32/lorawan_node
+        --build-property "compiler.cpp.extra_flags=-I$G $RADIO" "${LIB[@]}" stm32/lorawan_node
 }
 # -v: OpenOCD's reason when it fails (quiet, it says only "init failed")
 flash() { arduino-cli upload -v --fqbn "$FQBN" --input-dir "$OUT" "${P[@]}" "${U[@]}" stm32/lorawan_node; }

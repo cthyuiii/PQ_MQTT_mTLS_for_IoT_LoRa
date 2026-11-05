@@ -144,7 +144,7 @@ git -C network/chirpstack log --oneline -1     # the fork commit this branch bui
 │   ├── sketches/wolfssl_bench  ← make_wolfssl_lib.sh + wolfssl_user_settings.h: the wolfSSL library both sketches use
 │   └── tests/                  ← aead_host_test, deploy_host_test, mqtt_parse_test.py
 ├── stm32/
-│   ├── lorawan_node/           ← the STM32WL test device (the LM402 kit): ABP, LoRaWAN 1.0.3, AES-128; an uplink a minute,
+│   ├── lorawan_node/           ← the STM32WL test device (the LM402 kit): ABP, LoRaWAN 1.0.4, AES-128; an uplink a minute,
 │   │                             the downlink back, both printed (ST's stack: STM32duinoLoRaWAN)
 │   └── run_node.sh             ← build it with its keys (the provisioning file), flash it, follow its serial log
 └── certs/  results/            ← made by the runs (gitignored)

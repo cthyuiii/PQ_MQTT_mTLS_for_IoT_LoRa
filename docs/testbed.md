@@ -424,7 +424,8 @@ python3 pico/run_benchmarks.py --board rp2350 --test mqtt --match 'chirpstack de
 LM402CCH-Pro-Kit (i2SOM / Yizhilian: an STM32WLE5CC module, 865-928 MHz, and an ST-Link on the board) running
 `stm32/lorawan_node`: no sensors, an uplink every 60 s on FPort 1 and Home Assistant's answer back, both printed on
 its serial port. It runs ST's LoRaWAN stack as STM32duino's STM32LoRaWAN library has it: stock AES-128,
-**ABP, LoRaWAN 1.0.3** (ST's stack has no 1.1), so two 16-byte session keys (NwkSKey, AppSKey). Its DevAddr is in the
+**ABP, LoRaWAN 1.0.4** (ST's stack has no 1.1; the library is set to 1.0.3, so `run_node.sh` builds a copy of it
+set to 1.0.4, `LORAWAN=1.0.3` for the library as it is), so two 16-byte session keys (NwkSKey, AppSKey). Its DevAddr is in the
 AES-128 server's prefix (012346xx). (The Pico builds as an AES-128 LoRaWAN 1.1 device too, for a comparison on the
 same board: `AES=128`, `lorawan11`, `APP_KEYS` = AppSKey + FNwkSIntKey + SNwkSIntKey, 96 hex digits.)
 
@@ -434,7 +435,7 @@ python3 - <<'PY'
 import json, os
 p = os.path.expanduser("~/.cache/iot-pqc/phase1/devices.json")
 d, k = json.load(open(p)), lambda: os.urandom(16).hex()
-d["devices"].setdefault("stm32-c13-abp-aes128", {"profile": "as923-1.0.3-abp", "version": "1.0.3", "otaa": False,
+d["devices"].setdefault("stm32-c13-abp-aes128", {"profile": "as923-1.0.4-abp", "version": "1.0.4", "otaa": False,
     "aes": 128, "board": "stm32", "dev_eui": "0000000000000c13", "dev_addr": "012346c3", "app_s_key": k(),
     "nwk_s_enc_key": k()})
 with open(os.open(p + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
@@ -444,8 +445,8 @@ PY
 key() { python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.cache/iot-pqc/phase1/devices.json')))['devices']['stm32-c13-abp-aes128']['$1'], end='')" | pbcopy; }
 ```
 
-In the AES-128 UI (`http://PC:8081`): a device profile `as923-1.0.3-abp` (AS923, LoRaWAN 1.0.3, regional parameters
-revision A, ABP: OTAA off; RX1 delay 1 s, RX1 DR offset 0, RX2 DR 2 at 923.2 MHz: ST's AS923 defaults), an
+In the AES-128 UI (`http://PC:8081`): a device profile `as923-1.0.4-abp` (AS923, LoRaWAN 1.0.4, regional parameters
+RP002-1.0.3, the library's at 1.0.4; ABP: OTAA off; RX1 delay 1 s, RX1 DR offset 0, RX2 DR 2 at 923.2 MHz: ST's AS923 defaults), an
 application, then **Add device**: name `stm32-c13`, Device EUI `0000000000000c13`, Join EUI `0000000000000000`;
 **Activation**: device address `012346c3`, "Network session key (LoRaWAN 1.0)" from `key nwk_s_enc_key`,
 "Application session key (LoRaWAN 1.0)" from `key app_s_key`, frame counters 0. `pbcopy < /dev/null` after. Then:
@@ -456,7 +457,7 @@ U=https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectr
 arduino-cli core update-index --additional-urls $U
 arduino-cli core install STMicroelectronics:stm32@3.0.0 --additional-urls $U
 arduino-cli lib install STM32duinoLoRaWAN@0.5.1
-# the Mac, repo root: device ...0c13 (ABP, AES-128, LoRaWAN 1.0.3) over the radio. The kit on USB: its ST-Link
+# the Mac, repo root: device ...0c13 (ABP, AES-128, LoRaWAN 1.0.4) over the radio. The kit on USB: its ST-Link
 # flashes it and carries its serial port (PORT: /dev/cu.usbmodem<n>, arduino-cli board list). Builds with the keys (not
 # printed), flashes, then follows its log (results/stm32_stm32-c13-abp-aes128.log); Ctrl-C stops following only
 PORT=/dev/cu.usbmodem1103 stm32/run_node.sh
@@ -556,8 +557,10 @@ This layout (the PC, 27 Oct) has run only in part: nothing on Windows or Docker 
   the log refused. The LM402 build's object code read back: no TCXO, no DCDC, TX on RFO_HP, the switch on PB0, PA15,
   PA8 with RX 1 0 0 and TX 0 0 1. The flash: the STM32 package's own OpenOCD (arm64; STM32CubeProgrammer isn't on
   the Mac), its command checked against a stand-in that prints its arguments (connect under reset, then program,
-  verify, reset). On the kit (user's run): the ST-Link V2J40M27 found, 3.3 V on the target, then "unable to connect to
-  the target" without the reset held. Not flashed yet, nothing sent.
+  verify, reset). On the kit (user's runs): "unable to connect to the target" without the reset held; with it, flashed
+  and verified (RDP level 0), then at LoRaWAN 1.0.3 (2 Nov) 9 of 11 uplinks answered by Home Assistant (`#down ...:
+  ack <FCnt>`, ~1.2 s, RX1; RSSI about -106 dBm at the gateway, SNR -7 to -11). LoRaWAN 1.0.4 (5 Nov): the build
+  compiles (95 KB) with the library's copy set to 1.0.4 and its wrapper's two fixes; not flashed yet.
 - **Step 5b's setup and the broker's CSV** on the Mac only (31 Oct): `AES=128` and `AES=256` into copies of
   chirpstack-docker give each region file and the integration its own `share_name`, `[network]` its
   `dev_addr_prefixes`, and the UI port; the TOML parses, `docker compose config` takes both, and the Mac's AES-128

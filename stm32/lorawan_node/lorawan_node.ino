@@ -1,6 +1,6 @@
 // The STM32WL as a LoRaWAN test device for the testbed (docs/testbed.md step 9): no sensors, an uplink every NODE_S
 // seconds on FPort 1 ({"n":<count>}), then Home Assistant's answer ("ack <FCnt>") in RX1 or RX2. ABP (no join: DevAddr
-// and session keys built in), LoRaWAN 1.0.3, AES-128: ST's LoRaWAN stack as STM32duino's STM32LoRaWAN library has it,
+// and session keys built in), LoRaWAN 1.0.4, AES-128: ST's LoRaWAN stack as STM32duino's STM32LoRaWAN library has it,
 // AS923-1. Built and flashed by stm32/run_node.sh; node_secrets.h (DevAddr, NwkSKey, AppSKey as hex) is made from the
 // provisioning file for that build only.
 //
@@ -24,8 +24,9 @@ static uint32_t ups, downs, next_ms;
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("#device ABP (no join: DevAddr and session keys built in), LoRaWAN 1.0.3, AES-128: STM32WL, "
-                   "ST's stack (STM32LoRaWAN), AS923-1");
+    Serial.printf("#device ABP (no join: DevAddr and session keys built in), LoRaWAN %d.%d.%d, AES-128: STM32WL, "
+                  "ST's stack (STM32LoRaWAN), AS923-1\n", (int)(LORAMAC_VERSION >> 24), (int)(LORAMAC_VERSION >> 16 & 0xff),
+                  (int)(LORAMAC_VERSION >> 8 & 0xff));  // the version the library was built with
     if (!modem.begin(AS923)) {
         Serial.println("#error modem.begin(AS923)");
         while (true) {}
