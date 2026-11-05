@@ -100,7 +100,8 @@ if [ ! -f "$L/ca.crt" ]; then
 fi
 [ -f "$L/mosquitto.crt" ] || cert "$L" "$L/ca" mosquitto "subjectAltName=DNS:mosquitto" "extendedKeyUsage=serverAuth"
 for c in chirpstack door; do [ -f "$L/$c.crt" ] || cert "$L" "$L/ca" $c "extendedKeyUsage=clientAuth"; done
-ALG=ML-DSA-44
+# the broker's roles below: the set's own algorithm (its client CA's: ML-DSA-44, -65 or -87)
+ALG=$("$OSSL" x509 -in "$APP_CERTS/ClientCA.crt" -noout -text | awk '/Public Key Algorithm/ {print $NF; exit}')
 
 # the door's OpenSSL group list = the hybrid only, so a client without ML-KEM can't fall back to X25519 (its bridges too)
 printf 'openssl_conf = i\n[i]\nssl_conf = s\n[s]\nsystem_default = d\n[d]\nGroups = X25519MLKEM768\n' > "$P/openssl.cnf"
@@ -168,7 +169,7 @@ use_identity_as_username true
 tls_version tlsv1.3
 EOF
 
-# the broker's roles: chirpstack and application, issued by its client CA, ML-DSA-44 like the set (kept if present)
+# the broker's roles: chirpstack and application, issued by its client CA, in the set's algorithm (kept if present)
 for role in chirpstack application ${GW:+gateway}; do
     [ -f "$APP_CERTS/$role.crt" ] || cert "$APP_CERTS" "$APP_CERTS/ClientCA" $role "extendedKeyUsage=clientAuth"
 done
