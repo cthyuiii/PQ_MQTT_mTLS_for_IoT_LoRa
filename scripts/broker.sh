@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The chain's MQTT broker on the broker machine (network/mqtt_bench.py --role broker), in the background:
 # ML-DSA-44 mTLS on :18835 (the Gateway Bridge, ChirpStack), TLS + the application's login on :18935, X25519MLKEM768
-# only, no plain listener.
+# only, no plain listener. ML-DSA-65 and -87 too (:18836 / :18936, :18837 / :18937) where certs/ has them, in the same
+# Mosquitto: each client picks its algorithm by port and reaches the others whatever theirs (SIGS="MLDSA44": 44 only).
 #
 #   scripts/broker.sh start | stop | restart | status | log      (log: follows it; Ctrl-C stops following, not the broker)
 #
@@ -21,11 +22,12 @@ case "${1:-}" in
     start)
         running && { echo "already running (pid $(cat $PID))"; exit 0; }
         mkdir -p results
+        S=(); for s in ${SIGS:-MLDSA44 MLDSA65 MLDSA87}; do if [ -d "certs/$s" ]; then S+=("$s"); fi; done
         # setsid (Linux): its own session, so closing the SSH terminal that started it doesn't stop it. --log-file: the
         # log's name only (renamed at midnight), not read
         # shellcheck disable=SC2094
         $(command -v setsid || true) nohup python3 network/mqtt_bench.py --role broker \
-            --mosquitto "${MOSQUITTO:-$(command -v mosquitto || echo /usr/sbin/mosquitto)}" --sigs MLDSA44 \
+            --mosquitto "${MOSQUITTO:-$(command -v mosquitto || echo /usr/sbin/mosquitto)}" --sigs "${S[@]}" \
             --events-csv results/broker_events.csv --log-file $LOG --keep-days "${KEEP_DAYS:-3}" > $LOG 2>&1 < /dev/null &
         echo $! > $PID
         sleep 3

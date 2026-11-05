@@ -10,7 +10,9 @@ that fails is recorded as a result with its reason, not dropped.
 
 Each signature gets its own Mosquitto process: mTLS on port base+1+i, server-auth
 TLS on base+101+i (fixed order below), so a remote client needs no port map and
-one bad cert cannot take the other listeners down. Modes: plain, TLS, mTLS.
+one bad cert cannot take the other listeners down. Modes: plain, TLS, mTLS. The chain's broker (--role broker without
+BROKER_BENCH) runs its sets in one Mosquitto instead, so they share topics: a gateway on one set's port reaches a
+ChirpStack on another's.
 
 Full pipeline (--messages N): every connection then sends N telemetry PUBLISHes
 whose payload is protected end to end, as uplink and downlink frames (--dirs) (--aeads: LoRaWAN 1.0/1.1 AES-CTR+CMAC,
@@ -233,7 +235,7 @@ ACL_APP = ("user application\ntopic read application/+/device/+/event/#\ntopic w
 
 
 def start_brokers(args, tmp: Path, bind: str):
-    """One Mosquitto per listener. Returns (processes, {sig: failure reason})."""
+    """One Mosquitto per set (the chain's broker: one for all its sets). Returns (processes, {sig: failure reason})."""
     env = dict(os.environ, OPENSSL_CONF=str(openssl_cnf(tmp, args.group)), **broker_hs_env(args))
     common = ["per_listener_settings true", "log_dest stderr", "log_type error", "log_type warning",
               "log_type notice",  # notice: one line per connection, which follow_logs() shows on the broker machine
@@ -254,11 +256,13 @@ def start_brokers(args, tmp: Path, bind: str):
     crl = os.environ.get("BROKER_CRL", "") not in ("", "0")
 
     def launch(name, port, extra):
-        try:  # someone else's listener: wait_port would take it for this one, while this Mosquitto fails to bind
-            socket.create_connection((bind or "127.0.0.1", port), timeout=0.2).close()
-            return f"broker could not start listener: port {port} is in use (another broker running?)"
-        except OSError:
-            pass
+        ports = [port] + [int(p) for p in re.findall(r"^listener (\d+)", "\n".join(extra), re.M)]
+        for q in ports:
+            try:  # someone else's listener: wait_port would take it for this one, while this Mosquitto fails to bind
+                socket.create_connection((bind or "127.0.0.1", q), timeout=0.2).close()
+                return f"broker could not start listener: port {q} is in use (another broker running?)"
+            except OSError:
+                pass
         conf = tmp / f"{name}.conf"
         conf.write_text("\n".join(common + [f"listener {port} {bind}".rstrip()] + extra) + "\n")
         log = tmp / f"{name}.log"
@@ -267,7 +271,7 @@ def start_brokers(args, tmp: Path, bind: str):
         tee = threading.Thread(target=tee_log, args=(p, log), daemon=True) if stamp else None
         if tee:
             tee.start()
-        if wait_port(bind or "127.0.0.1", port, p):
+        if all(wait_port(bind or "127.0.0.1", q, p) for q in ports):
             procs.append(p)
             return None
         p.kill()
@@ -279,6 +283,7 @@ def start_brokers(args, tmp: Path, bind: str):
 
     if bench_broker() and (err := launch("plain", args.base_port, ["allow_anonymous true"])):
         raise SystemExit(f"plain MQTT listener failed ({err}) - port {args.base_port} in use?")
+    chain = []  # the chain's broker: (set, its listeners' lines), all started below as one Mosquitto
     for sig in args.sigs:
         src = args.certs / sig
         if not all((src / f).exists() for f in CERT_FILES):
@@ -290,7 +295,7 @@ def start_brokers(args, tmp: Path, bind: str):
         # server's issuer in it the broker sends only its own certificate, not the CA every client already holds
         ca = "ClientCA.crt" if (src / "ClientCA.crt").exists() else "CA.crt"
         tls = ["tls_version tlsv1.3", f"cafile {d}/{ca}", f"certfile {d}/server.crt", f"keyfile {d}/server.key"]
-        err = launch(sig, port_of(args.base_port, sig), [
+        extra = [
             "allow_anonymous false", "require_certificate true", "use_identity_as_username true", *tls,
             *acl_file("acl_mtls"),
             *([f"crlfile {d}/ClientCA.crl"] if crl and (src / "ClientCA.crl").exists() else []),
@@ -300,8 +305,16 @@ def start_brokers(args, tmp: Path, bind: str):
               # the application (Home Assistant): TLS, the broker's certificate, a username and password, its topics
               [f"listener {port_of(args.base_port, sig, 'TLS')} {bind}".rstrip(), "allow_anonymous false",
                "require_certificate false", f"password_file {d}/passwd", f"acl_file {tmp / 'acl_app'}", *tls]
-              if (src / "passwd").exists() else [])])
-        if err:
+              if (src / "passwd").exists() else [])]
+        if stamp:  # the chain's broker
+            chain.append((sig, extra))
+        elif err := launch(sig, port_of(args.base_port, sig), extra):
+            failed[sig] = err
+    if chain:  # one topic space: each client picks its set by port, and reaches the clients on every other set
+        (sig0, extra0), *rest = chain
+        err = launch("chain", port_of(args.base_port, sig0), extra0 + [
+            ln for sig, extra in rest for ln in [f"listener {port_of(args.base_port, sig)} {bind}".rstrip(), *extra]])
+        for sig, _ in chain if err else ():
             failed[sig] = err
     # the deployment checks' listeners per set present, and DEPLOY's signed trust-anchor update: the benchmark broker
     # only, as they include anonymous TLS listeners (the chain's broker has none, whatever certs/ holds)
