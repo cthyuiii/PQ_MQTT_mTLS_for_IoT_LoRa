@@ -27,6 +27,11 @@
 //   Wi-Fi power save is off (as TCP_NODELAY on the host: latency is what is measured).
 //   Each connection row also splits the handshake's own crypto on this board (hs_timing.c, --wrap): key share
 //   generation, its completion (decapsulation / shared secret), signature verification and signing, with counts.
+//   And the connection in CPU cycles from the core's own counter (board_cycles64: CCOUNT on the ESP32, arduino-pico's
+//   SysTick count on the Pico): total_cyc from the TCP connect to the CONNACK, wait_cyc the part spent waiting on the
+//   network (the TCP connect, raw_recv's wait for data). total_cyc - wait_cyc = the client's own CPU work.
+//   At boot: '#board' (chip model, core, cores, clock, SRAM, flash, this firmware's size in flash, the cycle counter)
+//   and '#build' (wolfSSL's version, and the wolfSSL / liboqs source commits the runner passes in).
 //   Output: '#block <stage> <mode> [<scheme> <up|down> | <group>]' .. '#end' per block. stage = connect (Stage 2, one
 //   row per connection), pipeline (+ one row per message) or sweep; mode = the transport: plain, TLS (server-auth)
 //   or mTLS.
@@ -138,7 +143,9 @@
 #endif
 // one connection; bytes and socket calls are counted where they cross WiFiClient (raw_send / raw_recv).
 // Above the first function: the .ino preprocessor puts its prototypes there.
-struct Conn { WiFiClient cl; uint32_t tx = 0, rx = 0, io[2] = {0, 0}; WOLFSSL *tls = nullptr; };
+// wait_cyc: CPU cycles spent waiting on the network (the TCP connect, and raw_recv's wait for data). The connection's
+// cycles less these are the client's own work: cpu_cyc = total_cyc - wait_cyc.
+struct Conn { WiFiClient cl; uint32_t tx = 0, rx = 0, io[2] = {0, 0}; WOLFSSL *tls = nullptr; uint64_t wait_cyc = 0; };
 struct Block { const char *stage, *mode; int iters, warm, msgs, aead, down, group; };
 struct Group { const char *name; int id; };
 // mqtt_bench.SWEEP_GROUPS by their OpenSSL names, those wolfSSL has (not HQC, FrodoKEM)
@@ -404,11 +411,13 @@ static int raw_send(Conn *c, const uint8_t *b, int n) {
 }
 static int raw_recv(Conn *c, uint8_t *b, int n) {  // 0 = closed, -1 = 10 s silence (the host's SO_RCVTIMEO)
   board_wdt_reset();  // also with the data already here: SNOVA level V verifies twice (2 x 3.5 s) between waits
+  uint64_t w0 = board_cycles64();
   for (uint32_t t0 = millis(); !c->cl.available();) {
     board_wdt_reset();
     if (!c->cl.connected()) return 0;
     if (millis() - t0 > 10000) return -1;
   }
+  c->wait_cyc += board_cycles64() - w0;
   int r = c->cl.read(b, n);
   if (r > 0) { c->rx += r; c->io[1]++; }
   return r;
@@ -668,9 +677,11 @@ static const char *one_connection(WOLFSSL_CTX *ctx, uint16_t port, int iter, int
   Conn c;
   const char *e = nullptr;
   uint32_t t0 = micros(), t1 = 0, t2 = 0, t3 = 0, hs_tx = 0, hs_rx = 0, hs_w = 0, hs_r = 0;
+  uint64_t c0 = board_cycles64(), c3 = 0;
   do {
     STEP(S_TCP);
     if (!c.cl.connect(broker, port)) { e = "tcp connect failed (no listener?)"; break; }
+    c.wait_cyc += board_cycles64() - c0;  // the TCP handshake: waiting on the broker
     c.cl.setNoDelay(true);
     t1 = micros();
     hs_reset();
@@ -705,13 +716,15 @@ static const char *one_connection(WOLFSSL_CTX *ctx, uint16_t port, int iter, int
       snprintf(err, sizeof err, "mqtt connect refused: CONNACK return code %d", ack[3]); e = err; break;
     }
     t3 = micros();
+    c3 = board_cycles64();
     STEP(S_SERIAL);
     if (iter == 0 && c.tls) Serial.printf("#suite %s\n", wolfSSL_get_cipher_name(c.tls));
     if (iter >= 0)
-      Serial.printf("%d,%.4f,%.4f,%.4f,%.4f,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%d" HS_FMT "\n", iter, (t1 - t0) / 1e3,
+      Serial.printf("%d,%.4f,%.4f,%.4f,%.4f,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%d" HS_FMT ",%.0f,%.0f\n", iter, (t1 - t0) / 1e3,
                     (t2 - t1) / 1e3, (t3 - t2) / 1e3, (t3 - t0) / 1e3, (unsigned long)hs_tx, (unsigned long)hs_rx,
                     (unsigned long)(c.tx - hs_tx), (unsigned long)(c.rx - hs_rx), (unsigned long)hs_w,
-                    (unsigned long)hs_r, (unsigned long)c.io[0], (unsigned long)c.io[1], free_heap, HS_ARGS(hs));
+                    (unsigned long)hs_r, (unsigned long)c.io[0], (unsigned long)c.io[1], free_heap, HS_ARGS(hs),
+                    (double)(c3 - c0), (double)c.wait_cyc);  // %.0f: exact to 2^53 cycles; no %llu needed
     if (msgs > 0) e = pipeline(&c, iter, msgs, iter >= 0, t0);
 #if defined(MT_KEX_ONLY) || defined(MT_DEPLOY_FULL)
     if (!e && cur_kem >= 0 && iter >= 0) e = kem_exchange(&c);
@@ -883,7 +896,7 @@ static void bench_block(const Block &b) {
   if (tls && !e) ctx = new_ctx(CA_DER, sizeof CA_DER, mtls, crl, &e);
   Serial.printf("#lib %s\n", tls ? "wolfSSL " LIBWOLFSSL_VERSION_STRING : "none (plain MQTT)");
   Serial.println("iter,tcp_ms,tls_ms,mqtt_ms,total_ms,hs_tx_B,hs_rx_B,mqtt_tx_B,mqtt_rx_B,hs_writes,hs_reads,writes,reads,"
-                 "free_heap_B," HS_COLS);
+                 "free_heap_B," HS_COLS ",total_cyc,wait_cyc");
   if (msgs > 0) Serial.println("msg,iter,idx,seal_us,rtt_us,open_us,tx_B,rx_B\nwhole,iter,first_ms,all_ms,msgs");
 #ifdef MT_DEPLOY_FULL
   if (cur_signed && !e && (dp_key_private(&dev_key, KEY_DER, sizeof KEY_DER) ||
@@ -967,6 +980,25 @@ void setup() {
   Serial.printf("=== MQTT / TLS 1.3 / mTLS, " STR(MT_SIG) " certificates, X25519MLKEM768 (wolfSSL %s) on " CHIP " ===\n",
                 LIBWOLFSSL_VERSION_STRING);
   Serial.printf("CPU clock: %lu MHz\n", (unsigned long)board_cpu_mhz());
+  // the platform columns: the chip (ESP32: read from its eFuse), its cores, flash, and this firmware's image in flash.
+  // sram_KB is the datasheet's (no register reports it). cycles: the counter total_cyc / wait_cyc come from.
+  Serial.printf("#board model=%s core=%s cores=%d cpu_mhz=%lu sram_KB=%d flash_KB=%lu firmware_B=%lu cycles=%s\n",
+                BOARD_MODEL, BOARD_CORE, board_cores(), (unsigned long)board_cpu_mhz(), BOARD_SRAM_KB,
+                (unsigned long)(board_flash_bytes() / 1024), (unsigned long)board_sketch_bytes(),
+#if defined(ARDUINO_ARCH_ESP32)
+                "CCOUNT");
+#else
+                "SysTick_getCycleCount64");
+#endif
+  // the libraries' source commits, passed by run_benchmarks.py at build time (-DMT_WOLFSSL_COMMIT=<sha>)
+#ifndef MT_WOLFSSL_COMMIT
+#define MT_WOLFSSL_COMMIT unknown
+#endif
+#ifndef MT_LIBOQS_COMMIT
+#define MT_LIBOQS_COMMIT none
+#endif
+  Serial.printf("#build wolfssl=%s wolfssl_commit=%s liboqs_commit=%s\n", LIBWOLFSSL_VERSION_STRING,
+                STR(MT_WOLFSSL_COMMIT), STR(MT_LIBOQS_COMMIT));
   int first = 0, cause = boot_cause();  // after a watchdog reset (or crash): report the block, go on with the next
   if ((cause == 1 || cause == 2) && WD_SCRATCH[1] == RESUME_MAGIC && WD_SCRATCH[0] < N_BLOCKS) {
     first = WD_SCRATCH[0] + 1;

@@ -125,6 +125,12 @@ def libraries(s):
                 os.symlink(os.path.join(src, name), os.path.join(d, name))
         return d
     return WOLF_LIBS + {"liboqs+xkcp": "-xkcp", R3: "-r3"}.get(s["lib"], "")
+def src_commit(name):
+    """the short commit of a library's source checkout in the cache (make_wolfssl_lib.sh's wolfssl-src, the round 3
+    liboqs-r3-src); 'unknown' when there is none"""
+    src = os.path.join(os.path.dirname(WOLF_LIBS), name)
+    r = subprocess.run(["git", "-C", src, "rev-parse", "--short=9", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unknown"
 def test_of(s):
     return "mqtt" if s["folder"] == "mqtt_tls_bench" else "pqc"
 def norm(t):
@@ -963,6 +969,10 @@ def main():
             if why:
                 print("    !!", why); row(label, lib=lib_of(s), status=why); continue
             flags += f" -I{os.path.join(outdir, 'gen')}"
+            # the libraries' source commits, for the firmware's '#build' line (the TLS library / commit column)
+            flags += f" -DMT_WOLFSSL_COMMIT={src_commit('wolfssl-src')}"
+            if s.get("lib") == R3:
+                flags += f" -DMT_LIBOQS_COMMIT={src_commit('liboqs-r3-src')}"
         build_fqbn = re.sub(r"^(rp2040:rp2040:rpipico2?)\b", r"\1w", fqbn) if wifi else fqbn
         if wifi and esp:  # 3 MB of program, 1 MB of LittleFS (the deployment's trust anchor and LoRaWAN state)
             build_fqbn += ":PartitionScheme=huge_app"
