@@ -28,8 +28,8 @@
 //   Each connection row also splits the handshake's own crypto on this board (hs_timing.c, --wrap): key share
 //   generation, its completion (decapsulation / shared secret), signature verification and signing, with counts.
 //   And the connection in CPU cycles from the core's own counter (board_cycles64: CCOUNT on the ESP32, arduino-pico's
-//   SysTick count on the Pico): total_cyc from the TCP connect to the CONNACK, wait_cyc the part spent waiting on the
-//   network (the TCP connect, raw_recv's wait for data). total_cyc - wait_cyc = the client's own CPU work.
+//   SysTick count on the Pico): total_cyc from the TCP connect to the CONNACK, wait_cyc the part spent in the network
+//   (the TCP connect, and all of every socket write and read). total_cyc - wait_cyc = the client's TLS and MQTT work.
 //   At boot: '#board' (chip model, core, cores, clock, SRAM, flash, this firmware's size in flash, the cycle counter)
 //   and '#build' (wolfSSL's version, and the wolfSSL / liboqs source commits the runner passes in).
 //   Output: '#block <stage> <mode> [<scheme> <up|down> | <group>]' .. '#end' per block. stage = connect (Stage 2, one
@@ -143,8 +143,9 @@
 #endif
 // one connection; bytes and socket calls are counted where they cross WiFiClient (raw_send / raw_recv).
 // Above the first function: the .ino preprocessor puts its prototypes there.
-// wait_cyc: CPU cycles spent waiting on the network (the TCP connect, and raw_recv's wait for data). The connection's
-// cycles less these are the client's own work: cpu_cyc = total_cyc - wait_cyc.
+// wait_cyc: the cycles spent in the network: the TCP connect and every raw_send / raw_recv call (blocking writes,
+// waits for data, the driver's copies). The connection's cycles less these are the client's TLS and MQTT work:
+// cpu_cyc = total_cyc - wait_cyc.
 struct Conn { WiFiClient cl; uint32_t tx = 0, rx = 0, io[2] = {0, 0}; WOLFSSL *tls = nullptr; uint64_t wait_cyc = 0; };
 struct Block { const char *stage, *mode; int iters, warm, msgs, aead, down, group; };
 struct Group { const char *name; int id; };
@@ -403,23 +404,28 @@ static const char *label(const Block &b) {  // "connect TLS", "pipeline mTLS lor
   return l;
 }
 
+// Every cycle inside these two socket calls is wait_cyc: the write (which blocks while the stack's send buffer is
+// full, until the broker ACKs), the wait for data, and the driver's copying in and out. The client's CPU cycles are
+// what's left: TLS and MQTT on this core.
 static int raw_send(Conn *c, const uint8_t *b, int n) {
+  uint64_t w0 = board_cycles64();
   board_wdt_reset();
   int r = (int)c->cl.write(b, n);
   if (r > 0) { c->tx += r; c->io[0]++; }
+  c->wait_cyc += board_cycles64() - w0;
   return r;
 }
 static int raw_recv(Conn *c, uint8_t *b, int n) {  // 0 = closed, -1 = 10 s silence (the host's SO_RCVTIMEO)
-  board_wdt_reset();  // also with the data already here: SNOVA level V verifies twice (2 x 3.5 s) between waits
   uint64_t w0 = board_cycles64();
+  board_wdt_reset();  // also with the data already here: SNOVA level V verifies twice (2 x 3.5 s) between waits
   for (uint32_t t0 = millis(); !c->cl.available();) {
     board_wdt_reset();
     if (!c->cl.connected()) return 0;
     if (millis() - t0 > 10000) return -1;
   }
-  c->wait_cyc += board_cycles64() - w0;
   int r = c->cl.read(b, n);
   if (r > 0) { c->rx += r; c->io[1]++; }
+  c->wait_cyc += board_cycles64() - w0;
   return r;
 }
 static int cb_send(WOLFSSL *, char *b, int n, void *c) {

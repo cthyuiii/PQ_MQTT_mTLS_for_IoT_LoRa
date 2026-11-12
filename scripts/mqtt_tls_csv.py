@@ -106,9 +106,10 @@ for d in DIRS:
                 row.update({"Connect min (ms)": f"{min(t):.3f}", "Connect median (ms)": f"{statistics.median(t):.3f}",
                             "Connect max (ms)": f"{max(t):.3f}", "Connect P50 (ms)": f"{pct(t, .5):.3f}",
                             "Connect P90 (ms)": f"{pct(t, .9):.3f}", "Connect P99 (ms)": f"{pct(t, .99):.3f}"})
-                if "total_cyc" in r[0]:  # measured: the connection's cycles less those spent waiting on the network
+                if "total_cyc" in r[0]:  # measured: the connection's cycles less those in the TCP connect and socket calls
                     cyc = [float(x["total_cyc"]) - float(x["wait_cyc"]) for x in r]
-                    method = f"{cyc_counter or 'cycle counter'}: TCP connect..CONNACK minus network wait (measured)"
+                    method = (f"{cyc_counter or 'cycle counter'}: TCP connect..CONNACK minus TCP connect and "
+                              "socket read/write calls (measured)")
                 elif not plain:  # older logs: the handshake's crypto only, from micros()
                     cyc = [sum(float(x[c]) for c in HS) * clock for x in r]
                     method = f"handshake crypto micros() (keygen+derive+verify+sign) x {clock} MHz (derived)"
