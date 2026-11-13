@@ -1,0 +1,40 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+=== ECDSA-P256 (BearSSL, classical baseline) on ESP32 ===
+CPU clock: 240 MHz
+  iter 1/20 k=61636us s=72258us v=163141us kc=14793067 sc=17341813 vc=39153906
+  iter 2/20 k=61370us s=72160us v=163079us kc=14728634 sc=17318382 vc=39139284
+  iter 3/20 k=61370us s=72154us v=163086us kc=14728652 sc=17316954 vc=39140982
+  iter 4/20 k=61373us s=72155us v=163082us kc=14729600 sc=17317050 vc=39139899
+  iter 5/20 k=61371us s=72152us v=163083us kc=14728901 sc=17316654 vc=39140136
+  iter 6/20 k=61375us s=72153us v=163083us kc=14729981 sc=17316759 vc=39140217
+  iter 7/20 k=61370us s=72154us v=163084us kc=14728679 sc=17317014 vc=39140583
+  iter 8/20 k=61371us s=72154us v=163082us kc=14728889 sc=17316948 vc=39140037
+  iter 9/20 k=61370us s=72159us v=163083us kc=14728763 sc=17318052 vc=39140400
+  iter 10/20 k=61369us s=72153us v=163084us kc=14728637 sc=17316699 vc=39140406
+  iter 11/20 k=61375us s=72155us v=163083us kc=14729927 sc=17317179 vc=39140205
+  iter 12/20 k=61372us s=72156us v=163087us kc=14729333 sc=17317323 vc=39141147
+  iter 13/20 k=61369us s=72151us v=163084us kc=14728451 sc=17316297 vc=39140355
+  iter 14/20 k=61374us s=72156us v=163084us kc=14729828 sc=17317314 vc=39140592
+  iter 15/20 k=61370us s=72155us v=163085us kc=14728853 sc=17317233 vc=39140481
+  iter 16/20 k=61370us s=72154us v=163083us kc=14728910 sc=17316861 vc=39140205
+  iter 17/20 k=61374us s=72154us v=163081us kc=14729780 sc=17316819 vc=39139839
+  iter 18/20 k=61370us s=72155us v=163087us kc=14728835 sc=17317212 vc=39141216
+  iter 19/20 k=61368us s=72154us v=163084us kc=14728349 sc=17316936 vc=39140355
+  iter 20/20 k=61374us s=72153us v=163084us kc=14729735 sc=17316660 vc=39140547
+sizes: pk=64 (uncompressed-1) sk=32 sigMax=64 sig=64
+ECDSA-P256  keygen  n=20  mean=61384us/61.384ms  median=61370us/61.370ms  std=57us/0.057ms  min=61368us  max=61636us  mean_cyc=14732290  median_cyc=14728895  min_cyc=14728349  max_cyc=14793067  cyc_src=CCOUNT  ops/s=16.2909
+ECDSA-P256  sign  n=20  mean=72159us/72.159ms  median=72154us/72.154ms  std=22us/0.022ms  min=72151us  max=72258us  mean_cyc=17318307  median_cyc=17316984  min_cyc=17316297  max_cyc=17341813  cyc_src=CCOUNT  ops/s=13.8583
+ECDSA-P256  verify  n=20  mean=163086us/163.086ms  median=163084us/163.084ms  std=12us/0.012ms  min=163079us  max=163141us  mean_cyc=39141039  median_cyc=39140377  min_cyc=39139284  max_cyc=39153906  cyc_src=CCOUNT  ops/s=6.1317
+verify OK: 20/20
+free stack: 28004 bytes   free heap: 304644 bytes
+=== done (repeats in ~5s) ===

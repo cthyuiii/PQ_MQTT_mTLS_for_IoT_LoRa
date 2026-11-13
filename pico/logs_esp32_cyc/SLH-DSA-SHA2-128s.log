@@ -1,0 +1,28 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+=== SLH-DSA-SHA2-128s (PQClean, FIPS 205, SLOW 's' variant) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=32 sk=64 sigMax=7856 sig=7856
+[iter 1/3] keygen...
+ 13494524us  sign(slow)...
+ 102541204us  verify... 99515us  ok=1 kc=3238685670 sc=24609888771 vc=23883576
+[iter 2/3] keygen...
+ 13494088us  sign(slow)...
+ 102541069us  verify... 99475us  ok=1 kc=3238581039 sc=24609856368 vc=23873907
+[iter 3/3] keygen...
+ 13494068us  sign(slow)...
+ 102541080us  verify... 103663us  ok=1 kc=3238576212 sc=24609859224 vc=24879108
+SLH-DSA-SHA2-128s  keygen  n=3  mean=13494226us/13494.226ms  median=13494088us/13494.088ms  std=210us/0.210ms  min=13494068us  max=13494524us  mean_cyc=3238614307  median_cyc=3238581039  min_cyc=3238576212  max_cyc=3238685670  cyc_src=CCOUNT  ops/s=0.0741
+SLH-DSA-SHA2-128s  sign  n=3  mean=102541117us/102541.117ms  median=102541080us/102541.078ms  std=61us/0.061ms  min=102541069us  max=102541204us  mean_cyc=24609868121  median_cyc=24609859224  min_cyc=24609856368  max_cyc=24609888771  cyc_src=CCOUNT  ops/s=0.0098
+SLH-DSA-SHA2-128s  verify  n=3  mean=100884us/100.884ms  median=99515us/99.515ms  std=1964us/1.964ms  min=99475us  max=103663us  mean_cyc=24212197  median_cyc=23883576  min_cyc=23873907  max_cyc=24879108  cyc_src=CCOUNT  ops/s=9.9124
+verify OK: 3/3
+free stack: 45276 bytes   free heap: 281084 bytes
+=== done (repeats in ~5s) ===

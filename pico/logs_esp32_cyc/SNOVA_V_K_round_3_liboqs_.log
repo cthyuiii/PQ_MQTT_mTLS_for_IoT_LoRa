@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10 big stack=96 KB
+  iter 1/10 k=2436662us s=5308119us v=3316106us kc=584798934 sc=1273948668 vc=795865458
+  iter 2/10 k=2436625us s=5308063us v=3316113us kc=584790144 sc=1273935168 vc=795867330
+  iter 3/10 k=2436637us s=5308126us v=3316105us kc=584792967 sc=1273950300 vc=795865104
+  iter 4/10 k=2436634us s=5308116us v=3316113us kc=584792184 sc=1273947786 vc=795867045
+  iter 5/10 k=2436621us s=5308110us v=3316093us kc=584789154 sc=1273946385 vc=795862449
+  iter 6/10 k=2436665us s=5308103us v=3316116us kc=584799630 sc=1273944750 vc=795867897
+  iter 7/10 k=2436655us s=5308074us v=3316085us kc=584797362 sc=1273937658 vc=795860370
+  iter 8/10 k=2436585us s=5308087us v=3316095us kc=584780511 sc=1273940901 vc=795862758
+  iter 9/10 k=2436630us s=5308113us v=3316099us kc=584791356 sc=1273947060 vc=795863739
+  iter 10/10 k=2436655us s=5308074us v=3316085us kc=584797362 sc=1273937664 vc=795860385
+=== SNOVA_V_K (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1216 sk=96 sig=896 sigMax=896
+SNOVA_V_K(liboqs)  keygen  n=10  mean=2436636us/2436.636ms  median=2436635us/2436.635ms  std=22us/0.022ms  min=2436585us  max=2436665us  mean_cyc=584792960  median_cyc=584792575  min_cyc=584780511  max_cyc=584799630  cyc_src=CCOUNT  ops/s=0.4104
+SNOVA_V_K(liboqs)  sign  n=10  mean=5308098us/5308.098ms  median=5308106us/5308.106ms  std=21us/0.021ms  min=5308063us  max=5308126us  mean_cyc=1273943634  median_cyc=1273945567  min_cyc=1273935168  max_cyc=1273950300  cyc_src=CCOUNT  ops/s=0.1884
+SNOVA_V_K(liboqs)  verify  n=10  mean=3316101us/3316.101ms  median=3316102us/3316.102ms  std=10us/0.010ms  min=3316085us  max=3316116us  mean_cyc=795864253  median_cyc=795864421  min_cyc=795860370  max_cyc=795867897  cyc_src=CCOUNT  ops/s=0.3016
+verify OK: 10/10
+peak stack: keygen=7584 sign=95024 verify=18512 / 98304 bytes
+free heap: 228696 bytes
+=== done (repeats in ~5s) ===

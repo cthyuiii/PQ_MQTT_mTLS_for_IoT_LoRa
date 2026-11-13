@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10 big stack=96 KB
+  iter 1/10 k=377967us s=449006us v=348091us kc=90712351 sc=107762417 vc=83542027
+  iter 2/10 k=377931us s=376312us v=348088us kc=90703750 sc=90315268 vc=83541295
+  iter 3/10 k=377935us s=445538us v=348093us kc=90704704 sc=106929439 vc=83542462
+  iter 4/10 k=377942us s=658507us v=348088us kc=90706435 sc=158041963 vc=83541409
+  iter 5/10 k=377929us s=590369us v=348094us kc=90703312 sc=141688819 vc=83542651
+  iter 6/10 k=377939us s=935980us v=348089us kc=90705700 sc=224635624 vc=83541697
+  iter 7/10 k=377926us s=585197us v=348088us kc=90702610 sc=140447629 vc=83541328
+  iter 8/10 k=377934us s=445234us v=348087us kc=90704542 sc=106856530 vc=83541220
+  iter 9/10 k=377941us s=587240us v=348083us kc=90706159 sc=140937937 vc=83540380
+  iter 10/10 k=377941us s=376305us v=348090us kc=90706222 sc=90313552 vc=83541729
+=== ML-DSA-65 (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1952 sk=4032 sig=3309 sigMax=3309
+ML-DSA-65(liboqs)  keygen  n=10  mean=377938us/377.938ms  median=377937us/377.937ms  std=10us/0.010ms  min=377926us  max=377967us  mean_cyc=90705578  median_cyc=90705202  min_cyc=90702610  max_cyc=90712351  cyc_src=CCOUNT  ops/s=2.6459
+ML-DSA-65(liboqs)  sign  n=10  mean=544968us/544.968ms  median=517101us/517.101ms  std=160368us/160.368ms  min=376305us  max=935980us  mean_cyc=130792917  median_cyc=124105023  min_cyc=90313552  max_cyc=224635624  cyc_src=CCOUNT  ops/s=1.8350
+ML-DSA-65(liboqs)  verify  n=10  mean=348089us/348.089ms  median=348088us/348.088ms  std=2us/0.002ms  min=348083us  max=348094us  mean_cyc=83541619  median_cyc=83541553  min_cyc=83540380  max_cyc=83542651  cyc_src=CCOUNT  ops/s=2.8728
+verify OK: 10/10
+peak stack: keygen=49280 sign=74352 verify=45168 / 98304 bytes
+free heap: 221488 bytes
+=== done (repeats in ~5s) ===

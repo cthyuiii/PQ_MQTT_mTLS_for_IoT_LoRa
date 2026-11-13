@@ -1,0 +1,40 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+  iter 1/20 k=545740us s=19644us v=13381us kc=130977647 sc=4714500 vc=3211328
+  iter 2/20 k=296827us s=19608us v=13323us kc=71238431 sc=4705860 vc=3197581
+  iter 3/20 k=300833us s=19595us v=13343us kc=72199823 sc=4702953 vc=3202321
+  iter 4/20 k=292947us s=19616us v=13329us kc=70307324 sc=4707786 vc=3198811
+  iter 5/20 k=269354us s=19607us v=13343us kc=64644905 sc=4705578 vc=3202525
+  iter 6/20 k=274300us s=19603us v=13326us kc=65832095 sc=4704642 vc=3198304
+  iter 7/20 k=298193us s=19600us v=13340us kc=71566263 sc=4704065 vc=3201667
+  iter 8/20 k=310434us s=19601us v=13326us kc=74504213 sc=4704069 vc=3198409
+  iter 9/20 k=293226us s=19604us v=13345us kc=70374137 sc=4704957 vc=3202843
+  iter 10/20 k=270532us s=19604us v=13327us kc=64927676 sc=4704900 vc=3198508
+  iter 11/20 k=646075us s=19607us v=13342us kc=155057849 sc=4705749 vc=3202144
+  iter 12/20 k=278028us s=19601us v=13330us kc=66726578 sc=4704270 vc=3199255
+  iter 13/20 k=270582us s=19604us v=13343us kc=64939595 sc=4704951 vc=3202423
+  iter 14/20 k=299362us s=19608us v=13326us kc=71846762 sc=4706043 vc=3198187
+  iter 15/20 k=283111us s=19605us v=13340us kc=67946585 sc=4705110 vc=3201790
+  iter 16/20 k=291832us s=19603us v=13332us kc=70039766 sc=4704504 vc=3199906
+  iter 17/20 k=281926us s=19609us v=13345us kc=67662317 sc=4706160 vc=3202627
+  iter 18/20 k=380500us s=19593us v=13331us kc=91320065 sc=4702278 vc=3199288
+  iter 19/20 k=413197us s=19593us v=13345us kc=99167171 sc=4702479 vc=3202774
+  iter 20/20 k=273063us s=19608us v=13332us kc=65535050 sc=4705875 vc=3199738
+=== HAWK-512 (NIST ref, lattice) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=1024 sk=184 sigMax=555 sig=555
+HAWK-512  keygen  n=20  mean=328503us/328.503ms  median=293086us/293.086ms  std=97118us/97.118ms  min=269354us  max=646075us  mean_cyc=78840712  median_cyc=70340730  min_cyc=64644905  max_cyc=155057849  cyc_src=CCOUNT  ops/s=3.0441
+HAWK-512  sign  n=20  mean=19605us/19.605ms  median=19604us/19.604ms  std=10us/0.010ms  min=19593us  max=19644us  mean_cyc=4705336  median_cyc=4704954  min_cyc=4702278  max_cyc=4714500  cyc_src=CCOUNT  ops/s=51.0074
+HAWK-512  verify  n=20  mean=13337us/13.337ms  median=13336us/13.336ms  std=12us/0.012ms  min=13323us  max=13381us  mean_cyc=3201021  median_cyc=3200786  min_cyc=3197581  max_cyc=3211328  cyc_src=CCOUNT  ops/s=74.9794
+verify OK: 20/20
+free stack: 52492 bytes   free heap: 267300 bytes
+=== done (repeats in ~5s) ===

@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running QR-UOV-q127L3v156m54, ITERS=10
+  iter 1/10 k=3346024us s=571029us v=532496us kc=803045299 sc=137046837 vc=127798977
+  iter 2/10 k=3345737us s=570898us v=532465us kc=802977081 sc=137015376 vc=127791684
+  iter 3/10 k=3345731us s=570897us v=532445us kc=802975323 sc=137015358 vc=127786908
+  iter 4/10 k=3345733us s=570912us v=532457us kc=802975941 sc=137018994 vc=127789653
+  iter 5/10 k=3345725us s=570890us v=532450us kc=802974120 sc=137013675 vc=127788079
+  iter 6/10 k=3345733us s=570899us v=532455us kc=802975944 sc=137015913 vc=127789209
+  iter 7/10 k=3345733us s=570901us v=532455us kc=802975782 sc=137016351 vc=127789179
+  iter 8/10 k=3345726us s=570914us v=532454us kc=802974414 sc=137019363 vc=127789026
+  iter 9/10 k=3345731us s=570912us v=532454us kc=802975446 sc=137019373 vc=127788927
+  iter 10/10 k=3345732us s=570912us v=532454us kc=802975626 sc=137019006 vc=127788990
+=== QR-UOV-q127L3v156m54 (QR-UOV round 3 ref, SHAKE PRG) on ESP32 [big-stack] ===
+CPU clock: 240 MHz
+sizes: pk=24256 sk=32 sigMax=200 sig=200
+QR-UOV-q127L3v156m54  keygen  n=10  mean=3345760us/3345.760ms  median=3345732us/3345.732ms  std=87us/0.087ms  min=3345725us  max=3346024us  mean_cyc=802982497  median_cyc=802975704  min_cyc=802974120  max_cyc=803045299  cyc_src=CCOUNT  ops/s=0.2989
+QR-UOV-q127L3v156m54  sign  n=10  mean=570916us/570.916ms  median=570906us/570.906ms  std=38us/0.038ms  min=570890us  max=571029us  mean_cyc=137020024  median_cyc=137017672  min_cyc=137013675  max_cyc=137046837  cyc_src=CCOUNT  ops/s=1.7516
+QR-UOV-q127L3v156m54  verify  n=10  mean=532458us/532.458ms  median=532454us/532.454ms  std=13us/0.013ms  min=532445us  max=532496us  mean_cyc=127790063  median_cyc=127789102  min_cyc=127786908  max_cyc=127798977  cyc_src=CCOUNT  ops/s=1.8781
+verify OK: 10/10
+big-stack peak: keygen=27888 sign=25808 verify=22032 / 49152 bytes
+free heap: 256264 bytes
+=== done (repeats in ~5s) ===

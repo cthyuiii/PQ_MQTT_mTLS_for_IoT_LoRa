@@ -1,0 +1,28 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+=== SLH-DSA-SHAKE-128s (PQClean, FIPS 205, SLOW 's' variant) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=32 sk=64 sigMax=7856 sig=7856
+[iter 1/3] keygen...
+ 40842677us  sign(slow)...
+ 310318560us  verify... 297904us  ok=1 kc=9802242630 sc=74476454538 vc=71497074
+[iter 2/3] keygen...
+ 40842468us  sign(slow)...
+ 310318628us  verify... 295753us  ok=1 kc=9802192341 sc=74476470819 vc=70980741
+[iter 3/3] keygen...
+ 40842485us  sign(slow)...
+ 310318533us  verify... 297863us  ok=1 kc=9802196478 sc=74476448103 vc=71487150
+SLH-DSA-SHAKE-128s  keygen  n=3  mean=40842543us/40842.543ms  median=40842485us/40842.484ms  std=94us/0.094ms  min=40842468us  max=40842677us  mean_cyc=9802210483  median_cyc=9802196478  min_cyc=9802192341  max_cyc=9802242630  cyc_src=CCOUNT  ops/s=0.0245
+SLH-DSA-SHAKE-128s  sign  n=3  mean=310318573us/310318.563ms  median=310318560us/310318.563ms  std=39us/0.039ms  min=310318533us  max=310318628us  mean_cyc=74476457820  median_cyc=74476454538  min_cyc=74476448103  max_cyc=74476470819  cyc_src=CCOUNT  ops/s=0.0032
+SLH-DSA-SHAKE-128s  verify  n=3  mean=297173us/297.173ms  median=297863us/297.863ms  std=1004us/1.004ms  min=295753us  max=297904us  mean_cyc=71321655  median_cyc=71487150  min_cyc=70980741  max_cyc=71497074  cyc_src=CCOUNT  ops/s=3.3650
+verify OK: 3/3
+free stack: 44940 bytes   free heap: 281084 bytes
+=== done (repeats in ~5s) ===

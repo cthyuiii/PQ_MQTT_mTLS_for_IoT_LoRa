@@ -1,0 +1,31 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10 big stack=96 KB
+  iter 1/10 k=3151233us s=324682us v=25804us kc=756295830 sc=77923629 vc=6192771
+  iter 2/10 k=2709816us s=325180us v=25802us kc=650355978 sc=78043191 vc=6192501
+  iter 3/10 k=2662458us s=324386us v=25803us kc=638989854 sc=77852586 vc=6192861
+  iter 4/10 k=5760457us s=324788us v=25809us kc=1382509797 sc=77949180 vc=6193956
+  iter 5/10 k=10935938us s=324970us v=25810us kc=2624625066 sc=77992713 vc=6194433
+  iter 6/10 k=2707787us s=324924us v=25809us kc=649869003 sc=77981799 vc=6193998
+  iter 7/10 k=4652930us s=325777us v=25804us kc=1116703233 sc=78186648 vc=6192981
+  iter 8/10 k=8675096us s=324632us v=25801us kc=2082023070 sc=77911821 vc=6192213
+  iter 9/10 k=7307843us s=323963us v=25804us kc=1753882311 sc=77751198 vc=6193029
+  iter 10/10 k=4745764us s=325721us v=25807us kc=1138983459 sc=78173112 vc=6193683
+=== Falcon-512 (liboqs 0.16.0, portable C) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=897 sk=1281 sig=650 sigMax=752
+Falcon-512(liboqs)  keygen  n=10  mean=5330932us/5330.932ms  median=4699347us/4699.347ms  std=2704020us/2704.020ms  min=2662458us  max=10935938us  mean_cyc=1279423760  median_cyc=1127843346  min_cyc=638989854  max_cyc=2624625066  cyc_src=CCOUNT  ops/s=0.1876
+Falcon-512(liboqs)  sign  n=10  mean=324902us/324.902ms  median=324856us/324.856ms  std=529us/0.529ms  min=323963us  max=325777us  mean_cyc=77976587  median_cyc=77965489  min_cyc=77751198  max_cyc=78186648  cyc_src=CCOUNT  ops/s=3.0779
+Falcon-512(liboqs)  verify  n=10  mean=25805us/25.805ms  median=25804us/25.804ms  std=3us/0.003ms  min=25801us  max=25810us  mean_cyc=6193242  median_cyc=6193005  min_cyc=6192213  max_cyc=6194433  cyc_src=CCOUNT  ops/s=38.7522
+verify OK: 10/10
+peak stack: keygen=18304 sign=43776 verify=5168 / 98304 bytes
+free heap: 227912 bytes
+=== done (repeats in ~5s) ===

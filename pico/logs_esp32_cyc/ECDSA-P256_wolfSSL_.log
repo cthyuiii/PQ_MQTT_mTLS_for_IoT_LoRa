@@ -1,0 +1,42 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=20
+  iter 1/20 k=94337us s=104425us v=189880us kc=22640665 sc=25062133 vc=45571384
+  iter 2/20 k=94157us s=104320us v=189802us kc=22597510 sc=25036861 vc=45552517
+  iter 3/20 k=94170us s=104312us v=189816us kc=22600615 sc=25034716 vc=45555742
+  iter 4/20 k=94167us s=104305us v=189812us kc=22600075 sc=25033135 vc=45554890
+  iter 5/20 k=94169us s=104325us v=189791us kc=22600432 sc=25038031 vc=45549673
+  iter 6/20 k=94164us s=104289us v=189809us kc=22599508 sc=25029364 vc=45554110
+  iter 7/20 k=94168us s=104314us v=189796us kc=22600117 sc=25035322 vc=45551089
+  iter 8/20 k=94161us s=104310us v=189795us kc=22598545 sc=25034316 vc=45550792
+  iter 9/20 k=94174us s=104324us v=189793us kc=22601644 sc=25037902 vc=45550402
+  iter 10/20 k=94165us s=104321us v=189787us kc=22599403 sc=25036927 vc=45548728
+  iter 11/20 k=94161us s=104312us v=189778us kc=22598776 sc=25034920 vc=45546790
+  iter 12/20 k=94166us s=104317us v=189799us kc=22599853 sc=25036234 vc=45551722
+  iter 13/20 k=94167us s=104310us v=189817us kc=22599982 sc=25034422 vc=45556024
+  iter 14/20 k=94173us s=104314us v=189802us kc=22601494 sc=25035262 vc=45552367
+  iter 15/20 k=94174us s=104319us v=189807us kc=22601695 sc=25036630 vc=45553729
+  iter 16/20 k=94163us s=104311us v=189777us kc=22598980 sc=25034650 vc=45546490
+  iter 17/20 k=94161us s=104323us v=189780us kc=22598527 sc=25037605 vc=45547177
+  iter 18/20 k=94169us s=104322us v=189799us kc=22600354 sc=25037059 vc=45551710
+  iter 19/20 k=94174us s=104320us v=189796us kc=22601605 sc=25036819 vc=45551125
+  iter 20/20 k=94169us s=104303us v=189771us kc=22600552 sc=25032739 vc=45545095
+=== ECDSA-P256 (wolfSSL 5.9.4) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=64 sk=32 sig=71 sigMax=141
+ECDSA-P256(wolfSSL)  keygen  n=20  mean=94175us/94.175ms  median=94167us/94.167ms  std=37us/0.037ms  min=94157us  max=94337us  mean_cyc=22602016  median_cyc=22600096  min_cyc=22597510  max_cyc=22640665  cyc_src=CCOUNT  ops/s=10.6185
+ECDSA-P256(wolfSSL)  sign  n=20  mean=104319us/104.319ms  median=104315us/104.315ms  std=25us/0.025ms  min=104289us  max=104425us  mean_cyc=25036752  median_cyc=25035778  min_cyc=25029364  max_cyc=25062133  cyc_src=CCOUNT  ops/s=9.5860
+ECDSA-P256(wolfSSL)  verify  n=20  mean=189800us/189.800ms  median=189797us/189.797ms  std=22us/0.022ms  min=189771us  max=189880us  mean_cyc=45552077  median_cyc=45551417  min_cyc=45545095  max_cyc=45571384  cyc_src=CCOUNT  ops/s=5.2687
+verify OK: 20/20
+sign errors (signed again): 0
+peak heap (wolfSSL allocations): keygen=1476 sign=2088 verify=2452 bytes
+free stack: 31116 bytes   free heap: 303584 bytes
+=== done (repeats in ~5s) ===

@@ -1,0 +1,30 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10
+  iter 1/10 k=211319us s=4936351us v=298496us kc=50716258 sc=1184724246 vc=71638941
+  iter 2/10 k=210886us s=4936279us v=304041us kc=50612377 sc=1184706990 vc=72969921
+  iter 3/10 k=210881us s=4936319us v=291496us kc=50611087 sc=1184716542 vc=69959082
+  iter 4/10 k=210891us s=4936295us v=296385us kc=50613352 sc=1184710974 vc=71132442
+  iter 5/10 k=210893us s=4936280us v=304055us kc=50613946 sc=1184707326 vc=72973032
+  iter 6/10 k=210890us s=4936299us v=297779us kc=50613274 sc=1184711631 vc=71467083
+  iter 7/10 k=210881us s=4936323us v=292884us kc=50611018 sc=1184717619 vc=70292202
+  iter 8/10 k=210893us s=4936274us v=289384us kc=50613895 sc=1184705901 vc=69452148
+  iter 9/10 k=210887us s=4936291us v=304049us kc=50612629 sc=1184709675 vc=72971913
+  iter 10/10 k=210891us s=4936285us v=292887us kc=50613580 sc=1184708376 vc=70292835
+=== SLH-DSA-SHA2-128f (PQClean, FIPS 205) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=32 sk=64 sigMax=17088 sig=17088
+SLH-DSA-SHA2-128f  keygen  n=10  mean=210931us/210.931ms  median=210890us/210.890ms  std=129us/0.129ms  min=210881us  max=211319us  mean_cyc=50623141  median_cyc=50613313  min_cyc=50611018  max_cyc=50716258  cyc_src=CCOUNT  ops/s=4.7409
+SLH-DSA-SHA2-128f  sign  n=10  mean=4936299us/4936.299ms  median=4936293us/4936.293ms  std=23us/0.023ms  min=4936274us  max=4936351us  mean_cyc=1184711928  median_cyc=1184710324  min_cyc=1184705901  max_cyc=1184724246  cyc_src=CCOUNT  ops/s=0.2026
+SLH-DSA-SHA2-128f  verify  n=10  mean=297145us/297.145ms  median=297082us/297.082ms  std=5236us/5.236ms  min=289384us  max=304055us  mean_cyc=71314959  median_cyc=71299762  min_cyc=69452148  max_cyc=72973032  cyc_src=CCOUNT  ops/s=3.3654
+verify OK: 10/10
+free stack: 45612 bytes   free heap: 271580 bytes
+=== done (repeats in ~5s) ===

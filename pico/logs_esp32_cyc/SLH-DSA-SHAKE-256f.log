@@ -1,0 +1,30 @@
+ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:1
+load:0x3fff0030,len:4876
+ho 0 tail 12 room 4
+load:0x40078000,len:16532
+load:0x40080400,len:3500
+entry 0x400805b4
+>>> running, ITERS=10
+  iter 1/10 k=2501532us s=50332277us v=1325479us kc=600367736 sc=12079746732 vc=318114891
+  iter 2/10 k=2501287us s=50332207us v=1327615us kc=600308981 sc=12079729644 vc=318627672
+  iter 3/10 k=2501290us s=50332190us v=1288757us kc=600309629 sc=12079725696 vc=309301569
+  iter 4/10 k=2501285us s=50332228us v=1318976us kc=600308537 sc=12079734633 vc=316554357
+  iter 5/10 k=2501303us s=50332204us v=1325445us kc=600312683 sc=12079729128 vc=318106674
+  iter 6/10 k=2501288us s=50332214us v=1340557us kc=600309281 sc=12079731207 vc=321733782
+  iter 7/10 k=2501292us s=50332195us v=1306015us kc=600310211 sc=12079726833 vc=313443606
+  iter 8/10 k=2501296us s=50332209us v=1349193us kc=600311150 sc=12079730091 vc=323806389
+  iter 9/10 k=2501296us s=50332236us v=1327608us kc=600311213 sc=12079736457 vc=318626118
+  iter 10/10 k=2501289us s=50332187us v=1334086us kc=600309533 sc=12079724703 vc=320180667
+=== SLH-DSA-SHAKE-256f (PQClean, FIPS 205) on ESP32 ===
+CPU clock: 240 MHz
+sizes: pk=64 sk=128 sigMax=49856 sig=49856
+SLH-DSA-SHAKE-256f  keygen  n=10  mean=2501315us/2501.315ms  median=2501291us/2501.291ms  std=72us/0.072ms  min=2501285us  max=2501532us  mean_cyc=600315895  median_cyc=600309920  min_cyc=600308537  max_cyc=600367736  cyc_src=CCOUNT  ops/s=0.3998
+SLH-DSA-SHAKE-256f  sign  n=10  mean=50332214us/50332.215ms  median=50332208us/50332.207ms  std=25us/0.025ms  min=50332187us  max=50332277us  mean_cyc=12079731512  median_cyc=12079729867  min_cyc=12079724703  max_cyc=12079746732  cyc_src=CCOUNT  ops/s=0.0199
+SLH-DSA-SHAKE-256f  verify  n=10  mean=1324373us/1324.373ms  median=1326543us/1326.543ms  std=16218us/16.218ms  min=1288757us  max=1349193us  mean_cyc=317849572  median_cyc=318370504  min_cyc=309301569  max_cyc=323806389  cyc_src=CCOUNT  ops/s=0.7551
+verify OK: 10/10
+free stack: 40076 bytes   free heap: 238716 bytes
+=== done (repeats in ~5s) ===

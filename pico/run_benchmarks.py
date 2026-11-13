@@ -529,6 +529,18 @@ def save_kex(blocks, res, tag, family, fqbn, cfg, modes=False):
 def sh(cmd, **kw):
     print("  $", " ".join(cmd)); return subprocess.run(cmd, **kw)
 
+def flag_path(p):
+    """p for an -I in compiler.*.extra_flags: arduino-cli splits those at spaces and passes quotes to the compiler as
+    they are, so a home dir like C:\\Users\\Jane Doe broke the include. On Windows: the 8.3 short name (no spaces)."""
+    if " " in p and os.name == "nt":
+        import ctypes
+        buf = ctypes.create_unicode_buffer(1024)
+        if ctypes.windll.kernel32.GetShortPathNameW(p, buf, len(buf)):
+            p = buf.value
+    if " " in p:
+        print(f"  !! include path has a space (the build will not find it): {p}; set IOT_PQC_CACHE to a path without one")
+    return p
+
 def list_ports():
     """the board's USB serial ports (by PORT_VIDS): /dev/cu.usbmodem* (macOS), /dev/ttyACM* (Linux), COMn"""
     try:
@@ -968,7 +980,7 @@ def main():
             why = mqtt_secrets(sig, os.path.join(outdir, "gen"))
             if why:
                 print("    !!", why); row(label, lib=lib_of(s), status=why); continue
-            flags += f" -I{os.path.join(outdir, 'gen')}"
+            flags += f" -I{flag_path(os.path.join(outdir, 'gen'))}"
             # the libraries' source commits, for the firmware's '#build' line (the TLS library / commit column)
             flags += f" -DMT_WOLFSSL_COMMIT={src_commit('wolfssl-src')}"
             if s.get("lib") == R3:
@@ -982,7 +994,7 @@ def main():
         if esp and os.path.isdir(ESP_LIBS):
             cmd += ["--libraries", ESP_LIBS]
         if s["folder"] == "uov_bench":  # the host-made key pair (make_uov_keys.sh); before flags go into cmd
-            flags += f" -I{os.path.join(os.path.dirname(WOLF_LIBS), 'uov-r3')}"
+            flags += f" -I{flag_path(os.path.join(os.path.dirname(WOLF_LIBS), 'uov-r3'))}"
         if flags:
             cmd += ["--build-path", os.path.join(outdir, "build"),
                     "--build-property", f"compiler.c.extra_flags={flags}",
