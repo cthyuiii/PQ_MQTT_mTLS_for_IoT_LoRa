@@ -206,9 +206,10 @@ static const char *lib_name() { static char v[32]; snprintf(v, sizeof v, "wolfSS
 
 // ---- same statistics + line format as the other sketches ----
 static uint32_t tk[WB_ITERS], ts[WB_ITERS], tv[WB_ITERS];
+BOARD_CYC_ARRAY(ck, WB_ITERS) BOARD_CYC_ARRAY(cs, WB_ITERS) BOARD_CYC_ARRAY(cv, WB_ITERS)
 static size_t peak[3];
 
-static void report_op(const char *op, const uint32_t *t, int n) {
+static void report_op(const char *op, const uint32_t *t, int n BOARD_CYC_PARAM(c)) {
   static uint32_t srt[WB_ITERS];
   uint32_t mn = 0xFFFFFFFFu, mx = 0; uint64_t sum = 0;
   for (int i = 0; i < n; i++) { srt[i] = t[i]; sum += t[i]; if (t[i] < mn) mn = t[i]; if (t[i] > mx) mx = t[i]; }
@@ -224,15 +225,19 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   Serial.print(F("  median=")); Serial.print(median); Serial.print(F("us/")); Serial.print(median / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  std=")); Serial.print(sd); Serial.print(F("us/")); Serial.print(sd / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  min=")); Serial.print(mn); Serial.print(F("us  max=")); Serial.print(mx); Serial.print(F("us"));
+#if BOARD_HW_CYCLES
+  board_print_cyc_stats(c, n);
+#else
   Serial.print(F("  mean_cyc=")); Serial.print((unsigned long)((uint64_t)mean * mhz));
   Serial.print(F("  median_cyc=")); Serial.print((unsigned long)((uint64_t)median * mhz));
+#endif
   Serial.print(F("  ops/s=")); Serial.println(mean ? 1000000.0f / mean : 0.0f, 4); Serial.flush();
 }
 
 // time one op and track its peak heap; returns the wolfCrypt error code
-static int timed(int (*fn)(), uint32_t *us, size_t *pk) {
+static int timed(int (*fn)(), uint32_t *us BOARD_CYC_PARAM(cyc), size_t *pk) {
   peak_heap = cur_heap; size_t base = cur_heap;
-  uint32_t t0 = micros(); int r = fn(); *us = micros() - t0;
+  BOARD_STAMP(t0); int r = fn(); BOARD_STAMP(t1); *us = t1 - t0; BOARD_LAP(*cyc, t0, t1);
   if (peak_heap - base > *pk) *pk = peak_heap - base;
   return r;
 }
@@ -246,27 +251,42 @@ static void run_report() {
   if (!sig) sig = (byte *)malloc(sig_max);  // app buffer: outside the wolfSSL heap accounting
   for (int i = 0; i < WB_ITERS; i++) {
     msg[0] = (uint8_t)i;
-    if (!(r = timed(alg_keygen, &tk[i], &peak[0])))  // a failed signature is counted and signed again (Falcon:
-      while ((r = timed(alg_sign, &ts[i], &peak[1])) && ++sign_err < 3 * WB_ITERS) {  // the TLS client's BUFFER_E)
+    if (!(r = timed(alg_keygen, &tk[i] BOARD_CYC_ARG(&ck[i]), &peak[0]))) {
+      // a failed signature is counted and signed again (Falcon: the TLS client's BUFFER_E). The round's sign time is
+      // every attempt's, failed ones included: what one good signature cost. The error lines are printed between
+      // attempts, outside the timing.
+      ts[i] = 0;
+#if BOARD_HW_CYCLES
+      cs[i] = 0;
+#endif
+      for (;;) {
+        uint32_t us1 = 0; uint64_t c1 = 0; (void)c1;
+        r = timed(alg_sign, &us1 BOARD_CYC_ARG(&c1), &peak[1]);
+        ts[i] += us1;
+#if BOARD_HW_CYCLES
+        cs[i] += c1;
+#endif
+        if (!r || ++sign_err >= 3 * WB_ITERS) break;
         Serial.print(F("!! sign error ")); Serial.print(r); Serial.print(F(" at iter ")); Serial.println(i + 1);
       }
-    if (r || (r = timed(verify_thunk, &tv[i], &peak[2]))) {
+    }
+    if (r || (r = timed(verify_thunk, &tv[i] BOARD_CYC_ARG(&cv[i]), &peak[2]))) {
       Serial.print(F("!! wolfCrypt error ")); Serial.print(r); Serial.print(F(" at iter ")); Serial.println(i + 1);
       return;
     }
     if (do_verify_ok) okv++;
     Serial.print(F("  iter ")); Serial.print(i + 1); Serial.print('/'); Serial.print(WB_ITERS);
     Serial.print(F(" k=")); Serial.print(tk[i]); Serial.print(F("us s=")); Serial.print(ts[i]);
-    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
+    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.print(F("us")); BOARD_PRINT_CYC("kc", ck[i]); BOARD_PRINT_CYC("sc", cs[i]); BOARD_PRINT_CYC("vc", cv[i]); Serial.println(); Serial.flush();
   }
   Serial.println();
   Serial.print(F("=== " LABEL " (")); Serial.print(lib_name()); Serial.println(F(") on " CHIP " ==="));
   Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz"));
   Serial.print(F("sizes: pk=")); Serial.print(pk_len); Serial.print(F(" sk=")); Serial.print(sk_len);
   Serial.print(F(" sig=")); Serial.print(sig_len); Serial.print(F(" sigMax=")); Serial.println(sig_max);
-  report_op("keygen", tk, WB_ITERS);
-  report_op("sign", ts, WB_ITERS);
-  report_op("verify", tv, WB_ITERS);
+  report_op("keygen", tk, WB_ITERS BOARD_CYC_ARG(ck));
+  report_op("sign", ts, WB_ITERS BOARD_CYC_ARG(cs));
+  report_op("verify", tv, WB_ITERS BOARD_CYC_ARG(cv));
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print('/'); Serial.println(WB_ITERS);
   Serial.print(F("sign errors (signed again): ")); Serial.println(sign_err);
   Serial.print(F("peak heap (wolfSSL allocations): keygen=")); Serial.print((unsigned)peak[0]);

@@ -32,8 +32,9 @@ static uint8_t pk[NS_PK], sk[NS_SK];
 static uint8_t sig[NS_SIG];
 static uint8_t msg[32] = {0};
 static uint32_t tk[ITERS], ts[ITERS], tv[ITERS];
+BOARD_CYC_ARRAY(ck, ITERS) BOARD_CYC_ARRAY(cs, ITERS) BOARD_CYC_ARRAY(cv, ITERS)
 
-static void report_op(const char *op, const uint32_t *t, int n) {
+static void report_op(const char *op, const uint32_t *t, int n BOARD_CYC_PARAM(c)) {
   uint32_t mn = 0xFFFFFFFFu, mx = 0; uint64_t sum = 0;
   static uint32_t srt[ITERS];
   for (int i = 0; i < n; i++) { uint32_t v = t[i]; srt[i] = v; sum += v; if (v < mn) mn = v; if (v > mx) mx = v; }
@@ -51,8 +52,12 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   Serial.print(F("  median=")); Serial.print(median); Serial.print(F("us/")); Serial.print(median / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  std=")); Serial.print(sd); Serial.print(F("us/")); Serial.print(sd / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  min=")); Serial.print(mn); Serial.print(F("us  max=")); Serial.print(mx); Serial.print(F("us"));
+#if BOARD_HW_CYCLES
+  board_print_cyc_stats(c, n);
+#else
   Serial.print(F("  mean_cyc=")); Serial.print((unsigned long)((uint64_t)mean * mhz));
   Serial.print(F("  median_cyc=")); Serial.print((unsigned long)((uint64_t)median * mhz));
+#endif
   Serial.print(F("  ops/s=")); Serial.println(ops, 4); Serial.flush();
 }
 
@@ -61,14 +66,14 @@ static void run_report() {
   int okv = 0; size_t siglen = 0;
   for (int i = 0; i < ITERS; i++) {
     msg[0] = (uint8_t)i;
-    uint32_t t0 = micros(); NS_keypair(pk, sk);                              uint32_t t1 = micros();
-    NS_signature(sig, &siglen, msg, sizeof msg, sk);                         uint32_t t2 = micros();
-    int r = NS_verify(sig, siglen, msg, sizeof msg, pk);                     uint32_t t3 = micros();
-    tk[i] = t1 - t0; ts[i] = t2 - t1; tv[i] = t3 - t2;
+    BOARD_STAMP(t0); NS_keypair(pk, sk);                              BOARD_STAMP(t1);
+    NS_signature(sig, &siglen, msg, sizeof msg, sk);                         BOARD_STAMP(t2);
+    int r = NS_verify(sig, siglen, msg, sizeof msg, pk);                     BOARD_STAMP(t3);
+    tk[i] = t1 - t0; BOARD_LAP(ck[i], t0, t1); ts[i] = t2 - t1; BOARD_LAP(cs[i], t1, t2); tv[i] = t3 - t2; BOARD_LAP(cv[i], t2, t3);
     if (r == 0) okv++;
     Serial.print(F("  iter ")); Serial.print(i + 1); Serial.print('/'); Serial.print(ITERS);
     Serial.print(F(" k=")); Serial.print(tk[i]); Serial.print(F("us s=")); Serial.print(ts[i]);
-    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
+    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.print(F("us")); BOARD_PRINT_CYC("kc", ck[i]); BOARD_PRINT_CYC("sc", cs[i]); BOARD_PRINT_CYC("vc", cv[i]); Serial.println(); Serial.flush();
   }
   Serial.println();
   Serial.println(F("=== SLH-DSA-SHAKE-256f (PQClean, FIPS 205) on " BOARD_CHIP " ==="));
@@ -76,9 +81,9 @@ static void run_report() {
   Serial.print(F("sizes: pk=")); Serial.print((int)NS_PK);
   Serial.print(F(" sk=")); Serial.print((int)NS_SK);
   Serial.print(F(" sigMax=")); Serial.print((int)NS_SIG); Serial.print(F(" sig=")); Serial.println((int)NS_SIG);
-  report_op("keygen", tk, ITERS);
-  report_op("sign",   ts, ITERS);
-  report_op("verify", tv, ITERS);
+  report_op("keygen", tk, ITERS BOARD_CYC_ARG(ck));
+  report_op("sign", ts, ITERS BOARD_CYC_ARG(cs));
+  report_op("verify", tv, ITERS BOARD_CYC_ARG(cv));
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
   Serial.print(F("free stack: ")); Serial.print(board_free_stack());
   Serial.print(F(" bytes   free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));

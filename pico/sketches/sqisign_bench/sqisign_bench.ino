@@ -34,6 +34,7 @@ static unsigned char pk[CRYPTO_PUBLICKEYBYTES], sk[CRYPTO_SECRETKEYBYTES];
 static unsigned char sm[CRYPTO_BYTES + 32], m2[CRYPTO_BYTES + 32];
 static unsigned char msg[32] = {0};
 static uint32_t tk[ITERS], ts[ITERS], tv[ITERS];
+BOARD_CYC_ARRAY(ck, ITERS) BOARD_CYC_ARRAY(cs, ITERS) BOARD_CYC_ARRAY(cv, ITERS)
 static unsigned long long g_smlen = 0, g_mlen2 = 0;
 static uint32_t kpeak = 0, speak = 0, vpeak = 0;
 
@@ -43,7 +44,7 @@ static int th_verify(void) { return crypto_sign_open(m2, &g_mlen2, sm, g_smlen, 
 
 static void print_label() { Serial.print(CRYPTO_ALGNAME); }
 
-static void report_op(const char *op, const uint32_t *t, int n) {
+static void report_op(const char *op, const uint32_t *t, int n BOARD_CYC_PARAM(c)) {
   uint32_t mn = 0xFFFFFFFFu, mx = 0; uint64_t sum = 0;
   static uint32_t srt[ITERS];
   for (int i = 0; i < n; i++) { uint32_t v = t[i]; srt[i] = v; sum += v; if (v < mn) mn = v; if (v > mx) mx = v; }
@@ -61,8 +62,12 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   Serial.print(F("  median=")); Serial.print(median); Serial.print(F("us/")); Serial.print(median / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  std=")); Serial.print(sd); Serial.print(F("us/")); Serial.print(sd / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  min=")); Serial.print(mn); Serial.print(F("us  max=")); Serial.print(mx); Serial.print(F("us"));
+#if BOARD_HW_CYCLES
+  board_print_cyc_stats(c, n);
+#else
   Serial.print(F("  mean_cyc=")); Serial.print((unsigned long)((uint64_t)mean * mhz));
   Serial.print(F("  median_cyc=")); Serial.print((unsigned long)((uint64_t)median * mhz));
+#endif
   Serial.print(F("  ops/s=")); Serial.println(ops, 4); Serial.flush();
 }
 
@@ -71,17 +76,17 @@ static void run_report() {
   int okv = 0;
   for (int i = 0; i < ITERS; i++) {
     msg[0] = (uint8_t)i;
-    big_stack_paint(); uint32_t a0 = micros(); int rk = big_stack_run(th_keygen); uint32_t a1 = micros();
-    tk[i] = a1 - a0; { uint32_t p = big_stack_peak(); if (p > kpeak) kpeak = p; }
-    big_stack_paint(); uint32_t b0 = micros(); int rs = big_stack_run(th_sign); uint32_t b1 = micros();
-    ts[i] = b1 - b0; { uint32_t p = big_stack_peak(); if (p > speak) speak = p; }
-    big_stack_paint(); uint32_t c0 = micros(); int r = big_stack_run(th_verify); uint32_t c1 = micros();
-    tv[i] = c1 - c0; { uint32_t p = big_stack_peak(); if (p > vpeak) vpeak = p; }
+    big_stack_paint(); BOARD_STAMP(a0); int rk = big_stack_run(th_keygen); BOARD_STAMP(a1);
+    tk[i] = a1 - a0; BOARD_LAP(ck[i], a0, a1); { uint32_t p = big_stack_peak(); if (p > kpeak) kpeak = p; }
+    big_stack_paint(); BOARD_STAMP(b0); int rs = big_stack_run(th_sign); BOARD_STAMP(b1);
+    ts[i] = b1 - b0; BOARD_LAP(cs[i], b0, b1); { uint32_t p = big_stack_peak(); if (p > speak) speak = p; }
+    big_stack_paint(); BOARD_STAMP(c0); int r = big_stack_run(th_verify); BOARD_STAMP(c1);
+    tv[i] = c1 - c0; BOARD_LAP(cv[i], c0, c1); { uint32_t p = big_stack_peak(); if (p > vpeak) vpeak = p; }
     (void)rk; (void)rs;
     if (r == 0) okv++;
     Serial.print(F("  iter ")); Serial.print(i + 1); Serial.print('/'); Serial.print(ITERS);
     Serial.print(F(" k=")); Serial.print(tk[i]); Serial.print(F("us s=")); Serial.print(ts[i]);
-    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
+    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.print(F("us")); BOARD_PRINT_CYC("kc", ck[i]); BOARD_PRINT_CYC("sc", cs[i]); BOARD_PRINT_CYC("vc", cv[i]); Serial.println(); Serial.flush();
   }
   Serial.println();
   Serial.print(F("=== ")); print_label(); Serial.println(F(" (SQIsign round 3, ref, 32-bit radix) on " BOARD_FAMILY " [big-stack] ==="));
@@ -89,9 +94,9 @@ static void run_report() {
   Serial.print(F("sizes: pk=")); Serial.print((long)CRYPTO_PUBLICKEYBYTES);
   Serial.print(F(" sk=")); Serial.print((long)CRYPTO_SECRETKEYBYTES);
   Serial.print(F(" sigMax=")); Serial.print((long)CRYPTO_BYTES); Serial.print(F(" sig=")); Serial.println((long)(g_smlen - 32));
-  report_op("keygen", tk, ITERS);
-  report_op("sign",   ts, ITERS);
-  report_op("verify", tv, ITERS);
+  report_op("keygen", tk, ITERS BOARD_CYC_ARG(ck));
+  report_op("sign", ts, ITERS BOARD_CYC_ARG(cs));
+  report_op("verify", tv, ITERS BOARD_CYC_ARG(cv));
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
   Serial.print(F("big-stack peak: keygen=")); Serial.print(kpeak); Serial.print(F(" sign=")); Serial.print(speak);
   Serial.print(F(" verify=")); Serial.print(vpeak); Serial.print(F(" / ")); Serial.print(BIG_STACK_BYTES); Serial.println(F(" bytes"));

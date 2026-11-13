@@ -59,7 +59,7 @@ Host = the Mac and the Pi (the same C sources; the Pi uses its system OpenSSL, t
 | wolfSSL signatures | wolfSSL 5.9.4 wolfCrypt: `wc_SignatureGenerate` / `wc_SignatureVerify`, `wc_MlDsaKey_*`, `wc_SlhDsaKey_*`, `wc_ed25519_*` (`sig_speed.c -DSIG_WOLFSSL`) | the same wolfSSL release, compiled per firmware (`wolfssl_bench`) |
 | NIST submission code (round 3: SDitH v3, QR-UOV, FAEST 3.0, SQIsign; HAWK) | the NIST API `crypto_sign_keypair` / `crypto_sign` / `crypto_sign_open`, called by `signatures/reference/bench_template.c`; sources from `setup_round3.sh` (HAWK: its own `tests/speed`) | the same API from the same code, ported (`qruov_bench`, `sqisign_bench`, `faest_bench`, `hawk_bench`) |
 | other Pico implementations | — | mldsa-native ref (`mldsa_bench`), PQClean `clean` (`falcon_bench`, `slhdsa_bench`), BearSSL `br_rsa_*` / `br_ecdsa_*` (`rsa_bench`, `ecdsa_bench`), rweather Crypto `Ed25519::sign` / `verify` (`ed25519_bench`), OpenSSL's Goldilocks port (`ed448_bench`) |
-| timing | `clock_gettime(CLOCK_MONOTONIC)`; cycles from `perf_event_open` on Linux | `micros()` (the chip's 1 µs timer); cycles = µs × MHz |
+| timing | `clock_gettime(CLOCK_MONOTONIC)`; cycles from `perf_event_open` on Linux | `micros()` (the chip's 1 µs timer); cycles = µs × MHz on the Pico, the core's `CCOUNT` on the ESP32 (`docs/esp32_build_notes.md`) |
 | randomness | OpenSSL / the OS (`/dev/urandom` in `bench_template.c`) | `rp2040.hwrand32()` = Pico SDK `get_rand_32()`, through each library's RNG hook |
 
 **MQTT, TLS and the broker (Stage 2, the key-exchange sweep, the pipeline)**
@@ -300,7 +300,8 @@ Timing clocks:
 - Host C code uses `clock_gettime(CLOCK_MONOTONIC)`. The pipeline timer uses `CLOCK_UPTIME_RAW` on
   macOS, because the monotonic clock there only ticks every 1 µs.
 - Python uses `time.perf_counter_ns()`.
-- The Pico uses `micros()`. Pico "cycles" are µs × MHz, derived rather than counted.
+- The Pico uses `micros()`. Pico "cycles" are µs × MHz, derived rather than counted. The ESP32's signature sketches
+  count them with the core's `CCOUNT` (`cyc_src=CCOUNT` on the summary line; `docs/esp32_build_notes.md`).
 - `openssl_sig_speed` counts real cycles, through `perf_event_open` on Linux and kperf on macOS
   (which needs sudo).
 

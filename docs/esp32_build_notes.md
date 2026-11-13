@@ -37,6 +37,29 @@ are meant to be unchanged: every board call goes through `pico/libraries/board_c
   those defaults on the ESP32 (`NO_ARDUINO_DEFAULT`) and sets what the ARM branch sets, plus `WOLFSSL_LWIP` for
   `wolfio.h`'s socket types. The SP math for ECDSA / RSA is portable C on the ESP32 (Cortex-M assembly on the Pico),
   so those wolfSSL rows don't compare like for like.
+- **Cycle counts from the hardware (13 Nov 2026).** On the Pico the signature sketches' cycles are still µs × MHz. On
+  the ESP32 they come from the core's cycle counter, `CCOUNT`. `board_compat.h`'s `BOARD_STAMP(t)` reads the 64-bit µs
+  timer (what `micros()` returns, so the µs columns are unchanged) and `CCOUNT` together. `BOARD_LAP` gives the
+  cycles between two stamps. `CCOUNT` is 32-bit and wraps every 17.9 s at 240 MHz, and a single call can run for
+  minutes with nothing reading it (SLH-DSA "s" signing, RSA keygen: 27 of the 188 rows of 2 Nov ran past 17.9 s).
+  So the µs timer counts the whole wraps, and `CCOUNT` gives the rest exactly. The µs timer is good to about 1 µs,
+  and the count would only be wrong past ±8.9 s. On the ESP32 each round's line adds `kc= sc= vc=` (UOV-Ip:
+  `sc= vc=`). The summary's `mean_cyc` / `median_cyc` (plus `min_cyc` / `max_cyc`) are 64-bit and end in
+  `cyc_src=CCOUNT`. The runner keeps those as logged; a line without `cyc_src` still gets µs × MHz
+  (`pico/tests/sig_cycles_parse_test.py`). Both clocks include interrupt time on core 1 (the FreeRTOS tick; Wi-Fi is
+  off in Stage 1). `pico/logs_esp32/` now holds the run of 13 Nov with these cycles: all 63 builds, the table in
+  `signature_results_esp32_excel_20261113.csv`. It replaced the logs of 2 Nov, whose cycles were µs × 240; those are in
+  the history before commit `3e0bc66`.
+- **What the timings include (13 Nov 2026; the sketches are shared, so the Pico's next runs change too).**
+  - RSA and SLH-DSA "s" print each step's time as the round goes. Sign and verify used to be timed from the end of
+    the step before, so they included printing and flushing that line (a few ms). Each now takes a fresh stamp after
+    the print.
+  - `wolfssl_bench` signs again after a failed signature (Falcon's `BUFFER_E`). The round's sign time used to be the
+    last, successful attempt only. It is now the sum of every attempt, failed ones included: what one good signature
+    cost. The error lines print between attempts, outside the timing. `sign errors (signed again): n` still counts them.
+  - `mldsa_bench` ML-DSA-44 runs one untimed warm-up round (keygen, sign, verify) before the timed ones: the code runs
+    from flash through a cache, and round 1 took the misses (14.96 ms keygen against ~14.7 ms after, 2 Nov). The log
+    says `warm-up: 1 round, untimed`. ML-DSA-44 through liboqs and wolfSSL, and the other sketches, have no warm-up.
 - **Windows hosts.** `make_wolfssl_lib.sh` checks wolfSSL out with LF (Git for Windows' `core.autocrlf=true` made its
   `$`-anchored perl patches miss 5 of 12 SNOVA constants); the library builders' CMake uses Ninja, which can come from
   the repo's `.venv` (`pip install ninja`). Ed25519 needs `arduino-cli lib install Crypto`, as on the Pico.

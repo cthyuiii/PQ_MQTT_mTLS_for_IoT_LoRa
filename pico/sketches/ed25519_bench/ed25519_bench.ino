@@ -19,13 +19,14 @@ BOARD_LOOP_STACK(32 * 1024);  // ESP32 only: loop() is a FreeRTOS task, 8 KB by 
 static uint8_t priv[32], pub[32], sig[64];
 static uint8_t msg[32] = {0};
 static uint32_t tk[ITERS], ts[ITERS], tv[ITERS];
+BOARD_CYC_ARRAY(ck, ITERS) BOARD_CYC_ARRAY(cs, ITERS) BOARD_CYC_ARRAY(cv, ITERS)
 
 static void fill_random(uint8_t *p, size_t n) {           // Ed25519 private key = 32 random bytes
   while (n >= 4) { uint32_t r = board_hwrand32(); memcpy(p, &r, 4); p += 4; n -= 4; }
   if (n) { uint32_t r = board_hwrand32(); for (size_t i = 0; i < n; i++) p[i] = (uint8_t)(r >> (8 * i)); }
 }
 
-static void report_op(const char *op, const uint32_t *t, int n) {
+static void report_op(const char *op, const uint32_t *t, int n BOARD_CYC_PARAM(c)) {
   uint32_t mn = 0xFFFFFFFFu, mx = 0; uint64_t sum = 0;
   static uint32_t srt[ITERS];
   for (int i = 0; i < n; i++) { uint32_t v = t[i]; srt[i] = v; sum += v; if (v < mn) mn = v; if (v > mx) mx = v; }
@@ -43,8 +44,12 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   Serial.print(F("  median=")); Serial.print(median); Serial.print(F("us/")); Serial.print(median / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  std=")); Serial.print(sd); Serial.print(F("us/")); Serial.print(sd / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  min=")); Serial.print(mn); Serial.print(F("us  max=")); Serial.print(mx); Serial.print(F("us"));
+#if BOARD_HW_CYCLES
+  board_print_cyc_stats(c, n);
+#else
   Serial.print(F("  mean_cyc=")); Serial.print((unsigned long)((uint64_t)mean * mhz));
   Serial.print(F("  median_cyc=")); Serial.print((unsigned long)((uint64_t)median * mhz));
+#endif
   Serial.print(F("  ops/s=")); Serial.println(ops, 4); Serial.flush();
 }
 
@@ -53,27 +58,27 @@ static void run_report() {
   int okv = 0;
   for (int i = 0; i < ITERS; i++) {
     msg[0] = (uint8_t)i;
-    uint32_t t0 = micros();
+    BOARD_STAMP(t0);
     fill_random(priv, 32);
     Ed25519::derivePublicKey(pub, priv);            // keygen (scalar mult is the cost)
-    uint32_t t1 = micros();
+    BOARD_STAMP(t1);
     Ed25519::sign(sig, priv, pub, msg, sizeof msg); // sign
-    uint32_t t2 = micros();
+    BOARD_STAMP(t2);
     bool ok = Ed25519::verify(sig, pub, msg, sizeof msg);  // verify
-    uint32_t t3 = micros();
-    tk[i] = t1 - t0; ts[i] = t2 - t1; tv[i] = t3 - t2;
+    BOARD_STAMP(t3);
+    tk[i] = t1 - t0; BOARD_LAP(ck[i], t0, t1); ts[i] = t2 - t1; BOARD_LAP(cs[i], t1, t2); tv[i] = t3 - t2; BOARD_LAP(cv[i], t2, t3);
     if (ok) okv++;
     Serial.print(F("  iter ")); Serial.print(i + 1); Serial.print('/'); Serial.print(ITERS);
     Serial.print(F(" k=")); Serial.print(tk[i]); Serial.print(F("us s=")); Serial.print(ts[i]);
-    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
+    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.print(F("us")); BOARD_PRINT_CYC("kc", ck[i]); BOARD_PRINT_CYC("sc", cs[i]); BOARD_PRINT_CYC("vc", cv[i]); Serial.println(); Serial.flush();
   }
   Serial.println();
   Serial.println(F("=== Ed25519 (RFC 8032, rweather Crypto lib) on " BOARD_CHIP " ==="));
   Serial.print(F("CPU clock: ")); Serial.print(board_cpu_mhz()); Serial.println(F(" MHz")); Serial.flush();
   Serial.println(F("sizes: pk=32 sk=32 sigMax=64 sig=64"));
-  report_op("keygen", tk, ITERS);
-  report_op("sign",   ts, ITERS);
-  report_op("verify", tv, ITERS);
+  report_op("keygen", tk, ITERS BOARD_CYC_ARG(ck));
+  report_op("sign", ts, ITERS BOARD_CYC_ARG(cs));
+  report_op("verify", tv, ITERS BOARD_CYC_ARG(cv));
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
   Serial.print(F("free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));
   Serial.println(F("=== done (repeats in ~5s) ==="));

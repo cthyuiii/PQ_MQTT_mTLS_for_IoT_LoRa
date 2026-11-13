@@ -50,8 +50,9 @@ static unsigned char sig[RSA_BITS / 8];
 static br_rsa_private_key sk;
 static br_rsa_public_key  pk;
 static uint32_t tk[ITERS], ts[ITERS], tv[ITERS];
+BOARD_CYC_ARRAY(ck, ITERS) BOARD_CYC_ARRAY(cs, ITERS) BOARD_CYC_ARRAY(cv, ITERS)
 
-static void report_op(const char *op, const uint32_t *t, int n) {
+static void report_op(const char *op, const uint32_t *t, int n BOARD_CYC_PARAM(c)) {
   uint32_t mn = 0xFFFFFFFFu, mx = 0; uint64_t sum = 0;
   static uint32_t srt[ITERS];
   for (int i = 0; i < n; i++) { uint32_t v = t[i]; srt[i] = v; sum += v; if (v < mn) mn = v; if (v > mx) mx = v; }
@@ -69,8 +70,12 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   Serial.print(F("  median=")); Serial.print(median); Serial.print(F("us/")); Serial.print(median / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  std=")); Serial.print(sd); Serial.print(F("us/")); Serial.print(sd / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  min=")); Serial.print(mn); Serial.print(F("us  max=")); Serial.print(mx); Serial.print(F("us"));
+#if BOARD_HW_CYCLES
+  board_print_cyc_stats(c, n);
+#else
   Serial.print(F("  mean_cyc=")); Serial.print((unsigned long)((uint64_t)mean * mhz));
   Serial.print(F("  median_cyc=")); Serial.print((unsigned long)((uint64_t)median * mhz));
+#endif
   Serial.print(F("  ops/s=")); Serial.println(ops, 4); Serial.flush();
 }
 
@@ -92,24 +97,26 @@ static void run_report() {
   for (int i = 0; i < ITERS; i++) {
     Serial.print(F("[iter ")); Serial.print(i + 1); Serial.print('/'); Serial.print(ITERS);
     Serial.print(F("] keygen(slow)...")); Serial.flush();
-    uint32_t t0 = micros();
+    BOARD_STAMP(t0);
     uint32_t kok = kg(&rng.vtable, &sk, kbuf_priv, &pk, kbuf_pub, RSA_BITS, 0 /*default e=65537*/);
-    uint32_t t1 = micros();
+    BOARD_STAMP(t1);
     Serial.print(' '); Serial.print(t1 - t0); Serial.print(F("us (ok=")); Serial.print(kok); Serial.print(F(")  sign...")); Serial.flush();
+    BOARD_STAMP(s1);  // sign is timed from here: after the keygen line is printed and flushed
     uint32_t sok = sign(HASH_OID, hv, HASH_LEN, &sk, sig);
-    uint32_t t2 = micros();
-    Serial.print(' '); Serial.print(t2 - t1); Serial.print(F("us  verify...")); Serial.flush();
+    BOARD_STAMP(t2);
+    Serial.print(' '); Serial.print(t2 - s1); Serial.print(F("us  verify...")); Serial.flush();
+    BOARD_STAMP(s2);  // verify likewise
     uint32_t vok = vrfy(sig, sizeof sig, HASH_OID, HASH_LEN, &pk, hv2);
-    uint32_t t3 = micros();
+    BOARD_STAMP(t3);
     int good = (sok == 1) && (vok == 1) && (memcmp(hv, hv2, HASH_LEN) == 0);
-    Serial.print(' '); Serial.print(t3 - t2); Serial.print(F("us  ok=")); Serial.println(good);
+    Serial.print(' '); Serial.print(t3 - s2); Serial.print(F("us  ok=")); Serial.print(good); BOARD_LAP(ck[i], t0, t1); BOARD_LAP(cs[i], s1, t2); BOARD_LAP(cv[i], s2, t3); BOARD_PRINT_CYC("kc", ck[i]); BOARD_PRINT_CYC("sc", cs[i]); BOARD_PRINT_CYC("vc", cv[i]); Serial.println();
 
-    tk[i] = t1 - t0; ts[i] = t2 - t1; tv[i] = t3 - t2;
+    tk[i] = t1 - t0; ts[i] = t2 - s1; tv[i] = t3 - s2;
     if (good) okv++;
   }
-  report_op("keygen", tk, ITERS);
-  report_op("sign",   ts, ITERS);
-  report_op("verify", tv, ITERS);
+  report_op("keygen", tk, ITERS BOARD_CYC_ARG(ck));
+  report_op("sign", ts, ITERS BOARD_CYC_ARG(cs));
+  report_op("verify", tv, ITERS BOARD_CYC_ARG(cv));
   Serial.print(F("sizes: pk=")); Serial.print((int)((RSA_BITS + 7) / 8)); Serial.print(F(" (n) e=3  sigMax=")); Serial.print((int)sizeof sig); Serial.print(F(" sig=")); Serial.println((int)sizeof sig);
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
   Serial.print(F("free stack: ")); Serial.print(board_free_stack());

@@ -43,8 +43,9 @@ static void rng_init() {
 
 #define ITERS 20
 static uint32_t tk[ITERS], ts[ITERS], tv[ITERS];
+BOARD_CYC_ARRAY(ck, ITERS) BOARD_CYC_ARRAY(cs, ITERS) BOARD_CYC_ARRAY(cv, ITERS)
 
-static void report_op(const char *op, const uint32_t *t, int n) {
+static void report_op(const char *op, const uint32_t *t, int n BOARD_CYC_PARAM(c)) {
   uint32_t mn = 0xFFFFFFFFu, mx = 0; uint64_t sum = 0;
   static uint32_t srt[ITERS];
   for (int i = 0; i < n; i++) { uint32_t v = t[i]; srt[i] = v; sum += v; if (v < mn) mn = v; if (v > mx) mx = v; }
@@ -62,8 +63,12 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   Serial.print(F("  median=")); Serial.print(median); Serial.print(F("us/")); Serial.print(median / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  std=")); Serial.print(sd); Serial.print(F("us/")); Serial.print(sd / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  min=")); Serial.print(mn); Serial.print(F("us  max=")); Serial.print(mx); Serial.print(F("us"));
+#if BOARD_HW_CYCLES
+  board_print_cyc_stats(c, n);
+#else
   Serial.print(F("  mean_cyc=")); Serial.print((unsigned long)((uint64_t)mean * mhz));
   Serial.print(F("  median_cyc=")); Serial.print((unsigned long)((uint64_t)median * mhz));
+#endif
   Serial.print(F("  ops/s=")); Serial.println(ops, 4); Serial.flush();
 }
 
@@ -84,25 +89,25 @@ static void run_report() {
     for (int j = 0; j < 32; j++) msg[j] = (uint8_t)(i + j);
     HASH(context) hc; HASH(init)(&hc); HASH(update)(&hc, msg, 32); HASH(out)(&hc, hv);
 
-    uint32_t t0 = micros();
+    BOARD_STAMP(t0);
     br_ec_keygen(&rng.vtable, ec, &sk, skbuf, CURVE);
     br_ec_compute_pub(ec, &pk, pkbuf, &sk);
-    uint32_t t1 = micros();
+    BOARD_STAMP(t1);
     siglen = br_ecdsa_i31_sign_raw(ec, &HASH(vtable), hv, &sk, sig);
-    uint32_t t2 = micros();
+    BOARD_STAMP(t2);
     uint32_t ok = br_ecdsa_i31_vrfy_raw(ec, hv, HASH_LEN, &pk, sig, siglen);
-    uint32_t t3 = micros();
+    BOARD_STAMP(t3);
 
-    tk[i] = t1 - t0; ts[i] = t2 - t1; tv[i] = t3 - t2;
+    tk[i] = t1 - t0; BOARD_LAP(ck[i], t0, t1); ts[i] = t2 - t1; BOARD_LAP(cs[i], t1, t2); tv[i] = t3 - t2; BOARD_LAP(cv[i], t2, t3);
     if (ok == 1) okv++;
     Serial.print(F("  iter ")); Serial.print(i + 1); Serial.print('/'); Serial.print(ITERS);
     Serial.print(F(" k=")); Serial.print(tk[i]); Serial.print(F("us s=")); Serial.print(ts[i]);
-    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
+    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.print(F("us")); BOARD_PRINT_CYC("kc", ck[i]); BOARD_PRINT_CYC("sc", cs[i]); BOARD_PRINT_CYC("vc", cv[i]); Serial.println(); Serial.flush();
   }
   Serial.print(F("sizes: " PK_SK " sigMax=")); Serial.print((int)siglen); Serial.print(F(" sig=")); Serial.println((int)siglen);
-  report_op("keygen", tk, ITERS);
-  report_op("sign",   ts, ITERS);
-  report_op("verify", tv, ITERS);
+  report_op("keygen", tk, ITERS BOARD_CYC_ARG(ck));
+  report_op("sign", ts, ITERS BOARD_CYC_ARG(cs));
+  report_op("verify", tv, ITERS BOARD_CYC_ARG(cv));
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print("/"); Serial.println(ITERS);
   Serial.print(F("free stack: ")); Serial.print(board_free_stack());
   Serial.print(F(" bytes   free heap: ")); Serial.print(board_free_heap()); Serial.println(F(" bytes"));

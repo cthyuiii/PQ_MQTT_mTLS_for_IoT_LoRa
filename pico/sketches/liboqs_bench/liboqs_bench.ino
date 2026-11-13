@@ -125,23 +125,24 @@ static OQS_SIG *sig;
 static uint8_t *pk, *sk, *sm, msg[32];
 static size_t sm_len;
 static uint32_t tk[LB_ITERS], ts[LB_ITERS], tv[LB_ITERS], peak[3];
+BOARD_CYC_ARRAY(ck, LB_ITERS) BOARD_CYC_ARRAY(cs, LB_ITERS) BOARD_CYC_ARRAY(cv, LB_ITERS)
 
 static int op_keygen() { return OQS_SIG_keypair(sig, pk, sk) == OQS_SUCCESS ? 0 : 1; }
 static int op_sign() { return OQS_SIG_sign(sig, sm, &sm_len, msg, sizeof msg, sk) == OQS_SUCCESS ? 0 : 1; }
 static int op_verify() { return OQS_SIG_verify(sig, msg, sizeof msg, sm, sm_len, pk) == OQS_SUCCESS ? 0 : 1; }
 
 // paint the big stack, time fn on it, record its peak stack; returns fn's result
-static int timed(int (*fn)(void), uint32_t *us, uint32_t *pk_peak) {
+static int timed(int (*fn)(void), uint32_t *us BOARD_CYC_PARAM(cyc), uint32_t *pk_peak) {
   memset(g_bigstk, STK_PAT, BIG_STACK_BYTES);
-  uint32_t t0 = micros();
+  BOARD_STAMP(t0);
   int r = run_on_stack(&g_bigstk[BIG_STACK_BYTES], fn);
-  *us = micros() - t0;
+  BOARD_STAMP(t1); *us = t1 - t0; BOARD_LAP(*cyc, t0, t1);
   uint32_t p = big_stack_peak();
   if (p > *pk_peak) *pk_peak = p;
   return r;
 }
 
-static void report_op(const char *op, const uint32_t *t, int n) {
+static void report_op(const char *op, const uint32_t *t, int n BOARD_CYC_PARAM(c)) {
   static uint32_t srt[LB_ITERS];
   uint32_t mn = 0xFFFFFFFFu, mx = 0; uint64_t sum = 0;
   for (int i = 0; i < n; i++) { srt[i] = t[i]; sum += t[i]; if (t[i] < mn) mn = t[i]; if (t[i] > mx) mx = t[i]; }
@@ -157,8 +158,12 @@ static void report_op(const char *op, const uint32_t *t, int n) {
   Serial.print(F("  median=")); Serial.print(median); Serial.print(F("us/")); Serial.print(median / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  std=")); Serial.print(sd); Serial.print(F("us/")); Serial.print(sd / 1000.0f, 3); Serial.print(F("ms"));
   Serial.print(F("  min=")); Serial.print(mn); Serial.print(F("us  max=")); Serial.print(mx); Serial.print(F("us"));
+#if BOARD_HW_CYCLES
+  board_print_cyc_stats(c, n);
+#else
   Serial.print(F("  mean_cyc=")); Serial.print((unsigned long)((uint64_t)mean * mhz));
   Serial.print(F("  median_cyc=")); Serial.print((unsigned long)((uint64_t)median * mhz));
+#endif
   Serial.print(F("  ops/s=")); Serial.println(mean ? 1000000.0f / mean : 0.0f, 4); Serial.flush();
 }
 
@@ -193,13 +198,13 @@ static void run_report() {
   int okv = 0;
   for (int i = 0; i < LB_ITERS; i++) {
     msg[0] = (uint8_t)i;
-    if (timed(op_keygen, &tk[i], &peak[0]) || timed(op_sign, &ts[i], &peak[1])) {
+    if (timed(op_keygen, &tk[i] BOARD_CYC_ARG(&ck[i]), &peak[0]) || timed(op_sign, &ts[i] BOARD_CYC_ARG(&cs[i]), &peak[1])) {
       Serial.print(F("!! keygen/sign failed at iter ")); Serial.println(i + 1); return;
     }
-    if (timed(op_verify, &tv[i], &peak[2]) == 0) okv++;
+    if (timed(op_verify, &tv[i] BOARD_CYC_ARG(&cv[i]), &peak[2]) == 0) okv++;
     Serial.print(F("  iter ")); Serial.print(i + 1); Serial.print('/'); Serial.print(LB_ITERS);
     Serial.print(F(" k=")); Serial.print(tk[i]); Serial.print(F("us s=")); Serial.print(ts[i]);
-    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.println(F("us")); Serial.flush();
+    Serial.print(F("us v=")); Serial.print(tv[i]); Serial.print(F("us")); BOARD_PRINT_CYC("kc", ck[i]); BOARD_PRINT_CYC("sc", cs[i]); BOARD_PRINT_CYC("vc", cv[i]); Serial.println(); Serial.flush();
   }
   Serial.println();
   Serial.print(F("=== ")); Serial.print(sig->method_name);
@@ -209,9 +214,9 @@ static void run_report() {
   Serial.print(F(" sk=")); Serial.print((unsigned)sig->length_secret_key);
   Serial.print(F(" sig=")); Serial.print((unsigned)sm_len);
   Serial.print(F(" sigMax=")); Serial.println((unsigned)sig->length_signature);
-  report_op("keygen", tk, LB_ITERS);
-  report_op("sign", ts, LB_ITERS);
-  report_op("verify", tv, LB_ITERS);
+  report_op("keygen", tk, LB_ITERS BOARD_CYC_ARG(ck));
+  report_op("sign", ts, LB_ITERS BOARD_CYC_ARG(cs));
+  report_op("verify", tv, LB_ITERS BOARD_CYC_ARG(cv));
   Serial.print(F("verify OK: ")); Serial.print(okv); Serial.print('/'); Serial.println(LB_ITERS);
   Serial.print(F("peak stack: keygen=")); Serial.print(peak[0]); Serial.print(F(" sign=")); Serial.print(peak[1]);
   Serial.print(F(" verify=")); Serial.print(peak[2]); Serial.print(F(" / ")); Serial.print(BIG_STACK_BYTES); Serial.println(F(" bytes"));

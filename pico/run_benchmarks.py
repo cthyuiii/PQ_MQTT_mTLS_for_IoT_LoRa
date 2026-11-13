@@ -795,8 +795,11 @@ def capture(port, timeout, logpath, no_timeout=False, max_reconnects=8, esp=Fals
                 mean=_g(line, r"\bmean=(\d+)us"), median=_g(line, r"\bmedian=(\d+)us"),
                 std=_g(line, r"\bstd=(\d+)us"),
                 mean_cyc=_g(line, r"\bmean_cyc=(\d+)"), median_cyc=_g(line, r"\bmedian_cyc=(\d+)"),
-                ops=_g(line, r"\bops/s=([\d.]+)", float))
-            if mhz:  # the sketches print us x MHz as a 32-bit unsigned long: it wraps for ops over 21.5 s at 200 MHz
+                ops=_g(line, r"\bops/s=([\d.]+)", float),
+                cyc_src=_g(line, r"\bcyc_src=(\w+)", str))
+            # cyc_src= (the ESP32: CCOUNT, board_compat.h): the cycles are the counter's, kept as logged. Otherwise
+            # the sketch printed us x MHz as a 32-bit unsigned long, which wraps for ops over 21.5 s at 200 MHz
+            if mhz and not rows[op]["cyc_src"]:
                 for k in ("mean", "median"):
                     if rows[op][k] != "": rows[op][k + "_cyc"] = rows[op][k] * mhz
         if "=== done" in line and saw_header:

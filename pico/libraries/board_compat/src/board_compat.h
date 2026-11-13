@@ -37,11 +37,21 @@ extern "C" char __flash_binary_end;
 extern char __flash_binary_end;
 #endif
 static inline uint32_t board_sketch_bytes(void) { return (uint32_t)((uintptr_t)&__flash_binary_end - 0x10000000u); }
+// the signature sketches' cycle counts: the ESP32 only (see there). On the Pico these leave the micros() timing as
+// it was, and the cycles stay µs × MHz.
+#define BOARD_HW_CYCLES 0
+#define BOARD_STAMP(t) uint32_t t = micros()
+#define BOARD_LAP(dst, a, b) ((void)0)
+#define BOARD_CYC_ARRAY(name, n)
+#define BOARD_CYC_PARAM(name)
+#define BOARD_CYC_ARG(name)
+#define BOARD_PRINT_CYC(label, x) ((void)0)
 
 #elif defined(ARDUINO_ARCH_ESP32)
 
 #include <esp_random.h>
 #include <esp_task_wdt.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #if CONFIG_IDF_TARGET_ESP32
@@ -93,6 +103,50 @@ static inline uint64_t board_cycles64(void) {
 static inline int board_cores(void) { return ESP.getChipCores(); }
 static inline uint32_t board_flash_bytes(void) { return ESP.getFlashChipSize(); }
 static inline uint32_t board_sketch_bytes(void) { return ESP.getSketchSize(); }  // the app image in flash
+
+// ---- the signature sketches' cycle counts (ESP32 only) ----
+// A mark is the 64-bit µs timer (esp_timer, what micros() returns) and the core's CCOUNT, read together. The µs
+// value stays the sketches' timing; the cycles between two marks come from CCOUNT. CCOUNT is 32-bit and wraps every
+// 17.9 s at 240 MHz, and one call (SLH-DSA "s" signing, RSA keygen) can last minutes with nothing reading it in
+// between, so the µs timer counts the whole wraps: it is within ~1 µs, far inside the ±8.9 s that would be needed to
+// get the count wrong. Per core: the loop task (and the big-stack runs, on the same task) stays on core 1.
+#define BOARD_HW_CYCLES 1
+#define BOARD_CYC_SRC "CCOUNT"
+typedef struct { int64_t us; uint32_t cc; } board_mark_t;
+static inline board_mark_t board_mark(void) {
+  board_mark_t m;
+  m.us = esp_timer_get_time();
+  m.cc = ESP.getCycleCount();
+  return m;
+}
+static inline uint64_t board_lap_cycles(board_mark_t a, board_mark_t b) {
+  uint32_t lo = b.cc - a.cc;                                     // exact, modulo 2^32
+  uint64_t est = (uint64_t)(b.us - a.us) * board_cpu_mhz();      // the µs timer's count, to ~1 µs
+  uint64_t wraps = est > lo ? (est - lo + (1ull << 31)) >> 32 : 0; // nearest whole number of wraps
+  return (wraps << 32) + lo;
+}
+// "  mean_cyc=… median_cyc=… min_cyc=… max_cyc=… cyc_src=CCOUNT" on a summary line: the runner keeps these when
+// cyc_src= is there (older logs: µs × MHz). The median is the sketches' own: the lower average of the middle two.
+static inline void board_print_cyc_stats(const uint64_t *c, int n) {
+  if (!c || n <= 0) return;
+  uint64_t *s = (uint64_t *)malloc(sizeof(uint64_t) * n);
+  if (!s) return;
+  uint64_t sum = 0;
+  for (int i = 0; i < n; i++) { s[i] = c[i]; sum += c[i]; }
+  for (int i = 1; i < n; i++) { uint64_t k = s[i]; int j = i - 1; while (j >= 0 && s[j] > k) { s[j + 1] = s[j]; j--; } s[j + 1] = k; }
+  uint64_t med = (n & 1) ? s[n / 2] : (s[n / 2 - 1] + s[n / 2]) >> 1;
+  Serial.printf("  mean_cyc=%llu  median_cyc=%llu  min_cyc=%llu  max_cyc=%llu  cyc_src=" BOARD_CYC_SRC,
+                (unsigned long long)(sum / n), (unsigned long long)med, (unsigned long long)s[0],
+                (unsigned long long)s[n - 1]);
+  free(s);
+}
+// BOARD_STAMP(t) declares uint32_t t (µs, as micros()) and its mark t_m; BOARD_LAP(dst, a, b) = the cycles a → b
+#define BOARD_STAMP(t) board_mark_t t##_m = board_mark(); uint32_t t = (uint32_t)t##_m.us
+#define BOARD_LAP(dst, a, b) ((dst) = board_lap_cycles(a##_m, b##_m))
+#define BOARD_CYC_ARRAY(name, n) static uint64_t name[n];
+#define BOARD_CYC_PARAM(name) , uint64_t *name
+#define BOARD_CYC_ARG(name) , name
+#define BOARD_PRINT_CYC(label, x) Serial.printf(" " label "=%llu", (unsigned long long)(x))
 
 #else
 #error "board_compat.h: arduino-pico (RP2040 / RP2350) or arduino-esp32 only"
