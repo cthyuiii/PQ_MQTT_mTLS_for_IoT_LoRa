@@ -9,15 +9,15 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=2 big stack=96 KB
-  iter 1/2 k=5727819us s=43747975us v=45887us
-  iter 2/2 k=5727545us s=43748773us v=44406us
+  iter 1/2 k=5727819us s=43746802us v=46165us kc=1374676718 sc=10499232457 vc=11079661
+  iter 2/2 k=5727569us s=43749876us v=41515us kc=1374616525 sc=10499970250 vc=9963532
 === SLH_DSA_PURE_SHA2_128S (liboqs 0.16.0, portable C) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=32 sk=64 sig=7856 sigMax=7856
-SLH_DSA_PURE_SHA2_128S(liboqs)  keygen  n=2  mean=5727682us/5727.682ms  median=5727682us/5727.682ms  std=137us/0.137ms  min=5727545us  max=5727819us  mean_cyc=1374643680  median_cyc=1374643680  ops/s=0.1746
-SLH_DSA_PURE_SHA2_128S(liboqs)  sign  n=2  mean=43748374us/43748.375ms  median=43748374us/43748.375ms  std=399us/0.399ms  min=43747975us  max=43748773us  mean_cyc=1909675168  median_cyc=1909675168  ops/s=0.0229
-SLH_DSA_PURE_SHA2_128S(liboqs)  verify  n=2  mean=45146us/45.146ms  median=45146us/45.146ms  std=740us/0.740ms  min=44406us  max=45887us  mean_cyc=10835040  median_cyc=10835040  ops/s=22.1504
+SLH_DSA_PURE_SHA2_128S(liboqs)  keygen  n=2  mean=5727694us/5727.694ms  median=5727694us/5727.694ms  std=125us/0.125ms  min=5727569us  max=5727819us  mean_cyc=1374646621  median_cyc=1374646621  min_cyc=1374616525  max_cyc=1374676718  cyc_src=CCOUNT  ops/s=0.1746
+SLH_DSA_PURE_SHA2_128S(liboqs)  sign  n=2  mean=43748339us/43748.340ms  median=43748339us/43748.340ms  std=1537us/1.537ms  min=43746802us  max=43749876us  mean_cyc=10499601353  median_cyc=10499601353  min_cyc=10499232457  max_cyc=10499970250  cyc_src=CCOUNT  ops/s=0.0229
+SLH_DSA_PURE_SHA2_128S(liboqs)  verify  n=2  mean=43840us/43.840ms  median=43840us/43.840ms  std=2325us/2.325ms  min=41515us  max=46165us  mean_cyc=10521596  median_cyc=10521596  min_cyc=9963532  max_cyc=11079661  cyc_src=CCOUNT  ops/s=22.8102
 verify OK: 2/2
 peak stack: keygen=4320 sign=4528 verify=4464 / 98304 bytes
-free heap: 224436 bytes
+free heap: 223812 bytes
 === done (repeats in ~5s) ===

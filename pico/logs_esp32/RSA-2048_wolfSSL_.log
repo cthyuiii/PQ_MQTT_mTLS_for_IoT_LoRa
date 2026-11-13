@@ -9,19 +9,19 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=5
-  iter 1/5 k=116933031us s=1326608us v=21976us
-  iter 2/5 k=116278167us s=1326625us v=21860us
-  iter 3/5 k=94397344us s=1326595us v=21863us
-  iter 4/5 k=69150854us s=1326557us v=21858us
-  iter 5/5 k=46555943us s=1326665us v=21860us
+  iter 1/5 k=65312490us s=1326512us v=21973us kc=15674997492 sc=318362761 vc=5273692
+  iter 2/5 k=104311121us s=1326579us v=21867us kc=25034669155 sc=318378814 vc=5248126
+  iter 3/5 k=62494471us s=1326429us v=21869us kc=14998673185 sc=318342847 vc=5248474
+  iter 4/5 k=136264075us s=1326439us v=21873us kc=32703377998 sc=318345169 vc=5249575
+  iter 5/5 k=136991211us s=1326562us v=21865us kc=32877890470 sc=318375037 vc=5247727
 === RSA-2048 (wolfSSL 5.9.4) on ESP32 ===
 CPU clock: 240 MHz
-sizes: pk=256 sk=1194 sig=256 sigMax=256
-RSA-2048(wolfSSL)  keygen  n=5  mean=88663067us/88663.062ms  median=94397344us/94397.344ms  std=27380296us/27380.297ms  min=46555943us  max=116933031us  mean_cyc=4099266896  median_cyc=1180526080  ops/s=0.0113
-RSA-2048(wolfSSL)  sign  n=5  mean=1326610us/1326.610ms  median=1326608us/1326.608ms  std=35us/0.035ms  min=1326557us  max=1326665us  mean_cyc=318386400  median_cyc=318385920  ops/s=0.7538
-RSA-2048(wolfSSL)  verify  n=5  mean=21883us/21.883ms  median=21860us/21.860ms  std=46us/0.046ms  min=21858us  max=21976us  mean_cyc=5251920  median_cyc=5246400  ops/s=45.6976
+sizes: pk=256 sk=1191 sig=256 sigMax=256
+RSA-2048(wolfSSL)  keygen  n=5  mean=101074673us/101074.672ms  median=104311121us/104311.117ms  std=32576470us/32576.471ms  min=62494471us  max=136991211us  mean_cyc=24257921660  median_cyc=25034669155  min_cyc=14998673185  max_cyc=32877890470  cyc_src=CCOUNT  ops/s=0.0099
+RSA-2048(wolfSSL)  sign  n=5  mean=1326504us/1326.504ms  median=1326512us/1326.512ms  std=61us/0.061ms  min=1326429us  max=1326579us  mean_cyc=318360925  median_cyc=318362761  min_cyc=318342847  max_cyc=318378814  cyc_src=CCOUNT  ops/s=0.7539
+RSA-2048(wolfSSL)  verify  n=5  mean=21889us/21.889ms  median=21869us/21.869ms  std=41us/0.041ms  min=21865us  max=21973us  mean_cyc=5253518  median_cyc=5248474  min_cyc=5247727  max_cyc=5273692  cyc_src=CCOUNT  ops/s=45.6850
 verify OK: 5/5
 sign errors (signed again): 0
 peak heap (wolfSSL allocations): keygen=8388 sign=2604 verify=2860 bytes
-free stack: 31292 bytes   free heap: 298800 bytes
+free stack: 31140 bytes   free heap: 298104 bytes
 === done (repeats in ~5s) ===

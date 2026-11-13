@@ -9,32 +9,32 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=20
-  iter 1/20 k=1197620us s=368033us v=6272us
-  iter 2/20 k=1158878us s=364148us v=6256us
-  iter 3/20 k=1034938us s=365158us v=6254us
-  iter 4/20 k=910438us s=364120us v=6256us
-  iter 5/20 k=945868us s=365803us v=6258us
-  iter 6/20 k=3572565us s=365692us v=6252us
-  iter 7/20 k=1425519us s=366906us v=6255us
-  iter 8/20 k=1159094us s=364851us v=6257us
-  iter 9/20 k=1017169us s=365067us v=6253us
-  iter 10/20 k=1886107us s=365860us v=6254us
-  iter 11/20 k=2524709us s=364846us v=6253us
-  iter 12/20 k=1532144us s=365574us v=6254us
-  iter 13/20 k=1282942us s=362924us v=6252us
-  iter 14/20 k=1017326us s=366283us v=6252us
-  iter 15/20 k=1550132us s=366069us v=6256us
-  iter 16/20 k=2437176us s=365019us v=6253us
-  iter 17/20 k=1372216us s=365482us v=6253us
-  iter 18/20 k=1371667us s=364967us v=6253us
-  iter 19/20 k=1390111us s=365436us v=6256us
-  iter 20/20 k=1159107us s=365549us v=6256us
+  iter 1/20 k=2418993us s=367481us v=6264us kc=580558133 sc=88195464 vc=1503510
+  iter 2/20 k=1852422us s=366199us v=6246us kc=444581306 sc=87887619 vc=1498968
+  iter 3/20 k=910936us s=369116us v=6259us kc=218624552 sc=88587723 vc=1502184
+  iter 4/20 k=1887056us s=367672us v=6247us kc=452893271 sc=88241280 vc=1499400
+  iter 5/20 k=1017428us s=366187us v=6254us kc=244182689 sc=87884844 vc=1501032
+  iter 6/20 k=999382us s=366971us v=6245us kc=239851613 sc=88073040 vc=1498659
+  iter 7/20 k=1035269us s=367804us v=6255us kc=248464589 sc=88272789 vc=1501164
+  iter 8/20 k=999647us s=366954us v=6247us kc=239915114 sc=88069095 vc=1499187
+  iter 9/20 k=1868377us s=365745us v=6258us kc=448410350 sc=87778980 vc=1501692
+  iter 10/20 k=946489us s=367429us v=6245us kc=227157353 sc=88182831 vc=1498758
+  iter 11/20 k=2081691us s=368424us v=6254us kc=499605701 sc=88421853 vc=1500966
+  iter 12/20 k=2259077us s=365800us v=6250us kc=542178278 sc=87792003 vc=1500033
+  iter 13/20 k=999551us s=367584us v=6254us kc=239892152 sc=88220244 vc=1500960
+  iter 14/20 k=946655us s=366838us v=6247us kc=227197115 sc=88041168 vc=1499148
+  iter 15/20 k=1851279us s=367298us v=6254us kc=444306815 sc=88151514 vc=1501107
+  iter 16/20 k=1602365us s=366450us v=6246us kc=384567554 sc=87947859 vc=1499115
+  iter 17/20 k=1052921us s=367683us v=6254us kc=252701015 sc=88243881 vc=1500831
+  iter 18/20 k=910986us s=368136us v=6249us kc=218636465 sc=88352853 vc=1499556
+  iter 19/20 k=911042us s=368192us v=6254us kc=218649941 sc=88366023 vc=1500945
+  iter 20/20 k=910983us s=367621us v=6246us kc=218635796 sc=88229019 vc=1498986
 === Falcon-512 (PQClean clean) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=897 sk=1281 sig=654 sigMax=752 (variable)
-Falcon-512  keygen  n=20  mean=1497286us/1497.286ms  median=1327304us/1327.304ms  std=642305us/642.305ms  min=910438us  max=3572565us  mean_cyc=359348640  median_cyc=318552960  ops/s=0.6679
-Falcon-512  sign  n=20  mean=365389us/365.389ms  median=365459us/365.459ms  std=1034us/1.034ms  min=362924us  max=368033us  mean_cyc=87693360  median_cyc=87710160  ops/s=2.7368
-Falcon-512  verify  n=20  mean=6255us/6.255ms  median=6254us/6.254ms  std=4us/0.004ms  min=6252us  max=6272us  mean_cyc=1501200  median_cyc=1500960  ops/s=159.8721
+Falcon-512  keygen  n=20  mean=1373127us/1373.127ms  median=1026348us/1026.348ms  std=518711us/518.711ms  min=910936us  max=2418993us  mean_cyc=329550490  median_cyc=246323639  min_cyc=218624552  max_cyc=580558133  cyc_src=CCOUNT  ops/s=0.7283
+Falcon-512  sign  n=20  mean=367279us/367.279ms  median=367455us/367.455ms  std=868us/0.868ms  min=365745us  max=369116us  mean_cyc=88147004  median_cyc=88189147  min_cyc=87778980  max_cyc=88587723  cyc_src=CCOUNT  ops/s=2.7227
+Falcon-512  verify  n=20  mean=6251us/6.251ms  median=6252us/6.252ms  std=5us/0.005ms  min=6245us  max=6264us  mean_cyc=1500310  median_cyc=1500432  min_cyc=1498659  max_cyc=1503510  cyc_src=CCOUNT  ops/s=159.9744
 verify OK: 20/20
-free stack: 21964 bytes   free heap: 268060 bytes
+free stack: 21916 bytes   free heap: 267004 bytes
 === done (repeats in ~5s) ===

@@ -9,34 +9,34 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=20
-  iter 1/20 k=356655us s=361377us v=747942us
-  iter 2/20 k=356204us s=361300us v=747888us
-  iter 3/20 k=356204us s=361300us v=747888us
-  iter 4/20 k=356209us s=361299us v=747889us
-  iter 5/20 k=356205us s=361299us v=747889us
-  iter 6/20 k=356205us s=361304us v=747883us
-  iter 7/20 k=356209us s=361300us v=747888us
-  iter 8/20 k=356204us s=361299us v=747887us
-  iter 9/20 k=356205us s=361302us v=747888us
-  iter 10/20 k=356205us s=361300us v=747888us
-  iter 11/20 k=356204us s=361304us v=747884us
-  iter 12/20 k=356204us s=361299us v=747888us
-  iter 13/20 k=356204us s=361299us v=747888us
-  iter 14/20 k=356209us s=361300us v=747888us
-  iter 15/20 k=356205us s=361299us v=747887us
-  iter 16/20 k=356208us s=361299us v=747888us
-  iter 17/20 k=356204us s=361298us v=747888us
-  iter 18/20 k=356205us s=361303us v=747888us
-  iter 19/20 k=356205us s=361300us v=747888us
-  iter 20/20 k=356205us s=361304us v=747889us
+  iter 1/20 k=356655us s=361379us v=747940us kc=85597150 sc=86730868 vc=179505601
+  iter 2/20 k=356213us s=361302us v=747892us kc=85491259 sc=86712535 vc=179494189
+  iter 3/20 k=356219us s=361301us v=747892us kc=85492507 sc=86712451 vc=179494288
+  iter 4/20 k=356214us s=361302us v=747893us kc=85491301 sc=86712484 vc=179494237
+  iter 5/20 k=356214us s=361301us v=747893us kc=85491331 sc=86712400 vc=179494291
+  iter 6/20 k=356214us s=361305us v=747892us kc=85491295 sc=86713282 vc=179494231
+  iter 7/20 k=356214us s=361303us v=747892us kc=85491340 sc=86712775 vc=179494156
+  iter 8/20 k=356218us s=361302us v=747893us kc=85492177 sc=86712454 vc=179494474
+  iter 9/20 k=356213us s=361302us v=747892us kc=85491157 sc=86712463 vc=179494126
+  iter 10/20 k=356218us s=361302us v=747893us kc=85492219 sc=86712472 vc=179494330
+  iter 11/20 k=356213us s=361306us v=747893us kc=85491283 sc=86713369 vc=179494201
+  iter 12/20 k=356214us s=361301us v=747893us kc=85491232 sc=86712271 vc=179494279
+  iter 13/20 k=356213us s=361302us v=747892us kc=85491229 sc=86712283 vc=179494147
+  iter 14/20 k=356214us s=361306us v=747892us kc=85491346 sc=86713333 vc=179494204
+  iter 15/20 k=356213us s=361302us v=747892us kc=85491130 sc=86712484 vc=179494132
+  iter 16/20 k=356214us s=361301us v=747894us kc=85491223 sc=86712337 vc=179494396
+  iter 17/20 k=356213us s=361306us v=747893us kc=85491283 sc=86713348 vc=179494309
+  iter 18/20 k=356214us s=361302us v=747893us kc=85491316 sc=86712388 vc=179494300
+  iter 19/20 k=356213us s=361302us v=747893us kc=85491211 sc=86712364 vc=179494453
+  iter 20/20 k=356214us s=361305us v=747893us kc=85491313 sc=86713225 vc=179494309
 === Ed25519 (wolfSSL 5.9.4) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=32 sk=32 sig=64 sigMax=64
-Ed25519(wolfSSL)  keygen  n=20  mean=356227us/356.227ms  median=356205us/356.205ms  std=98us/0.098ms  min=356204us  max=356655us  mean_cyc=85494480  median_cyc=85489200  ops/s=2.8072
-Ed25519(wolfSSL)  sign  n=20  mean=361304us/361.304ms  median=361300us/361.300ms  std=16us/0.016ms  min=361298us  max=361377us  mean_cyc=86712960  median_cyc=86712000  ops/s=2.7678
-Ed25519(wolfSSL)  verify  n=20  mean=747890us/747.890ms  median=747888us/747.888ms  std=11us/0.011ms  min=747883us  max=747942us  mean_cyc=179493600  median_cyc=179493120  ops/s=1.3371
+Ed25519(wolfSSL)  keygen  n=20  mean=356236us/356.236ms  median=356214us/356.214ms  std=96us/0.096ms  min=356213us  max=356655us  mean_cyc=85496715  median_cyc=85491298  min_cyc=85491130  max_cyc=85597150  cyc_src=CCOUNT  ops/s=2.8071
+Ed25519(wolfSSL)  sign  n=20  mean=361306us/361.306ms  median=361302us/361.302ms  std=16us/0.016ms  min=361301us  max=361379us  mean_cyc=86713579  median_cyc=86712478  min_cyc=86712271  max_cyc=86730868  cyc_src=CCOUNT  ops/s=2.7677
+Ed25519(wolfSSL)  verify  n=20  mean=747895us/747.895ms  median=747893us/747.893ms  std=10us/0.010ms  min=747892us  max=747940us  mean_cyc=179494832  median_cyc=179494283  min_cyc=179494126  max_cyc=179505601  cyc_src=CCOUNT  ops/s=1.3371
 verify OK: 20/20
 sign errors (signed again): 0
 peak heap (wolfSSL allocations): keygen=352 sign=352 verify=352 bytes
-free stack: 30692 bytes   free heap: 305504 bytes
+free stack: 30724 bytes   free heap: 304448 bytes
 === done (repeats in ~5s) ===

@@ -9,23 +9,23 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=10 big stack=96 KB
-  iter 1/10 k=1936174us s=3299749us v=2092242us
-  iter 2/10 k=1936161us s=3299683us v=2092268us
-  iter 3/10 k=1936147us s=3299740us v=2092265us
-  iter 4/10 k=1936172us s=3299782us v=2092276us
-  iter 5/10 k=1936143us s=3299721us v=2092245us
-  iter 6/10 k=1936135us s=3299694us v=2092296us
-  iter 7/10 k=1936143us s=3299712us v=2092272us
-  iter 8/10 k=1936151us s=3299766us v=2092254us
-  iter 9/10 k=1936150us s=3299733us v=2092255us
-  iter 10/10 k=1936141us s=3299725us v=2092270us
+  iter 1/10 k=1938545us s=3301262us v=2094361us kc=465250617 sc=792302878 vc=502646809
+  iter 2/10 k=1938506us s=3301246us v=2094375us kc=465241423 sc=792298978 vc=502649932
+  iter 3/10 k=1938498us s=3301195us v=2094367us kc=465239386 sc=792286906 vc=502648255
+  iter 4/10 k=1938501us s=3301274us v=2094378us kc=465240196 sc=792305806 vc=502650685
+  iter 5/10 k=1938501us s=3301204us v=2094370us kc=465240052 sc=792288787 vc=502648693
+  iter 6/10 k=1938478us s=3301272us v=2094363us kc=465234760 sc=792305338 vc=502647076
+  iter 7/10 k=1938498us s=3301240us v=2094386us kc=465239557 sc=792297637 vc=502652767
+  iter 8/10 k=1938497us s=3301208us v=2094372us kc=465239209 sc=792290014 vc=502649281
+  iter 9/10 k=1938513us s=3301283us v=2094377us kc=465243133 sc=792307927 vc=502650655
+  iter 10/10 k=1938501us s=3301204us v=2094370us kc=465240052 sc=792288775 vc=502648684
 === SNOVA_III_K (liboqs 0.16.0, portable C) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=912 sk=96 sig=688 sigMax=688
-SNOVA_III_K(liboqs)  keygen  n=10  mean=1936151us/1936.151ms  median=1936148us/1936.148ms  std=12us/0.012ms  min=1936135us  max=1936174us  mean_cyc=464676240  median_cyc=464675520  ops/s=0.5165
-SNOVA_III_K(liboqs)  sign  n=10  mean=3299730us/3299.730ms  median=3299729us/3299.729ms  std=28us/0.028ms  min=3299683us  max=3299782us  mean_cyc=791935200  median_cyc=791934960  ops/s=0.3031
-SNOVA_III_K(liboqs)  verify  n=10  mean=2092264us/2092.264ms  median=2092266us/2092.266ms  std=15us/0.015ms  min=2092242us  max=2092296us  mean_cyc=502143360  median_cyc=502143840  ops/s=0.4780
+SNOVA_III_K(liboqs)  keygen  n=10  mean=1938503us/1938.503ms  median=1938501us/1938.501ms  std=16us/0.016ms  min=1938478us  max=1938545us  mean_cyc=465240838  median_cyc=465240052  min_cyc=465234760  max_cyc=465250617  cyc_src=CCOUNT  ops/s=0.5159
+SNOVA_III_K(liboqs)  sign  n=10  mean=3301238us/3301.238ms  median=3301243us/3301.243ms  std=31us/0.031ms  min=3301195us  max=3301283us  mean_cyc=792297304  median_cyc=792298307  min_cyc=792286906  max_cyc=792307927  cyc_src=CCOUNT  ops/s=0.3029
+SNOVA_III_K(liboqs)  verify  n=10  mean=2094371us/2094.371ms  median=2094371us/2094.371ms  std=7us/0.007ms  min=2094361us  max=2094386us  mean_cyc=502649283  median_cyc=502648987  min_cyc=502646809  max_cyc=502652767  cyc_src=CCOUNT  ops/s=0.4775
 verify OK: 10/10
 peak stack: keygen=5824 sign=61168 verify=12496 / 98304 bytes
-free heap: 230088 bytes
+free heap: 229272 bytes
 === done (repeats in ~5s) ===

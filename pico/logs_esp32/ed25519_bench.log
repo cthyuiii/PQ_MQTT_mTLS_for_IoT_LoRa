@@ -9,32 +9,32 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=20
-  iter 1/20 k=48916us s=49065us v=76896us
-  iter 2/20 k=48717us s=49028us v=80798us
-  iter 3/20 k=48719us s=49026us v=77181us
-  iter 4/20 k=48713us s=49023us v=78003us
-  iter 5/20 k=48708us s=49028us v=77465us
-  iter 6/20 k=48715us s=49027us v=77892us
-  iter 7/20 k=48713us s=49031us v=75807us
-  iter 8/20 k=48715us s=49026us v=77873us
-  iter 9/20 k=48714us s=49024us v=77802us
-  iter 10/20 k=48713us s=49030us v=77628us
-  iter 11/20 k=48714us s=49028us v=78004us
-  iter 12/20 k=48720us s=49028us v=77458us
-  iter 13/20 k=48721us s=49023us v=78269us
-  iter 14/20 k=48712us s=49030us v=77631us
-  iter 15/20 k=48712us s=49027us v=75625us
-  iter 16/20 k=48712us s=49025us v=77150us
-  iter 17/20 k=48713us s=49030us v=78709us
-  iter 18/20 k=48713us s=49031us v=76714us
-  iter 19/20 k=48719us s=49031us v=80251us
-  iter 20/20 k=48710us s=49030us v=76885us
+  iter 1/20 k=48903us s=49066us v=79030us kc=11736467 sc=11775810 vc=18967431
+  iter 2/20 k=48715us s=49033us v=77529us kc=11691674 sc=11767917 vc=18606854
+  iter 3/20 k=48708us s=49031us v=77146us kc=11690141 sc=11767233 vc=18515234
+  iter 4/20 k=48715us s=49028us v=76518us kc=11691821 sc=11766630 vc=18364412
+  iter 5/20 k=48712us s=49027us v=77711us kc=11690849 sc=11766501 vc=18650612
+  iter 6/20 k=48713us s=49025us v=78980us kc=11691071 sc=11765979 vc=18955226
+  iter 7/20 k=48714us s=49030us v=76455us kc=11691350 sc=11767215 vc=18349196
+  iter 8/20 k=48710us s=49030us v=75192us kc=11690381 sc=11767218 vc=18045917
+  iter 9/20 k=48721us s=49028us v=79692us kc=11692871 sc=11766822 vc=19126076
+  iter 10/20 k=48714us s=49032us v=78432us kc=11691206 sc=11767689 vc=18823733
+  iter 11/20 k=48713us s=49028us v=78635us kc=11691251 sc=11766639 vc=18872414
+  iter 12/20 k=48712us s=49028us v=77509us kc=11690858 sc=11766582 vc=18602204
+  iter 13/20 k=48710us s=49025us v=77908us kc=11690333 sc=11766051 vc=18697931
+  iter 14/20 k=48725us s=49032us v=78703us kc=11693873 sc=11767764 vc=18888749
+  iter 15/20 k=48712us s=49025us v=77084us kc=11690807 sc=11765937 vc=18500264
+  iter 16/20 k=48717us s=49028us v=78862us kc=11691965 sc=11766717 vc=18926810
+  iter 17/20 k=48714us s=49025us v=78544us kc=11691371 sc=11765979 vc=18850547
+  iter 18/20 k=48718us s=49026us v=77330us kc=11692166 sc=11766399 vc=18559187
+  iter 19/20 k=48714us s=49026us v=78360us kc=11691197 sc=11766297 vc=18806324
+  iter 20/20 k=48716us s=49023us v=78890us kc=11691824 sc=11765517 vc=18933536
 === Ed25519 (RFC 8032, rweather Crypto lib) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=32 sk=32 sigMax=64 sig=64
-Ed25519  keygen  n=20  mean=48724us/48.724ms  median=48713us/48.713ms  std=44us/0.044ms  min=48708us  max=48916us  mean_cyc=11693760  median_cyc=11691120  ops/s=20.5238
-Ed25519  sign  n=20  mean=49029us/49.029ms  median=49028us/49.028ms  std=8us/0.008ms  min=49023us  max=49065us  mean_cyc=11766960  median_cyc=11766720  ops/s=20.3961
-Ed25519  verify  n=20  mean=77702us/77.702ms  median=77629us/77.629ms  std=1195us/1.195ms  min=75625us  max=80798us  mean_cyc=18648480  median_cyc=18630960  ops/s=12.8697
+Ed25519  keygen  n=20  mean=48723us/48.723ms  median=48714us/48.714ms  std=41us/0.041ms  min=48708us  max=48903us  mean_cyc=11693673  median_cyc=11691300  min_cyc=11690141  max_cyc=11736467  cyc_src=CCOUNT  ops/s=20.5242
+Ed25519  sign  n=20  mean=49029us/49.029ms  median=49028us/49.028ms  std=8us/0.008ms  min=49023us  max=49066us  mean_cyc=11767144  median_cyc=11766634  min_cyc=11765517  max_cyc=11775810  cyc_src=CCOUNT  ops/s=20.3961
+Ed25519  verify  n=20  mean=77925us/77.925ms  median=78134us/78.134ms  std=1069us/1.069ms  min=75192us  max=79692us  mean_cyc=18702132  median_cyc=18752127  min_cyc=18045917  max_cyc=19126076  cyc_src=CCOUNT  ops/s=12.8329
 verify OK: 20/20
-free heap: 305556 bytes
+free heap: 304500 bytes
 === done (repeats in ~5s) ===

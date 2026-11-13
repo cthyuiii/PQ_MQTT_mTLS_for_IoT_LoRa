@@ -9,23 +9,23 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=10 big stack=96 KB
-  iter 1/10 k=415925us s=18752665us v=18659886us
-  iter 2/10 k=415900us s=18740983us v=18659770us
-  iter 3/10 k=415889us s=18747487us v=18659891us
-  iter 4/10 k=415907us s=18761858us v=18660429us
-  iter 5/10 k=415895us s=18723231us v=18659786us
-  iter 6/10 k=415907us s=18729035us v=18660106us
-  iter 7/10 k=415904us s=18758532us v=18659984us
-  iter 8/10 k=415899us s=18741355us v=18659902us
-  iter 9/10 k=415904us s=18740267us v=18660029us
-  iter 10/10 k=415906us s=18730182us v=18660451us
+  iter 1/10 k=419475us s=18748660us v=18700660us kc=100673808 sc=4499678433 vc=4488158388
+  iter 2/10 k=419422us s=18743372us v=18700695us kc=100661415 sc=4498409250 vc=4488166827
+  iter 3/10 k=419414us s=18744368us v=18700650us kc=100659381 sc=4498648347 vc=4488156492
+  iter 4/10 k=419440us s=18746342us v=18700785us kc=100665723 sc=4499122044 vc=4488188478
+  iter 5/10 k=419410us s=18835192us v=18700850us kc=100658517 sc=4520446083 vc=4488203973
+  iter 6/10 k=419419us s=18799804us v=18700502us kc=100660632 sc=4511953092 vc=4488120459
+  iter 7/10 k=419433us s=18760629us v=18701020us kc=100663923 sc=4502550966 vc=4488244722
+  iter 8/10 k=419443us s=18849747us v=18700424us kc=100666311 sc=4523939286 vc=4488101826
+  iter 9/10 k=419410us s=18757451us v=18700529us kc=100658556 sc=4501788351 vc=4488127029
+  iter 10/10 k=419412us s=18809150us v=18700885us kc=100659024 sc=4514196000 vc=4488212616
 === mqom3_cat1_gf16_short_ct (liboqs 0.16.0, portable C) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=64 sk=96 sig=2932 sigMax=2932
-mqom3_cat1_gf16_short_ct(liboqs)  keygen  n=10  mean=415903us/415.903ms  median=415904us/415.904ms  std=9us/0.009ms  min=415889us  max=415925us  mean_cyc=99816720  median_cyc=99816960  ops/s=2.4044
-mqom3_cat1_gf16_short_ct(liboqs)  sign  n=10  mean=18742559us/18742.561ms  median=18741169us/18741.168ms  std=12136us/12.136ms  min=18723231us  max=18761858us  mean_cyc=203246864  median_cyc=202913264  ops/s=0.0534
-mqom3_cat1_gf16_short_ct(liboqs)  verify  n=10  mean=18660023us/18660.023ms  median=18659943us/18659.943ms  std=229us/0.229ms  min=18659770us  max=18660451us  mean_cyc=183438224  median_cyc=183419024  ops/s=0.0536
+mqom3_cat1_gf16_short_ct(liboqs)  keygen  n=10  mean=419427us/419.427ms  median=419420us/419.420ms  std=19us/0.019ms  min=419410us  max=419475us  mean_cyc=100662729  median_cyc=100661023  min_cyc=100658517  max_cyc=100673808  cyc_src=CCOUNT  ops/s=2.3842
+mqom3_cat1_gf16_short_ct(liboqs)  sign  n=10  mean=18779471us/18779.473ms  median=18759040us/18759.039ms  std=38418us/38.418ms  min=18743372us  max=18849747us  mean_cyc=4507073185  median_cyc=4502169658  min_cyc=4498409250  max_cyc=4523939286  cyc_src=CCOUNT  ops/s=0.0532
+mqom3_cat1_gf16_short_ct(liboqs)  verify  n=10  mean=18700700us/18700.699ms  median=18700677us/18700.676ms  std=177us/0.177ms  min=18700424us  max=18701020us  mean_cyc=4488168081  median_cyc=4488162607  min_cyc=4488101826  max_cyc=4488244722  cyc_src=CCOUNT  ops/s=0.0535
 verify OK: 10/10
-peak stack: keygen=2048 sign=15408 verify=14848 / 98304 bytes
-free heap: 228504 bytes
+peak stack: keygen=1984 sign=15344 verify=14848 / 98304 bytes
+free heap: 227688 bytes
 === done (repeats in ~5s) ===

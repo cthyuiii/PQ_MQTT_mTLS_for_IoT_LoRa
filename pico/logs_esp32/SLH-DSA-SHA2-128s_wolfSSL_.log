@@ -9,17 +9,17 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=3
-  iter 1/3 k=14496156us s=110472079us v=98171us
-  iter 2/3 k=14495993us s=110472113us v=106429us
-  iter 3/3 k=14496038us s=110472195us v=103415us
+  iter 1/3 k=12578598us s=95534034us v=100290us kc=3018863542 sc=22928168209 vc=24069568
+  iter 2/3 k=12578493us s=95534877us v=106250us kc=3018838243 sc=22928370661 vc=25499866
+  iter 3/3 k=12578460us s=95534788us v=105600us kc=3018830389 sc=22928349169 vc=25343962
 === SLH-DSA-SHA2-128s (wolfSSL 5.9.4) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=32 sk=64 sig=7856 sigMax=7856
-SLH-DSA-SHA2-128s(wolfSSL)  keygen  n=3  mean=14496062us/14496.062ms  median=14496038us/14496.038ms  std=68us/0.068ms  min=14495993us  max=14496156us  mean_cyc=3479054880  median_cyc=3479049120  ops/s=0.0690
-SLH-DSA-SHA2-128s(wolfSSL)  sign  n=3  mean=110472129us/110472.125ms  median=110472113us/110472.109ms  std=48us/0.048ms  min=110472079us  max=110472195us  mean_cyc=743507184  median_cyc=743503344  ops/s=0.0091
-SLH-DSA-SHA2-128s(wolfSSL)  verify  n=3  mean=102671us/102.671ms  median=103415us/103.415ms  std=3412us/3.412ms  min=98171us  max=106429us  mean_cyc=24641040  median_cyc=24819600  ops/s=9.7398
+SLH-DSA-SHA2-128s(wolfSSL)  keygen  n=3  mean=12578517us/12578.517ms  median=12578493us/12578.493ms  std=58us/0.058ms  min=12578460us  max=12578598us  mean_cyc=3018844058  median_cyc=3018838243  min_cyc=3018830389  max_cyc=3018863542  cyc_src=CCOUNT  ops/s=0.0795
+SLH-DSA-SHA2-128s(wolfSSL)  sign  n=3  mean=95534566us/95534.570ms  median=95534788us/95534.781ms  std=378us/0.378ms  min=95534034us  max=95534877us  mean_cyc=22928296013  median_cyc=22928349169  min_cyc=22928168209  max_cyc=22928370661  cyc_src=CCOUNT  ops/s=0.0105
+SLH-DSA-SHA2-128s(wolfSSL)  verify  n=3  mean=104046us/104.046ms  median=105600us/105.600ms  std=2669us/2.669ms  min=100290us  max=106250us  mean_cyc=24971132  median_cyc=25343962  min_cyc=24069568  max_cyc=25499866  cyc_src=CCOUNT  ops/s=9.6111
 verify OK: 3/3
 sign errors (signed again): 0
 peak heap (wolfSSL allocations): keygen=608 sign=736 verify=256 bytes
-free stack: 30548 bytes   free heap: 296360 bytes
+free stack: 30500 bytes   free heap: 295704 bytes
 === done (repeats in ~5s) ===

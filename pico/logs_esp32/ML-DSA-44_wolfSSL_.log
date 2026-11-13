@@ -9,34 +9,34 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=20
-  iter 1/20 k=12050us s=83528us v=11442us
-  iter 2/20 k=11571us s=135967us v=11369us
-  iter 3/20 k=11570us s=142622us v=11373us
-  iter 4/20 k=11569us s=16194us v=11373us
-  iter 5/20 k=11570us s=70518us v=11376us
-  iter 6/20 k=11566us s=71906us v=11365us
-  iter 7/20 k=11570us s=126208us v=11368us
-  iter 8/20 k=11570us s=43487us v=11370us
-  iter 9/20 k=11568us s=16194us v=11371us
-  iter 10/20 k=11570us s=44052us v=11368us
-  iter 11/20 k=11565us s=30678us v=11374us
-  iter 12/20 k=11569us s=110905us v=11369us
-  iter 13/20 k=11570us s=44588us v=11371us
-  iter 14/20 k=11569us s=16194us v=11374us
-  iter 15/20 k=11569us s=29007us v=11368us
-  iter 16/20 k=11569us s=56592us v=11371us
-  iter 17/20 k=11570us s=85842us v=11369us
-  iter 18/20 k=11569us s=325609us v=11371us
-  iter 19/20 k=11565us s=16193us v=11373us
-  iter 20/20 k=11570us s=45148us v=11373us
+  iter 1/20 k=12053us s=59815us v=11443us kc=2892883 sc=14355559 vc=2746402
+  iter 2/20 k=11613us s=113709us v=11377us kc=2786989 sc=27290113 vc=2730628
+  iter 3/20 k=11623us s=42104us v=11375us kc=2789389 sc=10105117 vc=2729980
+  iter 4/20 k=11610us s=43507us v=11376us kc=2786482 sc=10441555 vc=2730172
+  iter 5/20 k=11624us s=126201us v=11373us kc=2789605 sc=30288352 vc=2729458
+  iter 6/20 k=11616us s=16197us v=11375us kc=2787688 sc=3887314 vc=2729986
+  iter 7/20 k=11618us s=97253us v=11375us kc=2788336 sc=23340736 vc=2729944
+  iter 8/20 k=11610us s=221778us v=11374us kc=2786401 sc=53226667 vc=2729806
+  iter 9/20 k=11621us s=42383us v=11377us kc=2789047 sc=10171810 vc=2730529
+  iter 10/20 k=11615us s=252388us v=11381us kc=2787466 sc=60573304 vc=2731393
+  iter 11/20 k=11623us s=100312us v=11381us kc=2789374 sc=24074950 vc=2731408
+  iter 12/20 k=11613us s=30134us v=11382us kc=2787199 sc=7232008 vc=2731816
+  iter 13/20 k=11623us s=83893us v=11374us kc=2789485 sc=20134447 vc=2729974
+  iter 14/20 k=11615us s=43226us v=11377us kc=2787643 sc=10374145 vc=2730484
+  iter 15/20 k=11624us s=16197us v=11373us kc=2789650 sc=3887362 vc=2729479
+  iter 16/20 k=11612us s=16201us v=11376us kc=2786803 sc=3888388 vc=2730160
+  iter 17/20 k=11619us s=97561us v=11374us kc=2788496 sc=23414575 vc=2729869
+  iter 18/20 k=11615us s=44592us v=11379us kc=2787640 sc=10702021 vc=2730871
+  iter 19/20 k=11623us s=71351us v=11381us kc=2789602 sc=17124100 vc=2731429
+  iter 20/20 k=11612us s=59367us v=11379us kc=2786830 sc=14248123 vc=2730934
 === ML-DSA-44 (wolfSSL 5.9.4) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=1312 sk=2560 sig=2420 sigMax=2420
-ML-DSA-44(wolfSSL)  keygen  n=20  mean=11592us/11.592ms  median=11569us/11.569ms  std=104us/0.104ms  min=11565us  max=12050us  mean_cyc=2782080  median_cyc=2776560  ops/s=86.2664
-ML-DSA-44(wolfSSL)  sign  n=20  mean=75571us/75.571ms  median=50870us/50.870ms  std=69727us/69.727ms  min=16193us  max=325609us  mean_cyc=18137040  median_cyc=12208800  ops/s=13.2326
-ML-DSA-44(wolfSSL)  verify  n=20  mean=11374us/11.374ms  median=11371us/11.371ms  std=15us/0.015ms  min=11365us  max=11442us  mean_cyc=2729760  median_cyc=2729040  ops/s=87.9198
+ML-DSA-44(wolfSSL)  keygen  n=20  mean=11639us/11.639ms  median=11617us/11.617ms  std=95us/0.095ms  min=11610us  max=12053us  mean_cyc=2793350  median_cyc=2788012  min_cyc=2786401  max_cyc=2892883  cyc_src=CCOUNT  ops/s=85.9180
+ML-DSA-44(wolfSSL)  sign  n=20  mean=78908us/78.908ms  median=59591us/59.591ms  std=61844us/61.844ms  min=16197us  max=252388us  mean_cyc=18938032  median_cyc=14301841  min_cyc=3887314  max_cyc=60573304  cyc_src=CCOUNT  ops/s=12.6730
+ML-DSA-44(wolfSSL)  verify  n=20  mean=11380us/11.380ms  median=11376us/11.376ms  std=14us/0.014ms  min=11373us  max=11443us  mean_cyc=2731236  median_cyc=2730328  min_cyc=2729458  max_cyc=2746402  cyc_src=CCOUNT  ops/s=87.8735
 verify OK: 20/20
 sign errors (signed again): 0
 peak heap (wolfSSL allocations): keygen=14424 sign=16968 verify=8776 bytes
-free stack: 31348 bytes   free heap: 298832 bytes
+free stack: 31108 bytes   free heap: 297776 bytes
 === done (repeats in ~5s) ===

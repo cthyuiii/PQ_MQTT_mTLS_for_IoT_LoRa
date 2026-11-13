@@ -9,32 +9,32 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=20
-  iter 1/20 k=44221us s=161560us v=44019us
-  iter 2/20 k=43461us s=105003us v=43990us
-  iter 3/20 k=43766us s=57730us v=43987us
-  iter 4/20 k=43454us s=475320us v=43986us
-  iter 5/20 k=43763us s=366178us v=43988us
-  iter 6/20 k=43970us s=57732us v=43988us
-  iter 7/20 k=43969us s=218710us v=43986us
-  iter 8/20 k=43455us s=362249us v=43989us
-  iter 9/20 k=43868us s=511729us v=43989us
-  iter 10/20 k=43559us s=157369us v=43987us
-  iter 11/20 k=43864us s=111099us v=43991us
-  iter 12/20 k=43662us s=621902us v=43986us
-  iter 13/20 k=43352us s=301210us v=43996us
-  iter 14/20 k=43969us s=111096us v=43990us
-  iter 15/20 k=43561us s=57730us v=43982us
-  iter 16/20 k=43455us s=102990us v=43984us
-  iter 17/20 k=44170us s=57729us v=43987us
-  iter 18/20 k=43766us s=406265us v=43991us
-  iter 19/20 k=43865us s=57731us v=43987us
-  iter 20/20 k=43555us s=57732us v=43989us
+  iter 1/20 k=44322us s=203006us v=44021us kc=10637534 sc=48721245 vc=10565096
+  iter 2/20 k=43680us s=112840us v=43988us kc=10483284 sc=27081549 vc=10557242
+  iter 3/20 k=43787us s=205484us v=43992us kc=10509000 sc=49316052 vc=10558259
+  iter 4/20 k=43275us s=154480us v=43990us kc=10385853 sc=37075167 vc=10557692
+  iter 5/20 k=44094us s=153286us v=43988us kc=10582542 sc=36788520 vc=10557107
+  iter 6/20 k=43477us s=556704us v=43987us kc=10434648 sc=133608849 vc=10556993
+  iter 7/20 k=43577us s=308721us v=43989us kc=10458354 sc=74093106 vc=10557431
+  iter 8/20 k=43889us s=305722us v=43990us kc=10533444 sc=73373412 vc=10557503
+  iter 9/20 k=43178us s=153733us v=43995us kc=10362708 sc=36895974 vc=10558790
+  iter 10/20 k=43577us s=111967us v=43988us kc=10458408 sc=26872095 vc=10557032
+  iter 11/20 k=43580us s=304023us v=43990us kc=10459125 sc=72965481 vc=10557515
+  iter 12/20 k=43887us s=108468us v=43989us kc=10532745 sc=26032380 vc=10557377
+  iter 13/20 k=43782us s=57735us v=43988us kc=10507629 sc=13856394 vc=10556981
+  iter 14/20 k=43785us s=107020us v=43988us kc=10508352 sc=25684644 vc=10557185
+  iter 15/20 k=43684us s=108468us v=43989us kc=10483938 sc=26032311 vc=10557362
+  iter 16/20 k=43681us s=216957us v=43992us kc=10483263 sc=52069662 vc=10558109
+  iter 17/20 k=43787us s=57734us v=43993us kc=10508709 sc=13856139 vc=10558355
+  iter 18/20 k=43678us s=257132us v=43992us kc=10482888 sc=61711737 vc=10557854
+  iter 19/20 k=43786us s=57725us v=43992us kc=10508769 sc=13853883 vc=10558235
+  iter 20/20 k=43887us s=607094us v=43992us kc=10532955 sc=145702710 vc=10557953
 === ML-DSA-87 (mldsa-native ref) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=2592 sk=4896 sig=4627 sigMax=4627
-ML-DSA-87(mldsa-native)  keygen  n=20  mean=43735us/43.735ms  median=43764us/43.764ms  std=245us/0.245ms  min=43352us  max=44221us  mean_cyc=10496400  median_cyc=10503360  ops/s=22.8650
-ML-DSA-87(mldsa-native)  sign  n=20  mean=217953us/217.953ms  median=134234us/134.234ms  std=174727us/174.727ms  min=57729us  max=621902us  mean_cyc=52308720  median_cyc=32216160  ops/s=4.5881
-ML-DSA-87(mldsa-native)  verify  n=20  mean=43989us/43.989ms  median=43988us/43.988ms  std=7us/0.007ms  min=43982us  max=44019us  mean_cyc=10557360  median_cyc=10557120  ops/s=22.7330
+ML-DSA-87(mldsa-native)  keygen  n=20  mean=43719us/43.719ms  median=43733us/43.733ms  std=247us/0.247ms  min=43178us  max=44322us  mean_cyc=10492707  median_cyc=10495783  min_cyc=10362708  max_cyc=10637534  cyc_src=CCOUNT  ops/s=22.8734
+ML-DSA-87(mldsa-native)  sign  n=20  mean=207414us/207.414ms  median=154106us/154.106ms  std=147840us/147.840ms  min=57725us  max=607094us  mean_cyc=49779565  median_cyc=36985570  min_cyc=13853883  max_cyc=145702710  cyc_src=CCOUNT  ops/s=4.8213
+ML-DSA-87(mldsa-native)  verify  n=20  mean=43991us/43.991ms  median=43990us/43.990ms  std=7us/0.007ms  min=43987us  max=44021us  mean_cyc=10558003  median_cyc=10557509  min_cyc=10556981  max_cyc=10565096  cyc_src=CCOUNT  ops/s=22.7319
 verify OK: 20/20
-free stack: 85052 bytes   free heap: 217916 bytes
+free stack: 85004 bytes   free heap: 216860 bytes
 === done (repeats in ~5s) ===

@@ -11,30 +11,30 @@ entry 0x400805b4
 >>> running, ITERS=20
 === ECDSA-P256 (BearSSL, classical baseline) on ESP32 ===
 CPU clock: 240 MHz
-  iter 1/20 k=61640us s=72258us v=163137us
-  iter 2/20 k=61322us s=72144us v=163083us
-  iter 3/20 k=61328us s=72139us v=163080us
-  iter 4/20 k=61322us s=72142us v=163080us
-  iter 5/20 k=61323us s=72146us v=163081us
-  iter 6/20 k=61322us s=72145us v=163079us
-  iter 7/20 k=61321us s=72143us v=163080us
-  iter 8/20 k=61327us s=72143us v=163077us
-  iter 9/20 k=61323us s=72144us v=163082us
-  iter 10/20 k=61322us s=72147us v=163078us
-  iter 11/20 k=61322us s=72143us v=163076us
-  iter 12/20 k=61323us s=72146us v=163079us
-  iter 13/20 k=61321us s=72144us v=163079us
-  iter 14/20 k=61324us s=72148us v=163080us
-  iter 15/20 k=61322us s=72142us v=163078us
-  iter 16/20 k=61322us s=72143us v=163081us
-  iter 17/20 k=61322us s=72144us v=163077us
-  iter 18/20 k=61323us s=72144us v=163084us
-  iter 19/20 k=61326us s=72144us v=163078us
-  iter 20/20 k=61322us s=72142us v=163082us
+  iter 1/20 k=61636us s=72258us v=163141us kc=14793067 sc=17341813 vc=39153906
+  iter 2/20 k=61370us s=72160us v=163079us kc=14728634 sc=17318382 vc=39139284
+  iter 3/20 k=61370us s=72154us v=163086us kc=14728652 sc=17316954 vc=39140982
+  iter 4/20 k=61373us s=72155us v=163082us kc=14729600 sc=17317050 vc=39139899
+  iter 5/20 k=61371us s=72152us v=163083us kc=14728901 sc=17316654 vc=39140136
+  iter 6/20 k=61375us s=72153us v=163083us kc=14729981 sc=17316759 vc=39140217
+  iter 7/20 k=61370us s=72154us v=163084us kc=14728679 sc=17317014 vc=39140583
+  iter 8/20 k=61371us s=72154us v=163082us kc=14728889 sc=17316948 vc=39140037
+  iter 9/20 k=61370us s=72159us v=163083us kc=14728763 sc=17318052 vc=39140400
+  iter 10/20 k=61369us s=72153us v=163084us kc=14728637 sc=17316699 vc=39140406
+  iter 11/20 k=61375us s=72155us v=163083us kc=14729927 sc=17317179 vc=39140205
+  iter 12/20 k=61372us s=72156us v=163087us kc=14729333 sc=17317323 vc=39141147
+  iter 13/20 k=61369us s=72151us v=163084us kc=14728451 sc=17316297 vc=39140355
+  iter 14/20 k=61374us s=72156us v=163084us kc=14729828 sc=17317314 vc=39140592
+  iter 15/20 k=61370us s=72155us v=163085us kc=14728853 sc=17317233 vc=39140481
+  iter 16/20 k=61370us s=72154us v=163083us kc=14728910 sc=17316861 vc=39140205
+  iter 17/20 k=61374us s=72154us v=163081us kc=14729780 sc=17316819 vc=39139839
+  iter 18/20 k=61370us s=72155us v=163087us kc=14728835 sc=17317212 vc=39141216
+  iter 19/20 k=61368us s=72154us v=163084us kc=14728349 sc=17316936 vc=39140355
+  iter 20/20 k=61374us s=72153us v=163084us kc=14729735 sc=17316660 vc=39140547
 sizes: pk=64 (uncompressed-1) sk=32 sigMax=64 sig=64
-ECDSA-P256  keygen  n=20  mean=61338us/61.338ms  median=61322us/61.322ms  std=69us/0.069ms  min=61321us  max=61640us  mean_cyc=14721120  median_cyc=14717280  ops/s=16.3031
-ECDSA-P256  sign  n=20  mean=72149us/72.149ms  median=72144us/72.144ms  std=24us/0.024ms  min=72139us  max=72258us  mean_cyc=17315760  median_cyc=17314560  ops/s=13.8602
-ECDSA-P256  verify  n=20  mean=163082us/163.082ms  median=163080us/163.080ms  std=12us/0.012ms  min=163076us  max=163137us  mean_cyc=39139680  median_cyc=39139200  ops/s=6.1319
+ECDSA-P256  keygen  n=20  mean=61384us/61.384ms  median=61370us/61.370ms  std=57us/0.057ms  min=61368us  max=61636us  mean_cyc=14732290  median_cyc=14728895  min_cyc=14728349  max_cyc=14793067  cyc_src=CCOUNT  ops/s=16.2909
+ECDSA-P256  sign  n=20  mean=72159us/72.159ms  median=72154us/72.154ms  std=22us/0.022ms  min=72151us  max=72258us  mean_cyc=17318307  median_cyc=17316984  min_cyc=17316297  max_cyc=17341813  cyc_src=CCOUNT  ops/s=13.8583
+ECDSA-P256  verify  n=20  mean=163086us/163.086ms  median=163084us/163.084ms  std=12us/0.012ms  min=163079us  max=163141us  mean_cyc=39141039  median_cyc=39140377  min_cyc=39139284  max_cyc=39153906  cyc_src=CCOUNT  ops/s=6.1317
 verify OK: 20/20
-free stack: 28068 bytes   free heap: 305700 bytes
+free stack: 28004 bytes   free heap: 304644 bytes
 === done (repeats in ~5s) ===

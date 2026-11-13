@@ -9,22 +9,22 @@ load:0x40078000,len:16532
 load:0x40080400,len:3500
 entry 0x400805b4
 >>> running, ITERS=10
-  iter 1/10 k=987736us s=40209069us v=897361us
-  iter 2/10 k=987583us s=40209525us v=888118us
-  iter 3/10 k=987601us s=40209751us v=890996us
-  iter 4/10 k=987585us s=40209233us v=899490us
-  iter 5/10 k=987605us s=40209752us v=890259us
-  iter 6/10 k=987603us s=40209923us v=895211us
-  iter 7/10 k=987612us s=40210875us v=898087us
-  iter 8/10 k=987579us s=40209248us v=883849us
-  iter 9/10 k=987604us s=40209033us v=885990us
-  iter 10/10 k=987590us s=40209872us v=883221us
+  iter 1/10 k=988623us s=40305986us v=877452us kc=237269531 sc=9673436994 vc=210588632
+  iter 2/10 k=988500us s=40305810us v=894307us kc=237239831 sc=9673394715 vc=214634018
+  iter 3/10 k=988485us s=40306076us v=901436us kc=237236444 sc=9673458474 vc=216344936
+  iter 4/10 k=988491us s=40306317us v=888620us kc=237237875 sc=9673516140 vc=213269177
+  iter 5/10 k=988494us s=40306063us v=874505us kc=237238388 sc=9673455411 vc=209881472
+  iter 6/10 k=988502us s=40306194us v=902803us kc=237240299 sc=9673486926 vc=216673109
+  iter 7/10 k=988504us s=40307021us v=885193us kc=237240839 sc=9673685481 vc=212446442
+  iter 8/10 k=988477us s=40305911us v=885067us kc=237234323 sc=9673419117 vc=212416313
+  iter 9/10 k=988477us s=40306593us v=892228us kc=237234302 sc=9673582590 vc=214135124
+  iter 10/10 k=988487us s=40305914us v=892892us kc=237236906 sc=9673419432 vc=214294469
 === SLH-DSA-SHA2-256f (PQClean, FIPS 205) on ESP32 ===
 CPU clock: 240 MHz
 sizes: pk=64 sk=128 sigMax=49856 sig=49856
-SLH-DSA-SHA2-256f  keygen  n=10  mean=987609us/987.609ms  median=987602us/987.602ms  std=43us/0.043ms  min=987579us  max=987736us  mean_cyc=237026160  median_cyc=237024480  ops/s=1.0125
-SLH-DSA-SHA2-256f  sign  n=10  mean=40209628us/40209.629ms  median=40209638us/40209.641ms  std=520us/0.520ms  min=40209033us  max=40210875us  mean_cyc=1060376128  median_cyc=1060378528  ops/s=0.0249
-SLH-DSA-SHA2-256f  verify  n=10  mean=891258us/891.258ms  median=890627us/890.627ms  std=5704us/5.704ms  min=883221us  max=899490us  mean_cyc=213901920  median_cyc=213750480  ops/s=1.1220
+SLH-DSA-SHA2-256f  keygen  n=10  mean=988504us/988.504ms  median=988492us/988.492ms  std=40us/0.040ms  min=988477us  max=988623us  mean_cyc=237240873  median_cyc=237238131  min_cyc=237234302  max_cyc=237269531  cyc_src=CCOUNT  ops/s=1.0116
+SLH-DSA-SHA2-256f  sign  n=10  mean=40306188us/40306.188ms  median=40306069us/40306.066ms  std=351us/0.351ms  min=40305810us  max=40307021us  mean_cyc=9673485528  median_cyc=9673456942  min_cyc=9673394715  max_cyc=9673685481  cyc_src=CCOUNT  ops/s=0.0248
+SLH-DSA-SHA2-256f  verify  n=10  mean=889450us/889.450ms  median=890424us/890.424ms  std=8777us/8.777ms  min=874505us  max=902803us  mean_cyc=213468369  median_cyc=213702150  min_cyc=209881472  max_cyc=216673109  cyc_src=CCOUNT  ops/s=1.1243
 verify OK: 10/10
-free stack: 40108 bytes   free heap: 239284 bytes
+free stack: 40060 bytes   free heap: 238468 bytes
 === done (repeats in ~5s) ===
